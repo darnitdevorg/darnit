@@ -162,7 +162,7 @@ class TestReporting:
 
         refusals = [
             RefusedRegistration(name="manual", attempted_by="openssf-baseline", registered_by="core"),
-            RefusedRegistration(name="repro_shared", attempted_by="reproducibility", registered_by="other-plugin"),
+            RefusedRegistration(name="repro_shared", attempted_by="amber", registered_by="other-plugin"),
             RefusedRegistration(name="exec", attempted_by="unrelated-plugin", registered_by="core"),
         ]
         monkeypatch.setattr(get_sieve_handler_registry(), "refused_registrations", refusals)
@@ -173,7 +173,7 @@ class TestReporting:
             return [r.name for r in refusals if any(repr(r.attempted_by) in w for w in warnings)]
 
         assert refused("openssf-baseline") == ["manual"]
-        assert refused("reproducibility") == ["repro_shared"]
+        assert refused("amber") == ["repro_shared"]
 
     def test_composite_audit_reports_its_sources_refusals(self, monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
         import darnit.tools.audit as audit
@@ -183,11 +183,11 @@ class TestReporting:
         composite = tmp_path / "composite.toml"
         composite.write_text(
             '[metadata]\nname = "test-repro-composite"\ndisplay_name = "C"\nversion = "1.0.0"\n\n'
-            '[[compose]]\nsource = "reproducibility"\ninclude_controls = ["RE-01.01"]\n',
+            '[[compose]]\nsource = "amber"\ninclude_controls = ["RE-01.01"]\n',
             encoding="utf-8",
         )
         monkeypatch.setattr(audit, "_load_framework", lambda name: load_framework_config(composite))
-        refusal = RefusedRegistration(name="repro_shared", attempted_by="reproducibility", registered_by="other")
+        refusal = RefusedRegistration(name="repro_shared", attempted_by="amber", registered_by="other")
         monkeypatch.setattr(get_sieve_handler_registry(), "refused_registrations", [refusal])
 
         metadata = audit.audit_report_metadata(

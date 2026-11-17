@@ -1,0 +1,175 @@
+[metadata]
+schema_version = "0.1.0-alpha"
+name = "amber"
+display_name = "Amber: Scientific Reproducibility Checks"
+version = "0.1.0"
+spec_version = "0.1.0"
+description = "Checks that builds are reproducible and verifiable"
+
+[mcp]
+name = "amber"
+description = "Run scientific reproducibility checks on a repository"
+
+[mcp.tools.audit_reproducibility]
+builtin = "audit"
+description = "Run reproducibility checks"
+
+# Every repro_* step type registers the ceiling {fail} (feature 044, FR-010):
+# it decides from text and file-presence signals, so its FAIL concludes the
+# control but its PASS is evidence passed to the later steps. A control here
+# concludes PASS only through a `promotion` on the step backed by a corpus
+# measurement (framework-design 3.0.1, 5.5).
+
+# =============================================================================
+# Control: Are dependencies pinned to exact versions?
+# Unpinned deps mean two builds on different days can produce different results.
+# =============================================================================
+
+[controls."RE-01.01"]
+name = "DependenciesPinned"
+description = "Dependencies are pinned to exact versions with checksums"
+tags = { level = 1, domain = "RE" }
+
+[[controls."RE-01.01".passes]]
+handler = "repro_deps_pinned"
+
+[[controls."RE-01.01".passes]]
+handler = "manual"
+steps = [
+    "Check that dependency files pin exact versions (not ranges like >=1.0)",
+    "For Python: verify uv.lock or requirements.txt has exact versions",
+    "For Node: verify package-lock.json or yarn.lock exists",
+    "For Rust: verify Cargo.lock is committed",
+    "For Go: verify go.sum exists and is committed",
+]
+
+[controls."RE-01.01".remediation]
+safe = true
+
+# `uv lock` is Python-specific, so the remediation is gated to Python projects
+# via `when = { detected_ecosystem = "python" }`; on non-Python projects it is
+# simply not applicable, keeping the safe = true claim accurate where it runs.
+# It changes only the working tree but may resolve against a package index,
+# so it is not `offline` and cannot be previewed exactly: it runs in a batch
+# apply only when its plan item digest is approved (framework-design 4.4, 15.3).
+# TODO: add per-language remediations (cargo update, go mod tidy, ...).
+[[controls."RE-01.01".remediation.handlers]]
+handler = "exec"
+when = { detected_ecosystem = "python" }
+command = ["uv", "lock"]
+effects = "working_tree"
+
+# =============================================================================
+# Control: Is the build environment declared?
+# A build that works on "my machine" but nowhere else is not reproducible.
+# =============================================================================
+
+[controls."RE-01.02"]
+name = "BuildEnvDeclared"
+description = "Build environment is explicitly declared"
+tags = { level = 1, domain = "RE" }
+
+[[controls."RE-01.02".passes]]
+handler = "repro_build_env_declared"
+
+[[controls."RE-01.02".passes]]
+handler = "manual"
+steps = [
+    "Check for one of: Dockerfile, flake.nix, .devcontainer/, Vagrantfile",
+    "Verify it pins the base OS and tool versions",
+    "Confirm the declared environment is actually used in CI",
+]
+
+# =============================================================================
+# Control: Does the build avoid network access?
+# A hermetic build fetches nothing at build time — all deps come from the
+# lock file. Network access during build = non-reproducible.
+# =============================================================================
+
+# v0.2 heuristic: scans .github/workflows, composite actions (.github/actions/*/),
+# non-GitHub CI (GitLab CI, CircleCI, Jenkins, Azure Pipelines, Drone, Buildkite),
+# Makefiles, build scripts (scripts/build*, scripts/install*, etc.), and
+# Dockerfiles/Containerfiles.  Strips comments before pattern matching to cut FPs.
+# System-package installs (apt-get, apk, yum) inside Dockerfiles are DEFERRED —
+# building the image environment is acceptable; app-dep fetches at build time are not.
+# Strong signals (Nix flake CI, Bazel network sandbox) short-circuit the scan
+# with a handler PASS, which is evidence only (step ceiling {fail}).  A clean
+# grep alone returns INCONCLUSIVE — grep absence is not proof of hermeticity.
+# Witness / in-toto runtime-trace attestations are a separate step that runs
+# first and can only FAIL (#553).  Roadmap:
+# https://github.com/kusari-oss/darnit/issues/227
+[controls."RE-02.01"]
+name = "HermeticBuild"
+description = "Build does not fetch dependencies at build time"
+tags = { level = 2, domain = "RE" }
+depends_on = ["RE-01.02"]  # Nix flake strong signal is gated on BuildEnvDeclared having confirmed it
+
+# repro_witness_attestation fetches the Witness / in-toto attestation artifacts
+# of the successful CI runs for the audited commit via `gh`, Sigstore-verifies
+# them against this repository's GitHub Actions identity and that commit, and
+# FAILs when a verified runtime trace records network events (or a verified
+# command-run process line matches an installer).  A verified clean trace is
+# evidence only: an empty network log is also what a monitor that does not
+# trace sockets records (#553).
+# verify_witness_attestations (bool, default true): set to false to skip the
+# network round-trip entirely (air-gapped audits, or repos with no usable `gh`
+# login).  See witness_attestation.py for details.
+[[controls."RE-02.01".passes]]
+handler = "repro_witness_attestation"
+
+[[controls."RE-02.01".passes]]
+handler = "repro_hermetic_build"
+
+[[controls."RE-02.01".passes]]
+handler = "manual"
+steps = [
+    "Review all CI files (GitHub Actions, GitLab CI, CircleCI, Jenkinsfile, etc.) for network-fetch commands during build",
+    "Review Makefiles, build scripts (scripts/build*, scripts/install*), and Dockerfiles for the same",
+    "Check for curl, wget, pip install (without --no-index), npm install (without --ci), brew install in build steps",
+    "Verify all dependencies come from the lock file, not fetched live at build time",
+    "For a PASS, confirm via a Nix flake build, a Bazel network sandbox, or a runtime trace whose monitor is known to record network access (an empty network log alone does not confirm it)",
+]
+
+# =============================================================================
+# Control: Does a provenance attestation exist?
+# Provenance = a signed record of what went into the build.
+# SLSA level 2+ requires this.
+# =============================================================================
+
+[controls."RE-02.02"]
+name = "ProvenanceExists"
+description = "Build produces a signed provenance attestation"
+tags = { level = 2, domain = "RE" }
+
+[[controls."RE-02.02".passes]]
+handler = "repro_provenance_exists"
+
+[[controls."RE-02.02".passes]]
+handler = "manual"
+steps = [
+    "Check CI workflow for sigstore/cosign signing steps",
+    "Look for .intoto.jsonl or attestation files in releases",
+    "Verify SLSA provenance is generated (slsa-github-generator or equivalent)",
+]
+
+# =============================================================================
+# Control: Is the build byte-for-byte reproducible?
+# Two independent builds of the same commit should produce identical output.
+# =============================================================================
+
+[controls."RE-03.01"]
+name = "BitForBitReproducible"
+description = "Build output is identical across independent builds"
+tags = { level = 3, domain = "RE" }
+
+[[controls."RE-03.01".passes]]
+handler = "repro_bit_for_bit"
+
+[[controls."RE-03.01".passes]]
+handler = "manual"
+steps = [
+    "Run the build twice and compare checksums of output artifacts",
+    "Check reprotest or diffoscope output if available",
+    "Look for timestamps or random seeds embedded in build output",
+    "Verify SOURCE_DATE_EPOCH is set in CI to normalize timestamps",
+]

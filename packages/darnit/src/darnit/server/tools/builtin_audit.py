@@ -175,6 +175,7 @@ async def builtin_audit(
         report_title=report_title,
         framework_name=_framework_name,
         audit_metadata=metadata,
+        target=target,
     )
 
 

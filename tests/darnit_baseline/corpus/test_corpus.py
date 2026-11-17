@@ -39,6 +39,14 @@ def test_known_false_pass_list_only_shrinks(report: CorpusReport) -> None:
     )
 
 
+def test_no_fail_on_a_fixture_labelled_pass(report: CorpusReport) -> None:
+    """A project that documents a topic where it is commonly kept is not told it lacks it (#702)."""
+    wrong = [c for c in report.controls if c.expected == "PASS" and c.status == "FAIL"]
+    assert not wrong, "FAIL on a fixture labelled PASS:\n" + "\n".join(
+        f"{c.control_id} on '{c.fixture}' (concluded by {c.concluded_by})" for c in wrong
+    )
+
+
 def test_labels_name_framework_controls(report: CorpusReport) -> None:
     assert not report.unknown_labels, f"labels for controls the framework does not define: {report.unknown_labels}"
 

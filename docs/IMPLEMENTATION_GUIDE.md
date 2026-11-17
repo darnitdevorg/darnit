@@ -25,7 +25,7 @@ against a fictional "My Compliance Standard". Along the way, we'll reference how
 > **Starting point**: `packages/darnit-hello/` is the minimal plugin template:
 > one control, the entry points, and a framework TOML inside the package. Copy
 > it and grow it with this guide. For real plugins with custom step types, see
-> `packages/darnit-reproducibility/` and `packages/darnit-gittuf/`.
+> `packages/darnit-amber/` and `packages/darnit-gittuf/`.
 
 ## Architecture Overview
 
@@ -910,7 +910,6 @@ def my_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResult
 | `control_id` | `str` | ID of the control being verified (e.g., `"OSPS-AC-01.01"`). Empty for data gathering. |
 | `project_context` | `dict[str, Any]` | This run's detections of keys that are not user-judgment keys, `.project/project.yaml` mapper values, and usable context values (confirmed, or concluded in this run for `auto_detect = true` keys). A stored value without a matching confirmation record is not included. |
 | `gathered_evidence` | `dict[str, Any]` | Evidence accumulated from earlier handlers in this control's pipeline. See [Evidence propagation](#evidence-propagation). |
-| `shared_cache` | `dict[str, HandlerResult]` | Cache of shared handler results, keyed by the shared handler name. Shared handlers run once and cache their result for all controls that reference them. |
 | `dependency_results` | `dict[str, Any]` | Results from dependency controls (keyed by control ID), available when control dependencies are declared in TOML. |
 
 ### HandlerResult construction
@@ -1339,7 +1338,7 @@ steps = [
 ]
 ```
 
-> **Reference**: See `packages/darnit-reproducibility/src/darnit_reproducibility/handlers.py`
+> **Reference**: See `packages/darnit-amber/src/darnit_amber/handlers.py`
 > and `packages/darnit-gittuf/src/darnit_gittuf/handlers.py` for real custom
 > handlers, registered in each package's `implementation.py`.
 
@@ -1769,8 +1768,8 @@ from darnit.core.handlers import get_handler_registry
 | Reference implementation | `packages/darnit-baseline/src/darnit_baseline/implementation.py` |
 | Reference TOML | `packages/darnit-baseline/src/darnit_baseline/openssf-baseline.toml` |
 | Plugin template | `packages/darnit-hello/` |
-| Plugin with custom step types | `packages/darnit-reproducibility/src/darnit_reproducibility/implementation.py` |
-| Custom step type tests | `tests/darnit_reproducibility/test_handlers.py` |
+| Plugin with custom step types | `packages/darnit-amber/src/darnit_amber/implementation.py` |
+| Custom step type tests | `tests/darnit_amber/test_handlers.py` |
 | Framework spec | `docs/architecture/framework-design.md` |
 | Composition resolver | `packages/darnit/src/darnit/core/composition.py` |
 | Composition spec | `specs/013-plugin-composition/spec.md` |

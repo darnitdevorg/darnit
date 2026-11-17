@@ -48,10 +48,13 @@ change.
 | `platform-user-2fa-enabled` | User-owned repo; the auditor's 2FA is evidence only |
 | `zizmor-no-findings-document` | zizmor exits 0 and prints nothing; the workflow has a template injection and `write-all` (feature 044, #479) |
 | `plugin-redefines-manual` | A plugin tries to register `manual` as a step type that concludes PASS (feature 044, #486) |
+| `docs-rst` | Documentation in README.rst and CONTRIBUTING.rst (#702) |
+| `docs-github-dir` | Community files under `.github/`, dependency policy in `docs/dependency-policy.md` (#702) |
+| `docs-adoc` | All documentation in README.adoc (#702) |
 
 The reproducibility framework has its own corpus in
-`tests/darnit_reproducibility/corpus/`, measured by the same runner and gated by
-`tests/darnit_reproducibility/test_repro_corpus_gate.py`. Its `text-signals-only`
+`tests/darnit_amber/corpus/`, measured by the same runner and gated by
+`tests/darnit_amber/test_repro_corpus_gate.py`. Its `text-signals-only`
 fixture is the #453 reproduction: workflow text that mentions signing or sets
 `SOURCE_DATE_EPOCH` without the property.
 
@@ -161,3 +164,6 @@ lists tolerated false PASS results, each with the task that removes it. An
 entry that no longer occurs also fails the gate, so the list only shrinks.
 User Story 5 emptied it, and `tests/darnit_baseline/test_baseline_authority.py`
 keeps it empty for `openssf-baseline` (SC-001).
+
+`test_corpus.py` also fails when a control concludes FAIL on a fixture that
+labels it `PASS`: a project told it lacks a document it has (#702).

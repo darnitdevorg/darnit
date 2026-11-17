@@ -51,7 +51,25 @@ def initialize(repo: str, owner: str | None = None, name: str | None = None) -> 
     key = Path(context[ROOT_KEY]).expanduser()
     if not key.is_absolute() or not key.is_file() or key.suffix == ".pub":
         raise SetupError("gittuf_root_key must be an absolute path to an existing SSH signing key, not a .pub file")
-    run(repo, "ssh-keygen", "-l", "-f", str(key))
+    # A fingerprint check cannot tell whether the key can actually sign.
+    # Sign an empty probe on stdin, in a separate namespace; discard the signature.
+    try:
+        subprocess.run(
+            ["ssh-keygen", "-Y", "sign", "-n", "darnit-key-check", "-f", str(key)],
+            cwd=repo,
+            input=b"",
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            env={**os.environ, "SSH_ASKPASS_REQUIRE": "never"},
+            start_new_session=os.name == "posix",  # no controlling terminal for passphrase prompts
+            timeout=5,
+            check=True,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        raise SetupError(
+            "The SSH key cannot sign non-interactively. If it has a passphrase, "
+            "unlock it in ssh-agent and make that agent available to Darnit before retrying"
+        ) from exc
     run(repo, "git", "var", "GIT_AUTHOR_IDENT")
     run(repo, "git", "var", "GIT_COMMITTER_IDENT")
 

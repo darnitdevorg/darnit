@@ -336,3 +336,20 @@ class TestSyncDiscoveredToConfig:
         changes = sync_discovered_to_config(config, str(temp_dir))
 
         assert any("CI" in c for c in changes)
+
+    def test_no_pydantic_instance_model_fields_deprecation(self, temp_dir):
+        import warnings
+
+        (temp_dir / "SECURITY.md").write_text("# Security")
+        config = create_minimal_config(name="test-project")
+        config.security = SecurityConfig(policy=PathRef(path="SECURITY.md"))
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            changes = sync_discovered_to_config(
+                config,
+                str(temp_dir),
+                {"security.policy": ["SECURITY.md"]},
+            )
+
+        assert changes == []

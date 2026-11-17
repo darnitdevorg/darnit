@@ -58,12 +58,12 @@ If only one implementation module is loaded (e.g., openssf-baseline), runs it au
 
 ### Audit a specific module
 
-When multiple modules are loaded (e.g., openssf-baseline, gittuf, reproducibility):
+When multiple modules are loaded (e.g., openssf-baseline, gittuf, amber):
 
 ```
 /darnit-audit openssf baseline
 /darnit-audit gittuf
-/darnit-audit reproducibility
+/darnit-audit amber
 ```
 
 Claude matches your intent to the right MCP tool (`audit_openssf_baseline`, `audit_gittuf`, etc.).
@@ -147,7 +147,7 @@ When multiple darnit implementation modules are installed, each registers its ow
 |--------|-----------|---------------|
 | openssf-baseline | `audit_openssf_baseline` | `remediate_audit_findings` |
 | gittuf | `audit_gittuf` | `remediate_gittuf_findings` |
-| reproducibility | `audit_reproducibility` | `remediate_reproducibility_findings` |
+| amber | `audit_reproducibility` | `remediate_reproducibility_findings` |
 
 Skills automatically discover available tools. Just mention the module name and Claude picks the right one.
 

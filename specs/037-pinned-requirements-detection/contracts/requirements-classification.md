@@ -1,6 +1,6 @@
 # Contract: requirements.txt Pin Classification
 
-**Feature**: 037 | **Package**: `darnit-reproducibility` | **Status**: proposed
+**Feature**: 037 | **Package**: `darnit-amber` | **Status**: proposed
 
 The classifier takes text and returns a classification. It performs no file discovery, constructs no `HandlerResult`, and makes no decision about what verdict a classification deserves -- that mapping belongs to the handler. Keeping the boundary there is what lets the table below be tested as a pure function.
 

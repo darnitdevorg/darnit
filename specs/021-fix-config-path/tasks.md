@@ -39,13 +39,13 @@ description: "Task list for feature 021: framework config loading works under wh
 
 **Goal**: `get_framework_config_path()` resolves to a readable path for all three implementation packages when installed from a built wheel, without regressing editable installs.
 
-**Independent Test**: Build the wheel for each of `darnit-baseline`, `darnit-gittuf`, `darnit-reproducibility`, install into a fresh venv, call `get_framework_path()` on each; every call MUST return an existing, readable Path pointing to that implementation's framework TOML. Regression check: `uv sync` editable install continues to load framework configs.
+**Independent Test**: Build the wheel for each of `darnit-baseline`, `darnit-gittuf`, `darnit-amber`, install into a fresh venv, call `get_framework_path()` on each; every call MUST return an existing, readable Path pointing to that implementation's framework TOML. Regression check: `uv sync` editable install continues to load framework configs.
 
 ### Tests for User Story 1 (write FIRST, ensure they FAIL, then implement)
 
 - [X] T002 [P] [US1] Add an integration test at `tests/packaging/test_wheel_install_config.py` (create `tests/packaging/` and `tests/packaging/__init__.py`; the test parameterizes over all three implementations so it does NOT belong under any single `tests/darnit_*/` subtree) that:
   - Uses pytest's `tmp_path` fixture as the working directory for all build/install artifacts (do NOT let `uv build` write to the repo's `dist/`).
-  - For each of `darnit-baseline`, `darnit-gittuf`, `darnit-reproducibility` (parameterized via `@pytest.mark.parametrize`):
+  - For each of `darnit-baseline`, `darnit-gittuf`, `darnit-amber` (parameterized via `@pytest.mark.parametrize`):
     - Builds the wheel: `subprocess.run(["uv", "build", "--package", "<name>", "--out-dir", str(tmp_path / "dist")], cwd=<repo root>, check=True)`. Compute repo root from `Path(__file__).parents[2]` (i.e., `tests/packaging/test_wheel_install_config.py` -> up to repo root).
     - Creates a temporary venv at `tmp_path / "venv"` via `venv.EnvBuilder(with_pip=True).create(...)`. Use `sys.executable` implicitly (the current interpreter, which the test suite runs under; project targets Python 3.11+).
     - Installs the built wheel plus `darnit-core` into that venv via the venv's `pip`: `subprocess.run([venv_python, "-m", "pip", "install", str(wheel_path), "darnit-core"], check=True, capture_output=True)`. Locate `venv_python` as `tmp_path / "venv" / "bin" / "python"` (POSIX) or the equivalent on Windows via `sysconfig.get_path("scripts")`.
@@ -80,9 +80,9 @@ Each of T003-T005 fixes one implementation package. All three are file-disjoint 
   - In `packages/darnit-gittuf/pyproject.toml`, add a new `[tool.hatch.build.targets.wheel.force-include]` section (currently absent) with: `"gittuf.toml" = "darnit_gittuf/gittuf.toml"`.
   - In `packages/darnit-gittuf/src/darnit_gittuf/implementation.py`, replace the body of `get_framework_config_path()` at line ~76 (`return Path(__file__).parent.parent.parent / "gittuf.toml"`) with the same `importlib.resources` pattern used in T003, substituting `gittuf.toml` and the appropriate error message.
 
-- [X] T005 [P] [US1] Fix `darnit-reproducibility`:
-  - In `packages/darnit-reproducibility/pyproject.toml`, add a new `[tool.hatch.build.targets.wheel.force-include]` section (currently absent) with: `"reproducibility.toml" = "darnit_reproducibility/reproducibility.toml"`.
-  - In `packages/darnit-reproducibility/src/darnit_reproducibility/implementation.py`, replace the body of `get_framework_config_path()` at line ~94 (`return Path(__file__).parent.parent.parent / "reproducibility.toml"`) with the same `importlib.resources` pattern, substituting `reproducibility.toml` and the appropriate error message.
+- [X] T005 [P] [US1] Fix `darnit-amber`:
+  - In `packages/darnit-amber/pyproject.toml`, add a new `[tool.hatch.build.targets.wheel.force-include]` section (currently absent) with: `"amber.toml" = "darnit_amber/amber.toml"`.
+  - In `packages/darnit-amber/src/darnit_amber/implementation.py`, replace the body of `get_framework_config_path()` at line ~94 (`return Path(__file__).parent.parent.parent / "amber.toml"`) with the same `importlib.resources` pattern, substituting `amber.toml` and the appropriate error message.
 
 ### Verification for User Story 1
 
@@ -142,7 +142,7 @@ Each of T003-T005 fixes one implementation package. All three are file-disjoint 
 # Launch the three per-package fixes together:
 Task: "Fix darnit-baseline: force-include + importlib.resources in packages/darnit-baseline/{pyproject.toml,src/darnit_baseline/implementation.py}"
 Task: "Fix darnit-gittuf: force-include + importlib.resources in packages/darnit-gittuf/{pyproject.toml,src/darnit_gittuf/implementation.py}"
-Task: "Fix darnit-reproducibility: force-include + importlib.resources in packages/darnit-reproducibility/{pyproject.toml,src/darnit_reproducibility/implementation.py}"
+Task: "Fix darnit-amber: force-include + importlib.resources in packages/darnit-amber/{pyproject.toml,src/darnit_amber/implementation.py}"
 ```
 
 ---

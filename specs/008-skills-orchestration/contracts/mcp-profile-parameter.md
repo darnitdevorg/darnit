@@ -45,7 +45,7 @@ When profile is ambiguous:
 ```json
 {
   "error": "Profile 'onboard' is defined by multiple implementations",
-  "implementations": ["gittuf", "reproducibility"],
+  "implementations": ["gittuf", "amber"],
   "hint": "Use 'gittuf:onboard' or 'reproducibility:onboard' to disambiguate"
 }
 ```

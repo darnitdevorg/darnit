@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- In the gittuf commit signature check (GT-02.01), when commits lack good
+  signatures, the FAIL message states how many recent commits have a good
+  signature and reports commits that could not be checked on the machine
+  alongside unsigned and bad signatures (fixes #679).
+- Pin DOT_PROJECT_SPEC_VERSION to canonical upstream CNCF 1.0.0 and remove
+  project_path = "security.policy" from OSPS-DO-02.01 (fixes #502). Existing
+  .project/project.yaml files declaring schema_version: 1.4.0 are left as
+  they are and require a manual edit to pass upstream validation.
 - Baseline handler registration no longer imports `tree-sitter` or the language
   pack at registration time, preventing transient language pack download
   failures from taking down all baseline handlers; when a plugin handler registration
@@ -27,6 +35,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "no remediation run is recorded" and the confirmation page lost the run's
   files. A named non-GitHub repository is also no longer treated as a GitHub
   repository for platform settings.
+- OSPS-DO-03.02, DO-04.01, DO-05.01, DO-06.01, QA-06.02, and SA-01.01 no longer
+  fail a project whose documentation covers the topic in a README, CONTRIBUTING,
+  SECURITY, or SUPPORT file of any extension (`.rst`, `.adoc`, ...), in the
+  root, `.github/`, or `docs/`, or in `docs/dependency-policy.*`. QA-06.02 also
+  matches "tests are run". The model judgment that follows a match now sees the
+  files that were read.
+  community-spec CSL-06.01 also reads `README.txt`, `README.adoc`, and
+  `README` (#702).
 
 ### Added
 
@@ -65,6 +81,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `HandlerImportRefused` naming the path and the allowed packages; at server
   start the tool is not registered and the refusal is logged at ERROR.
   `HandlerRegistry.get_handler` raises it instead of returning `None` (#490).
+- Operator configuration `[plugins] allowed` is applied before a plugin is
+  loaded. Before, discovery imported every installed plugin and ran its
+  `register()` before the list was checked, and only an audit of a framework
+  left out was refused. Now `darnit audit`, `run`, `harness`, `serve`, and
+  the MCP tools do not load a `darnit.implementations` or `darnit.frameworks`
+  entry point the list leaves out, so its step types and handlers are not
+  registered, its framework does not resolve (also as a composition source),
+  and `darnit serve --framework` refuses it with the `plugins.allowed`
+  message (framework-design 6.6).
 
 ### Removed
 
@@ -100,6 +125,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its filesystem default (`darnit.stores.defaults.project`). Writes to
   `.project/` are managed exclusively by `darnit.config.context_writes`
   under feature 042 single-writer rules (#588, fixes #574).
+- **BREAKING:** plugin signature verification, which never verified
+  anything. Discovery always ran with `allow_unsigned = true`, looked
+  plugins up by entry point name instead of distribution name (so every
+  lookup failed and logged a "failed verification but will be loaded
+  anyway" WARNING on each run), and wrote `~/.darnit/verification_cache`
+  under the real home directory. The verifier made no cryptographic check:
+  it trusted a package whose self-declared author or maintainer email
+  contained a trusted publisher name. Removed: `darnit.core.verification`
+  (`PluginVerifier`, `VerificationConfig`, `VerificationResult`,
+  `VerificationCache`, `AttestationInfo`, `verify_plugin`,
+  `DEFAULT_TRUSTED_PUBLISHERS`) and its `darnit.core` re-exports; the
+  operator configuration keys `[plugins] allow_unsigned` and
+  `trusted_publishers`, which were never read and now fail loading with a
+  message saying they were removed; and the unread framework TOML
+  `[plugins]` models (`PluginsConfig`, `PluginConfig`,
+  `FrameworkConfig.plugins`). A framework TOML `[plugins]` table still loads
+  and has no effect. `darnit config migrate` no longer copies the two keys
+  into its operator configuration fragment. darnit does not verify plugin
+  signatures; verify packages when installing them and restrict which
+  installed plugins load with `[plugins] allowed` (framework-design 6.6).
 - `.baseline.toml` reading and the code that existed only for it:
   `load_user_config` (including its `trusted` path),
   `load_user_config_with_report`, `validate_user_config`, `deep_merge`, and
@@ -158,6 +203,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BREAKING:** a control-level `check` key in a framework TOML or an
   operator custom control now fails loading, like any unknown control key
   (#487).
+- **BREAKING:** shared handlers. A step referencing a `[shared_handlers]`
+  entry (`shared = "<name>"`) cached its result after its own control's
+  `expr` ran, so every later control referencing the same entry got that
+  verdict and never evaluated its own `expr`: a second control could PASS on
+  an expression that was false. The effective configuration, which the CLI
+  and MCP audits load, never resolved the references. A framework TOML with
+  a `[shared_handlers]` table, or a verification or remediation step with
+  `shared`, now fails loading with an error saying shared handlers were
+  removed; declare the step's full configuration on each control. Removed
+  with it: `SharedHandlerConfig`, `FrameworkConfig.shared_handlers`,
+  `HandlerInvocation.shared`, `HandlerContext.shared_cache` (construct a
+  `HandlerContext` without it), the `shared_handlers` parameter of
+  `control_from_framework`, and the three unreferenced `[shared_handlers]`
+  entries in `openssf-baseline.toml`.
 - **BREAKING:** framework TOML `[adapters]` tables and `[defaults]`
   `check_adapter` / `remediation_adapter` are no longer read. A framework
   that still has them loads (unknown top-level tables are accepted), and
@@ -271,6 +330,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which is about 1 MB and too large for an MCP client's tool result (#644).
   `summary` rows of a PENDING control now carry `pending.kind`, and a PASS
   candidate's model, reasoning, and number of cited excerpts.
+- `scripts/quickstart.sh`: one-command setup from source. It installs uv and
+  zizmor if they are missing (asking first), installs darnit with the
+  versions pinned in `uv.lock`, runs an OpenSSF Baseline level 1 audit, and
+  offers to register the MCP server with Claude Code.
 - `darnit install --from-source` registers the darnit executable of the
   running installation as the MCP server command. Without it, the entry
   runs the darnit-mcp release on PyPI through `uvx`, even when darnit was
@@ -482,6 +545,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   automated workflow edits with manual guidance.
   ([#512](https://github.com/darnitdevorg/darnit/issues/512),
   [#513](https://github.com/darnitdevorg/darnit/issues/513))
+- **BREAKING:** the `darnit-reproducibility` plugin is renamed `darnit-amber`:
+  package `darnit_amber`, framework and MCP server name `amber`,
+  `AmberImplementation`, `amber.toml`. Control ids (`RE-*`), handler names
+  (`repro_*`) and the `audit_reproducibility` MCP tool are unchanged (#532).
+  Migration:
+  - `darnit-mcp` depends on a transitional `darnit-reproducibility` for this
+    one release: it has no entry points and only pulls in `darnit-amber`, so
+    upgrading `darnit-mcp` replaces the old plugin instead of leaving it
+    installed beside the new one. After upgrading, `pip uninstall
+    darnit-reproducibility`; the next release drops it.
+  - Rename `reproducibility` to `amber` in `darnit audit -f`, `darnit serve
+    --framework`, MCP client configurations (server name and framework
+    argument), and operator configuration: `[plugins].allowed` and
+    `[[compose]] source`.
+  - Python code: `import darnit_amber`; `darnit_reproducibility` re-exports
+    its top-level names with a `DeprecationWarning` for this release
+    (submodules such as `darnit_reproducibility.handlers` are not provided).
+  - Upgrading: `darnit-mcp` pins its components to its own version, so
+    `pip install -U darnit-mcp` moves `darnit-core`, the plugins and the
+    transitional package together; `darnit-amber` and the transitional
+    package pin the same way.
 - In OpenSSF Baseline assessment attestation predicates, `assessor.name`
   changes from `openssf-baseline-mcp` to `openssf-baseline`, `assessor.uri`
   points to `https://github.com/darnitdevorg/darnit`, `assessor.version`
@@ -815,6 +899,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   path components against case-exact directory entries, preventing spurious
   matches on lowercase aliases, deduplicating file contents read into
   consultation evidence, and citing exact repository paths (fixes #645).
+- The audit report's "Confirm project context" step reads answers confirmed
+  operator-side for the repository the audit names (#664). Before, it called
+  the pending-context check without the identity, so after every question
+  was answered for an untrusted repository the report still asked for all of
+  them.
 - Control `when` and step `when` now use one evaluator
   (framework-design 5.1.1). A list-valued control `when` such as
   `{ ci_provider = ["github", "gitlab"] }` made the control N/A even when

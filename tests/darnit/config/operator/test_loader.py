@@ -87,3 +87,23 @@ def test_environment_cannot_grant_trust(config_home: Path, monkeypatch: pytest.M
     loaded = load_operator_config()
     assert loaded.source == BUILTIN_DEFAULTS
     assert loaded.config.trust.repos == []
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "setting",
+    ["allow_unsigned = false", "allow_unsigned = true", 'trusted_publishers = ["https://example.org/publisher"]'],
+)
+def test_removed_plugin_signature_settings_fail_loading(config_home: Path, setting: str) -> None:
+    """darnit never verified plugin signatures; a setting that claims it does is refused (framework-design 6.6)."""
+    key = setting.split(" ")[0]
+    path = _write(config_home / "config.toml", f'schema_version = 1\n[plugins]\nallowed = ["hello"]\n{setting}\n')
+
+    with pytest.raises(OperatorConfigError) as exc:
+        load_operator_config(path)
+
+    message = str(exc.value)
+    assert str(path) in message
+    assert f"plugins.{key} was removed" in message
+    assert "does not verify plugin signatures" in message
+    assert "plugins.allowed" in message

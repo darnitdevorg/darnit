@@ -297,6 +297,7 @@ def cmd_audit(args: argparse.Namespace) -> int:
         load_effective_config,
         load_effective_config_auto,
         load_effective_config_by_name,
+        refuse_framework_inside_checkout,
     )
     from darnit.filtering import filter_controls, parse_tags_arg
 
@@ -324,6 +325,7 @@ def cmd_audit(args: argparse.Namespace) -> int:
         if args.framework:
             framework_path = Path(args.framework)
             if framework_path.exists():
+                refuse_framework_inside_checkout(framework_path, repo_path)
                 config = load_effective_config(framework_path, operator=operator)
             else:
                 # Try as framework name
@@ -433,6 +435,7 @@ def cmd_plan(args: argparse.Namespace) -> int:
         load_effective_config,
         load_effective_config_auto,
         load_effective_config_by_name,
+        refuse_framework_inside_checkout,
     )
     from darnit.filtering import matches_filters, parse_tags_arg
 
@@ -443,6 +446,7 @@ def cmd_plan(args: argparse.Namespace) -> int:
         if args.framework:
             framework_path = Path(args.framework)
             if framework_path.exists():
+                refuse_framework_inside_checkout(framework_path, repo_path)
                 config = load_effective_config(framework_path)
             else:
                 config = load_effective_config_by_name(args.framework)
@@ -1285,11 +1289,17 @@ def cmd_serve(args: argparse.Namespace) -> int:
         from darnit.config import list_available_frameworks, resolve_framework_path
 
         framework_name = getattr(args, "framework", None)
-        if not framework_name:
+        if framework_name:
+            from darnit.config.merger import ensure_framework_allowed
+
+            try:
+                ensure_framework_allowed(framework_name, operator_config.config)
+            except ValueError as e:
+                logger.error(str(e))
+                return 1
+        else:
+            # Lists only frameworks plugins.allowed permits (framework-design 6.6).
             frameworks = list_available_frameworks()
-            allowed = operator_config.config.plugins.allowed
-            if allowed:
-                frameworks = [f for f in frameworks if f in allowed]
             if not frameworks:
                 logger.error(
                     "No framework specified and none found. "

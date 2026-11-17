@@ -19,7 +19,7 @@ Splitting the check into its own step gives it its own ceiling and its own setti
 | Field | Value |
 |---|---|
 | Step type | `repro_witness_attestation` |
-| Registered by | `darnit-reproducibility`, in `register_sieve_handlers` |
+| Registered by | `darnit-amber`, in `register_sieve_handlers` |
 | Phase | `deterministic` |
 | Ceiling | `{fail}` |
 | Settings | `verify_witness_attestations` (bool, default `true`) |

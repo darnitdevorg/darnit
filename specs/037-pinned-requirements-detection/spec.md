@@ -6,7 +6,7 @@
 
 **Status**: Draft
 
-**Input**: User description: "Implement issue #429 -- `repro_deps_pinned` unconditionally flags an exact-pinned `requirements.txt` as a loose manifest. The check should inspect the file's contents: if every dependency specifies an exact version or a hash, it should not report a hard failure. Reported by @Jaydeep869 while evaluating `darnit-reproducibility` against real repositories."
+**Input**: User description: "Implement issue #429 -- `repro_deps_pinned` unconditionally flags an exact-pinned `requirements.txt` as a loose manifest. The check should inspect the file's contents: if every dependency specifies an exact version or a hash, it should not report a hard failure. Reported by @Jaydeep869 while evaluating `darnit-amber` against real repositories."
 
 ## Context
 
@@ -30,6 +30,10 @@ This is a false negative: the tool reports non-compliance for a repository that 
 The correction is not simply "pass when everything uses `==`". A fully `==`-pinned `requirements.txt` pins *direct* dependencies while leaving transitive dependencies to float at install time; a lock file pins the entire resolved graph. Those are genuinely different reproducibility guarantees, and collapsing them into one PASS would trade a false negative for a false positive -- the error direction the constitution actually forbids.
 
 ## Clarifications
+
+### Revision for #536
+
+FR-019 is revised below: requirements-family discovery now includes files at most two directories below the repository root. This deliberately changes verdicts for repositories whose requirements were previously not discovered; FR-014's original no-change guarantee does not apply to those newly discovered files. Directories named `docs` or `examples` are excluded at every searched level to avoid treating sample or documentation dependencies as repository-wide requirements. The 2026-09-15 clarification and other original feature-037 material below record the earlier decision.
 
 ### Session 2026-09-15
 
@@ -125,7 +129,7 @@ A repository containing both a lock file and a `requirements.txt` is judged on t
 - **FR-016**: The control MUST be able to conclude WARN with its own message and stop the pass chain. Today a handler can only return PASS, FAIL, INCONCLUSIVE, or ERROR; an INCONCLUSIVE continues to the next pass and the eventual WARN carries a fixed "manual verification required" string, which cannot satisfy FR-005 or FR-013. The handler result vocabulary MUST therefore gain a conclusive WARN outcome, additively, so that a handler which can see that evidence is incomplete can say so in its own words.
 - **FR-017**: Adding the conclusive WARN outcome MUST NOT change the verdict of any existing handler. No handler other than `repro_deps_pinned` returns the new outcome as part of this feature, and the existing all-inconclusive WARN fallthrough MUST continue to behave as it does today for controls that never produce one.
 - **FR-018**: Lines that are not dependency declarations MUST be skipped rather than classified. This covers pip option lines (`--index-url`, `--extra-index-url`, `--find-links`, and similar) and self-references such as `-e .` or a bare local path, which name the project being audited rather than a dependency. Skipped lines count toward no tier: a file whose requirements are all hash-pinned still classifies hash-pinned when it also carries `-e .` and an index option. A file containing only skipped lines has no requirement lines and is governed by FR-011.
-- **FR-019**: File discovery MUST remain unchanged: the control inspects a `requirements.txt` at the repository root and nothing else. Other spellings in the requirements family (`requirements-dev.txt`, `requirements/base.txt`, and similar) are not discovered today, and this feature MUST NOT begin discovering them -- a repository whose only requirements file is one of those is INCONCLUSIVE today and MUST stay INCONCLUSIVE.
+- **FR-019** (revised by #536): The control MUST discover `*requirements*.txt` files and `.txt` files directly inside a `requirements` directory at the root and up to two directory levels below it. Hidden directories, symlinks, the existing excluded directories, and directories named `docs` or `examples` MUST NOT be traversed. Development and test requirements files such as `requirements-dev.txt`, and requirements files under `tests` directories, are deliberately included: they can decide the verdict, which at worst produces a conservative FAIL. With no root lock file, every discovered requirements file MUST be inspected and the least favorable classification determines the result; an incomplete directory search MUST be INCONCLUSIVE. Nested lock files MUST NOT establish repository-wide pinning. This supersedes the original root-only discovery decision.
 - **FR-020**: The hash-pinned PASS, the version-pinned WARN, the unpinned FAIL, and the not-inspectable FAIL MUST all carry confidence 0.8, the value the lock-file path already uses. Content inspection is stronger evidence than filename matching, but this control's confidence scale is not calibrated finely enough to carry that distinction, and introducing a second scale here would make this control's numbers incomparable with every other control's. The no-dependency-files INCONCLUSIVE keeps its 0.0.
 
 ### Key Entities
@@ -149,7 +153,7 @@ A repository containing both a lock file and a `requirements.txt` is judged on t
 
 ## Assumptions
 
-- The feature spans two packages. The content inspection is plugin-local to `darnit-reproducibility`, but FR-016's conclusive WARN outcome is a framework change in `darnit` core. That split is deliberate and consistent with Principle I: the plugin gains no framework privileges, the framework gains a vocabulary item that any handler may use.
+- The feature spans two packages. The content inspection is plugin-local to `darnit-amber`, but FR-016's conclusive WARN outcome is a framework change in `darnit` core. That split is deliberate and consistent with Principle I: the plugin gains no framework privileges, the framework gains a vocabulary item that any handler may use.
 - The scope is `requirements.txt` only. The other loose manifests have analogous content-inspection questions with ecosystem-specific answers, and bundling them would mean four parsers in one change.
 - Content inspection reads the file from disk at audit time. There is no caching requirement; these files are small and read once per audit.
 - The existing confidence value for the lock-file PASS (0.8) is treated as correct and is not revisited here, and every new verdict adopts it (FR-020). Giving content-derived verdicts a sharper confidence is deferred to the tightness taxonomy in #415, which is where confidence would gain a definition worth calibrating against.
@@ -168,6 +172,6 @@ A repository containing both a lock file and a `requirements.txt` is judged on t
 - **Verifying that a lock file is current** relative to its manifest. The existing 0.8 confidence already acknowledges this gap.
 - **The false-PASS siblings**: #430 (`repro_hermetic_build` misses `go install`), #431 (`repro_build_env_declared` passes on `FROM alpine:latest`), #432 (compiler flags). Those share a different root cause -- controls that pass on artifact presence rather than artifact quality -- and warrant their own treatment.
 - **#433** (native C/C++ toolchain support). That is a feature addition, not a correctness fix.
-- **Split requirement files.** Inspecting `requirements-dev.txt`, `requirements/base.txt`, and the rest of the family would change verdicts for repositories that have no root `requirements.txt` and are INCONCLUSIVE today. That is a discovery change, not a correctness fix, and belongs in its own work.
+- **Split requirement files.** Originally out of scope for feature 037; discovery is now included by the #536 revision to FR-019 above.
 - **Artifact source pinning.** A custom index (`--index-url`, `--extra-index-url`, `--find-links`) changes where artifacts are resolved from, which is a genuine reproducibility concern, but it is a different question from whether versions are pinned. Treating it here would widen the control's subject without saying so. Worth raising against the tightness taxonomy in #415.
 - **Remediation**. Generating a lock file for a project that lacks one is a separate action from auditing whether one exists.

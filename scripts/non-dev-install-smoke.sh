@@ -23,7 +23,7 @@
 # With --uv-tool it installs the checkout (default: .) as a uv tool instead,
 # as `uv tool install git+https://github.com/darnitdevorg/darnit` does, into
 # a throwaway tool directory. It fails unless `darnit` lands on the tool PATH
-# and `darnit list` loads openssf-baseline, gittuf and reproducibility, which
+# and `darnit list` loads openssf-baseline, gittuf and amber, which
 # needs the root package to declare the `darnit` script. See #621.
 #
 # Requirements: python3 (with venv and pip), git, network access to PyPI;
@@ -45,7 +45,7 @@ if [ "${1:-}" = "--uv-tool" ]; then
   out="$work/list.txt"
   "$UV_TOOL_BIN_DIR/darnit" list >"$out" 2>&1 || fail "darnit list exited with status $?"
   cat "$out"
-  for framework in openssf-baseline gittuf reproducibility; do
+  for framework in openssf-baseline gittuf amber; do
     grep -q -x -E "(INFO: )?  • $framework" "$out" || fail "darnit list did not load $framework"
   done
 
@@ -58,7 +58,7 @@ if [ $# -gt 1 ]; then
   shift
   packages=("$@")
 else
-  packages=(darnit-mcp darnit-core darnit-baseline darnit-gittuf darnit-reproducibility)
+  packages=(darnit-mcp darnit-core darnit-baseline darnit-gittuf darnit-amber darnit-reproducibility)
 fi
 
 wheels=()
