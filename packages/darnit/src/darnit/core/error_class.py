@@ -43,6 +43,11 @@ unavailable      Feature 041. The platform API answered with a 5xx or a status
                  or the request could not be made (no repository identity).
 evaluation       Feature 041. The step ran but its result could not be
                  evaluated (for example a CEL ``expr`` error over a response).
+usage            #752. An undeclared exit whose stderr is a CLI argument
+                 rejection (a clap ``invalid value '…' for '--…'``,
+                 ``unexpected argument``, ``unrecognized subcommand``,
+                 ``a value is required``, or ``the following required
+                 arguments were not provided``). The check did not run.
 unexpected_exit  #562. A command exited with a code its step did not declare,
                  and nothing in its output identified the cause.
 ===============  =============================================================
@@ -79,6 +84,7 @@ ErrorClass = Literal[
     "missing_tool",
     "unavailable",
     "evaluation",
+    "usage",
     "unexpected_exit",
 ]
 
@@ -95,6 +101,7 @@ ERROR_CLASSES: frozenset[ErrorClass] = frozenset(
         "missing_tool",
         "unavailable",
         "evaluation",
+        "usage",
         "unexpected_exit",
     )
 )

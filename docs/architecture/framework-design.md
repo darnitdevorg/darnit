@@ -1,8 +1,8 @@
 # Darnit Framework Design Specification
 
-> **Version**: 1.0.0-alpha.22
+> **Version**: 1.0.0-alpha.23
 > **Status**: Authoritative
-> **Last Updated**: 2026-10-29
+> **Last Updated**: 2026-11-17
 
 This specification defines the authoritative design of the Darnit framework, including the sieve orchestrator, TOML schema, built-in pass types, remediation actions, and plugin protocol.
 
@@ -196,7 +196,7 @@ A handler returns one of five outcomes. INCONCLUSIVE and ERROR never conclude; P
 | `FAIL` | The control is not satisfied. | Yes, when `fail` is in the step's effective set |
 | `WARN` | The handler read the evidence, understood it, and determined it is insufficient to pass. | Yes, when `fail` is in the step's effective set |
 | `INCONCLUSIVE` | The handler determined nothing. | No -- the pipeline continues |
-| `ERROR` | The handler could not measure (platform or API error, missing tool, evaluation error). | No -- the error is recorded and the pipeline continues; if no later step concludes, the control ends ERROR with the first recorded cause |
+| `ERROR` | The handler could not measure (platform or API error, missing tool, evaluation error, CLI usage error). | No -- the error is recorded and the pipeline continues; if no later step concludes, the control ends ERROR with the first recorded cause |
 
 `WARN` differs from `INCONCLUSIVE` in kind, not in degree. INCONCLUSIVE means a later pass may still determine something. WARN means the answer has been determined and the answer is "not enough". A handler MUST NOT return WARN to mean "I am unsure".
 
@@ -468,7 +468,7 @@ env = { "TOOL_VERBOSE" = "true" }
 | `expr` | `str` | CEL expression over `output` and `project` (section 3.7) |
 | `expr_decides` | `bool` | Common step field: on a handler PASS, `expr` alone decides, true PASS and false FAIL (section 3.7) |
 | `timeout` | `int` | Timeout in seconds (default: 300) |
-| `env` | `dict` | Additional environment variables |
+| `env` | `dict` | Additional environment variables, applied before the child-environment rule below |
 | `cwd` | `str` | Working directory (default: the repository) |
 | `effects`, `offline` | | Remediation steps only: preview declarations (section 4.4) |
 
@@ -478,9 +478,11 @@ These are the step type's declared `settings` (section 3.0.3); any other key fai
 - Commands are executed as a list (no shell interpolation)
 - Variable substitution only replaces whole tokens or substrings safely
 
+**Child environment** (#752): the command receives a copy of the parent environment, then the step's `env` overrides. After those overrides, `GH_TOKEN` and `GITHUB_TOKEN` are omitted when the value is exactly `""`. Any other value is kept. The parent environment is not modified. An exec remediation uses this same handler, including its scratch-copy preview and its apply (section 4.4).
+
 **Broken measurements**: a command whose binary is not installed is ERROR, class `missing_tool`; a timeout is ERROR, class `timeout`. Neither is FAIL.
 
-**Undeclared exit codes**: an exit code in neither `pass_exit_codes` nor `fail_exit_codes` concludes nothing; the step is evidence only and carries a class taken from the command's exit code and stderr, first match wins (#562):
+**Undeclared exit codes**: an exit code in neither `pass_exit_codes` nor `fail_exit_codes` is not PASS or FAIL. Its class comes from the command's exit code and stderr, first match wins (#562, #752):
 
 | Evidence | Class |
 |----------|-------|
@@ -488,9 +490,14 @@ These are the step type's declared `settings` (section 3.0.3); any other key fai
 | An authentication message (`http 401`, `bad credentials`, `requires authentication`, `gh auth login`, `authentication token`, `not logged in`) | `auth` |
 | Exit code 127, or stderr says the command was not found | `missing_tool` |
 | A connection error: name resolution, connection refused, reset, or timed out, network or host unreachable, a TLS or certificate failure, or git's `unable to access` | `network` |
+| A CLI argument rejection: clap's `invalid value '<value>' for '--<flag>'`, or the phrases `unexpected argument`, `unrecognized subcommand`, `a value is required`, or `the following required arguments were not provided` | `usage` |
 | Anything else | `unexpected_exit` |
 
-The step's message names the command, the exit code, and the start of stderr, so an operator can act on an `unexpected_exit` without rerunning the command.
+Matching is a case-insensitive substring, except the invalid-value row, which is only that clap shape. A bare `error:`, a bare `invalid`, exit code 2 by itself, and help text do not select `usage`. `error: no inputs collected` and `error: unrecognized input` are about what the tool was given to read, not its arguments, and stay `unexpected_exit`.
+
+Every class in the table except `usage` leaves the step INCONCLUSIVE. `usage` means the check did not run: the step is ERROR. In both cases the message names the command, the exit code, and the start of stderr. Later steps still run; when none of them concludes, a `usage` step makes the control ERROR and `error.cause` is that message (#752).
+
+An exit code listed in `pass_exit_codes` or `fail_exit_codes` stays PASS or FAIL with no `error_class`, including when stderr contains one of the `usage` phrases.
 
 #### Scenario: CEL expression evaluated
 - **WHEN** an `exec` step has an `expr` field and the exit code gives PASS or FAIL
@@ -502,10 +509,24 @@ The step's message names the command, the exit code, and the start of stderr, so
 - **THEN** the handler MUST evaluate the exit code against `pass_exit_codes` and `fail_exit_codes`
 - **AND** an exit code in neither list MUST NOT give PASS or FAIL
 
+#### Scenario: Empty GitHub token is omitted from the child environment
+- **WHEN** an `exec` step or an exec remediation runs, including a scratch-copy preview and an apply
+- **AND** `GH_TOKEN` or `GITHUB_TOKEN` is exactly `""` after the step's `env` overrides
+- **THEN** that name MUST be absent from the child environment
+- **AND** a non-empty value MUST be passed through unchanged
+- **AND** the parent environment MUST be unchanged
+
 #### Scenario: Undeclared exit code with no identified cause
-- **WHEN** an `exec` command exits with a code in neither list and its stderr shows no rate limit, authentication failure, missing command, or connection error (for example `grep` exiting 2 on a missing directory, or `git` exiting 128 outside a repository)
-- **THEN** the step MUST carry class `unexpected_exit`, not `network`
+- **WHEN** an `exec` command exits with a code in neither list and its stderr shows no rate limit, authentication failure, missing command, connection error, or CLI argument rejection (for example `grep` exiting 2 on a missing directory, `git` exiting 2 with `error: No such remote`, or zizmor exiting 3 with `error: no inputs collected`)
+- **THEN** the step MUST carry class `unexpected_exit`, not `network` or `usage`
 - **AND** its message MUST name the command, the exit code, and an excerpt of stderr
+- **AND** the step MUST be INCONCLUSIVE
+
+#### Scenario: Undeclared exit is a CLI argument rejection
+- **WHEN** an `exec` command exits with a code in neither list and its stderr matches a `usage` phrase in the table above (for example zizmor exiting 2 with `error: invalid value '' for '--gh-token <GH_TOKEN>'`)
+- **THEN** the step MUST be ERROR with class `usage`
+- **AND** its message MUST name the command, the exit code, and an excerpt of stderr
+- **AND** when no later step concludes, the control MUST be ERROR and `error.cause` MUST be that message
 
 ### 3.4 regex Handler
 
@@ -1028,7 +1049,7 @@ offline = true
 | `command` | `list[str]` | Command and arguments (variables as in section 3.3) |
 | `pass_exit_codes` | `list[int]` | Exit codes that indicate success (default: `[0]`) |
 | `timeout` | `int` | Timeout in seconds |
-| `env` | `dict` | Additional environment variables |
+| `env` | `dict` | Additional environment variables. The child environment is the one in section 3.3, for both the scratch-copy preview and the apply |
 | `effects` | `"working_tree"` | Declares that the command changes only files in the working tree. Required for the step to be previewable |
 | `offline` | `bool` | Declares that the command needs no network. `true` is required for a scratch-copy preview |
 
@@ -1337,7 +1358,7 @@ A control's `when` decides whether the control applies (false: `N/A`). A step's 
 | `N/A` | Not applicable (control `when` false, or an honored not-applicable claim, feature 040) | Excluded |
 | `FAIL` | Control verified non-compliant, or a negative model finding | No |
 | `WARN` | Needs verification: no step concluded, or a step concluded the evidence is insufficient | No |
-| `ERROR` | Broken measurement: platform or API error, missing tool, evaluation error | No |
+| `ERROR` | Broken measurement: platform or API error, missing tool, evaluation error, CLI usage error | No |
 | `PENDING` | Awaiting a model judgment (`pending.kind = "llm_judgment"`) or an operator confirmation of a PASS candidate (`pending.kind = "confirmation"`) | No |
 
 `PENDING` replaces the former `PENDING_LLM` status.
@@ -1348,7 +1369,7 @@ Result fields beyond `status`:
 |-------|-------------|
 | `authority` | `dispositive` (a step concluded within its effective set), `suggestive` (no step concluded, or a model finding), `asserted` (a person confirmed it) |
 | `concluded_by` | Step handler name, `llm_judgment`, `confirmation`, `inferred_from`, or `none` |
-| `error` | `{class, cause}`; present on every ERROR. Classes include `auth`, `rate_limit`, `unavailable`, `missing_tool`, `evaluation`, `unexpected_exit` (#562), and the feature 036 classes |
+| `error` | `{class, cause}`; present on every ERROR. Classes include `auth`, `rate_limit`, `unavailable`, `missing_tool`, `evaluation`, `usage` (#752), `unexpected_exit` (#562), and the feature 036 classes |
 | `pending` | `{kind}`; present on every PENDING |
 | `candidate` | Present with `pending.kind = "confirmation"`: `verdict = "pass"`, `reasoning`, `cited_evidence`, `model`, `model_version`, `evidence_digest`, `source` (`harness` or `mcp_agent`) |
 | `confirmation` | Present on a PASS from a confirmed candidate: `confirmed_by`, `confirmed_at`, `expires_at` |
@@ -2633,6 +2654,7 @@ The following requirements have been superseded: by the handler dispatch archite
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.0.0-alpha.23 | 2026-11-17 | `exec` omits `GH_TOKEN` and `GITHUB_TOKEN` from the child environment when the value is exactly `""` (Sections 3.3, 4.4; #752). An undeclared CLI argument rejection is ERROR, class `usage`; other undeclared exits stay INCONCLUSIVE with `unexpected_exit`; a code in `pass_exit_codes` or `fail_exit_codes` stays PASS or FAIL with no class (Sections 3.3, 5.2; #752) |
 | 1.0.0-alpha.22 | 2026-10-25 | Plugin signature verification removed: it made no cryptographic check and never refused a plugin; `[plugins] allowed` is applied before a plugin left out is loaded; operator `plugins.allow_unsigned` and `plugins.trusted_publishers` fail loading; the framework TOML `[plugins]` table is not read (Sections 6.5, 6.6, 14.1; Appendix C) |
 | 1.0.0-alpha.21 | 2026-10-29 | Removed shared handlers (`[shared_handlers]`, the `shared` step key): a second control referencing a shared step got the first control's verdict without evaluating its own `expr`, and the effective configuration never resolved them; declaring either now fails loading (Section 3.0.3; Appendix C) |
 | 1.0.0-alpha.20 | 2026-10-29 | Framework selection: MCP, agent and harness state, and tool arguments name a registered framework only, never a path; a framework file given by path is refused inside the audited repository (Sections 10.5, 14.5) |

@@ -10,6 +10,7 @@ values, and a ``file_exists`` that answers for the audited repository
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -142,6 +143,36 @@ class TestShippedZizmorControls:
         result = _verify(_shipped(control_id), repo)
 
         assert result.status == "PASS"
+
+    @pytest.mark.parametrize("exit_code", [10, 11, 12, 13, 14])
+    @pytest.mark.parametrize("control_id", sorted(ZIZMOR_CONTROLS))
+    def test_severity_exit_codes_still_reach_cel(
+        self, control_id: str, exit_code: int, repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """#752: shipped finding codes stay in pass_exit_codes and the expression still decides.
+
+        ``zizmor`` is answered by a subprocess mock. A real zizmor that exits 0
+        cannot satisfy the recorded exit code, including on Windows where a
+        shell-script stand-in is not the program ``subprocess`` runs.
+        """
+        stdout = json.dumps([{"ident": "unpinned-uses"}])
+        real_run = subprocess.run
+
+        def run(cmd, *args, **kwargs):
+            if isinstance(cmd, (list, tuple)) and cmd and cmd[0] == "zizmor":
+                return subprocess.CompletedProcess(cmd, exit_code, stdout=stdout, stderr="")
+            return real_run(cmd, *args, **kwargs)
+
+        monkeypatch.setattr("darnit.sieve.builtin_handlers.subprocess.run", run)
+
+        result = _verify(_shipped(control_id), repo)
+
+        step = result.pass_history[ZIZMOR_STEP].result
+        assert step.evidence["command"][0] == "zizmor"
+        assert step.evidence["exit_code"] == exit_code
+        assert step.evidence["json"] == [{"ident": "unpinned-uses"}]
+        assert (result.status, result.concluded_by, result.resolving_pass_index) == ("PASS", "exec", ZIZMOR_STEP)
+        assert step.evidence["expr"].startswith("!output.json.exists")
 
     @pytest.mark.parametrize("control_id", sorted(ZIZMOR_CONTROLS))
     def test_no_matching_finding_is_pass(self, control_id: str, repo: Path, zizmor) -> None:

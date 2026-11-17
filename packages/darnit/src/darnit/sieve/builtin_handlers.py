@@ -114,6 +114,20 @@ _NETWORK_PATTERNS: tuple[str, ...] = (
 # an answer from the server is not a connection failure.
 _HTTP_RESPONSE_PATTERNS: tuple[str, ...] = ("the requested url returned error",)
 
+# CLI argument rejections (#752). Matched only after the classes above, and
+# only as these phrases: a bare "error:" or "invalid", exit code 2, and help
+# text are not enough. The invalid-value form is clap's
+# "invalid value '<value>' for '--<flag>'", so "invalid value in the workflow"
+# and zizmor's "error: no inputs collected" / "error: unrecognized input" stay
+# unexpected_exit.
+_CLAP_INVALID_VALUE = re.compile(r"invalid value\s+'(?:[^']*)'\s+for\s+'--")
+_USAGE_PATTERNS: tuple[str, ...] = (
+    "unexpected argument",
+    "unrecognized subcommand",
+    "a value is required",
+    "the following required arguments were not provided",
+)
+
 _STDERR_EXCERPT_CHARS = 200
 
 
@@ -139,6 +153,8 @@ def _classify_exec_failure(stderr: str, exit_code: int | None = None, executable
             return "missing_tool"
     if any(p in haystack for p in _NETWORK_PATTERNS) and not any(p in haystack for p in _HTTP_RESPONSE_PATTERNS):
         return "network"
+    if _CLAP_INVALID_VALUE.search(haystack) or any(p in haystack for p in _USAGE_PATTERNS):
+        return "usage"
     return "unexpected_exit"
 
 
@@ -351,6 +367,20 @@ def file_exists_handler(config: dict[str, Any], context: HandlerContext) -> Hand
     )
 
 
+def _drop_empty_github_tokens(env: dict[str, str]) -> None:
+    """Remove empty ``GH_TOKEN`` and ``GITHUB_TOKEN`` from a child environment.
+
+    zizmor rejects an empty string for either variable with a CLI usage error,
+    including under ``--offline``, and accepts the variable when it is unset
+    (#752). An empty string is not a usable credential. Only these two names
+    are considered, and only when the value is exactly ``""``. ``env`` is the
+    child copy; the process environment is left unchanged.
+    """
+    for name in ("GH_TOKEN", "GITHUB_TOKEN"):
+        if env.get(name) == "":
+            del env[name]
+
+
 def exec_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResult:
     """Run an external command and evaluate the result.
 
@@ -403,9 +433,12 @@ def exec_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResu
             arg = arg.replace(var, val)
         resolved_cmd.append(arg)
 
-    # Build environment
+    # Build environment. Step ``env`` overrides the parent, then an empty
+    # GitHub token is dropped (#752). Remediation preview re-enters this
+    # function in apply mode, so audit, detection, preview, and apply share it.
     env = os.environ.copy()
     env.update(env_extra)
+    _drop_empty_github_tokens(env)
 
     try:
         proc = subprocess.run(
@@ -480,8 +513,12 @@ def exec_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResu
             f"{_excerpt(' '.join(resolved_cmd))}; stderr: {excerpt}"
         )
         _log_environmental_failure(context.control_id, "exec", error_class, message)
+        # A recognized argument rejection means the check did not run (#752).
+        # Every other undeclared exit stays inconclusive so a later step can
+        # still conclude. Declared pass and fail codes never reach here.
+        status = HandlerResultStatus.ERROR if error_class == "usage" else HandlerResultStatus.INCONCLUSIVE
         return HandlerResult(
-            status=HandlerResultStatus.INCONCLUSIVE,
+            status=status,
             message=message,
             evidence=evidence,
             error_class=error_class,
