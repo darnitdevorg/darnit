@@ -17,6 +17,7 @@ of bug.
 
 from __future__ import annotations
 
+from fnmatch import fnmatchcase
 from pathlib import Path
 
 import pytest
@@ -49,6 +50,11 @@ def _pattern_files(framework: dict, control_id: str) -> list[str]:
     return []
 
 
+def _listed(name: str, files: list[str]) -> bool:
+    """True if ``name`` is read by a step listing ``files`` (an entry or a glob, case-exact)."""
+    return any(fnmatchcase(name, entry) for entry in files)
+
+
 # Controls whose pattern handler gates an llm_eval pass. Widening their
 # file lists reduces how often the LLM tier fires on non-.md repos.
 _GATED_CONTROLS = [
@@ -73,7 +79,7 @@ def test_pattern_list_covers_rst_readme(framework: dict, control_id: str):
     projects and the pipeline falls through to `llm_eval`.
     """
     files = _pattern_files(framework, control_id)
-    assert "README.rst" in files, (
+    assert _listed("README.rst", files), (
         f"{control_id}: pattern handler's `files` list must include "
         f"README.rst so the deterministic tier can resolve on rst-based "
         f"projects (see #402). Current list: {files}"
@@ -91,8 +97,8 @@ def test_pattern_list_covers_txt_and_no_ext_readme(
     and the no-extension `README` filename convention some older
     projects still use."""
     files = _pattern_files(framework, control_id)
-    assert "README.txt" in files, f"{control_id}: missing README.txt in {files}"
-    assert "README" in files, f"{control_id}: missing README in {files}"
+    assert _listed("README.txt", files), f"{control_id}: missing README.txt in {files}"
+    assert _listed("README", files), f"{control_id}: missing README in {files}"
 
 
 # A pattern step with `fail_on_miss` concludes FAIL when none of its files
@@ -115,12 +121,12 @@ def _fail_on_miss_steps() -> list[tuple[str, dict]]:
 
 @pytest.mark.parametrize(
     ("control_id", "step"),
-    [s for s in _fail_on_miss_steps() if "README.md" in s[1].get("files", [])],
+    [s for s in _fail_on_miss_steps() if _listed("README.md", s[1].get("files", []))],
     ids=lambda v: v if isinstance(v, str) else "",
 )
 def test_fail_on_miss_lists_every_readme_variant(control_id: str, step: dict):
     files = step["files"]
-    missing = [v for v in _README_VARIANTS if v not in files]
+    missing = [v for v in _README_VARIANTS if not _listed(v, files)]
     assert not missing, f"{control_id}: fail_on_miss pattern lacks {missing}: {files}"
 
 
@@ -130,4 +136,5 @@ def test_fail_on_miss_lists_every_readme_variant(control_id: str, step: dict):
 def test_fail_on_miss_lists_what_remediation_creates(framework: dict, control_id: str, step: dict):
     handlers = framework["controls"][control_id].get("remediation", {}).get("handlers", [])
     created = {h["path"] for h in handlers if h.get("handler") == "file_create"}
-    assert created <= set(step["files"]), f"{control_id}: remediation creates {created - set(step['files'])}"
+    unread = {path for path in created if not _listed(path, step["files"])}
+    assert not unread, f"{control_id}: remediation creates {unread}"
