@@ -7,6 +7,7 @@ unit test coverage.
 """
 
 import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -423,6 +424,89 @@ class TestExecHandler:
         )
         assert result.status == HandlerResultStatus.PASS
         assert len(result.evidence["stdout"]) <= 2000
+
+
+def _exec_child_env(ctx, monkeypatch: pytest.MonkeyPatch, config: dict | None = None) -> dict[str, str]:
+    """Run ``exec_handler`` against a stub command and return the child environment."""
+    captured: dict[str, dict[str, str]] = {}
+
+    def run(cmd, **kwargs):
+        captured["env"] = kwargs["env"]
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr("darnit.sieve.builtin_handlers.subprocess.run", run)
+    result = exec_handler({"command": ["zizmor"], **(config or {})}, ctx)
+    assert result.status == HandlerResultStatus.PASS
+    assert captured["env"] is not os.environ
+    return captured["env"]
+
+
+class TestExecEmptyGitHubToken:
+    """#752: an empty GitHub token is removed from the exec child environment."""
+
+    def test_empty_gh_token_from_parent_is_removed(self, ctx, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("GH_TOKEN", "")
+        monkeypatch.setenv("DARNIT_EXEC_ENV_SENTINEL", "present")
+        env = _exec_child_env(ctx, monkeypatch)
+        assert "GH_TOKEN" not in env
+        assert env["DARNIT_EXEC_ENV_SENTINEL"] == "present"
+        assert os.environ["GH_TOKEN"] == ""
+
+    def test_empty_github_token_from_parent_is_removed(self, ctx, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("GITHUB_TOKEN", "")
+        env = _exec_child_env(ctx, monkeypatch)
+        assert "GITHUB_TOKEN" not in env
+        assert os.environ["GITHUB_TOKEN"] == ""
+
+    def test_empty_tokens_from_config_env_are_removed(self, ctx, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        env = _exec_child_env(ctx, monkeypatch, {"env": {"GH_TOKEN": "", "GITHUB_TOKEN": ""}})
+        assert "GH_TOKEN" not in env
+        assert "GITHUB_TOKEN" not in env
+        assert "GH_TOKEN" not in os.environ
+        assert "GITHUB_TOKEN" not in os.environ
+
+    def test_nonempty_tokens_are_preserved(self, ctx, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("GH_TOKEN", "gh-token")
+        monkeypatch.setenv("GITHUB_TOKEN", "github-token")
+        env = _exec_child_env(ctx, monkeypatch)
+        assert env["GH_TOKEN"] == "gh-token"
+        assert env["GITHUB_TOKEN"] == "github-token"
+
+    @pytest.mark.parametrize(
+        ("empty_name", "kept_name"),
+        [("GH_TOKEN", "GITHUB_TOKEN"), ("GITHUB_TOKEN", "GH_TOKEN")],
+    )
+    def test_nonempty_alternate_token_is_preserved(
+        self, ctx, monkeypatch: pytest.MonkeyPatch, empty_name: str, kept_name: str
+    ) -> None:
+        monkeypatch.setenv(empty_name, "")
+        monkeypatch.setenv(kept_name, "kept-token")
+        env = _exec_child_env(ctx, monkeypatch)
+        assert empty_name not in env
+        assert env[kept_name] == "kept-token"
+
+    def test_config_env_is_applied_before_empty_tokens_are_removed(self, ctx, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("GH_TOKEN", "from-parent")
+        monkeypatch.setenv("GITHUB_TOKEN", "from-parent")
+        replaced = _exec_child_env(ctx, monkeypatch, {"env": {"GH_TOKEN": "", "DARNIT_TOOL_FLAG": "1"}})
+        assert "GH_TOKEN" not in replaced
+        assert replaced["GITHUB_TOKEN"] == "from-parent"
+        assert replaced["DARNIT_TOOL_FLAG"] == "1"
+
+        monkeypatch.setenv("GH_TOKEN", "")
+        kept = _exec_child_env(ctx, monkeypatch, {"env": {"GH_TOKEN": "from-config"}})
+        assert kept["GH_TOKEN"] == "from-config"
+
+    def test_parent_environment_is_unchanged(self, ctx, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("GH_TOKEN", "")
+        monkeypatch.setenv("GITHUB_TOKEN", "")
+        before = os.environ.copy()
+        _exec_child_env(ctx, monkeypatch, {"env": {"GH_TOKEN": "", "GITHUB_TOKEN": ""}})
+        assert os.environ.copy() == before
+        assert os.environ["GH_TOKEN"] == ""
+        assert os.environ["GITHUB_TOKEN"] == ""
 
 
 # =============================================================================
