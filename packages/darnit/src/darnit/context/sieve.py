@@ -631,17 +631,11 @@ class ContextSieve:
         Extracts GitHub usernames where possible (from noreply emails),
         otherwise returns 'Name <email>' for identification.
         """
+        from darnit.remediation.git_state import run_git
+
         try:
             # Get top contributors by commit count
-            result = subprocess.run(
-                [
-                    "git", "shortlog", "-sne", "--no-merges", "HEAD",
-                ],
-                cwd=local_path,
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
+            result = run_git(local_path, "shortlog", "-sne", "--no-merges", "HEAD", timeout=30)
 
             if result.returncode != 0:
                 return []

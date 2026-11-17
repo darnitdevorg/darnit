@@ -336,14 +336,10 @@ def _get_remote_url(remote_name: str, cwd: str) -> str | None:
     on the former would make every single-remote repo noisy; staying silent
     on the latter is what made a broken git install invisible.
     """
+    from darnit.remediation.git_state import run_git
+
     try:
-        result = subprocess.run(
-            ["git", "remote", "get-url", remote_name],
-            capture_output=True,
-            text=True,
-            cwd=cwd,
-            timeout=5,
-        )
+        result = run_git(cwd, "remote", "get-url", remote_name, timeout=5)
         if result.returncode == 0:
             return result.stdout.strip()
     except subprocess.TimeoutExpired:

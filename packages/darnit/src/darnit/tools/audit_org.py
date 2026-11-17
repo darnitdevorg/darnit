@@ -186,14 +186,10 @@ def _audit_single_repo(
 
 def _detect_default_branch(repo_path: str) -> str:
     """Detect the default branch name from a cloned repo."""
+    from darnit.remediation.git_state import run_git
+
     try:
-        result = subprocess.run(
-            ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
-            capture_output=True,
-            text=True,
-            cwd=repo_path,
-            timeout=5,
-        )
+        result = run_git(repo_path, "symbolic-ref", "refs/remotes/origin/HEAD", timeout=5)
         if result.returncode == 0:
             return result.stdout.strip().split("/")[-1]
     except (subprocess.SubprocessError, FileNotFoundError):

@@ -182,14 +182,10 @@ def detect_ci_run(env: Mapping[str, str] | None = None, case_insensitive_hosts: 
 
 def checkout_head(checkout: str | Path) -> str | None:
     """The commit checked out at ``checkout``, or None when it cannot be read."""
+    from darnit.remediation.git_state import run_git
+
     try:
-        result = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=checkout,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
+        result = run_git(checkout, "rev-parse", "HEAD", timeout=10)
     except (OSError, subprocess.SubprocessError):
         return None
     if result.returncode != 0:
