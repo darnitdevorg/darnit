@@ -359,3 +359,112 @@ def test_llm_enhancement_of_a_created_file_is_recorded_and_committable(stub_enha
 
     assert committed.startswith("Changes committed successfully"), committed
     assert "ARCHITECTURE.md" in committed
+
+
+def test_scheduled_file_create_paths_are_conservative():
+    """Same-run links follow only file creates that this run will perform."""
+    from darnit_baseline.remediation.orchestrator import _scheduled_file_create_paths
+
+    framework = FrameworkConfig(
+        metadata=FrameworkMetadata(name="Test", display_name="Test", version="1.0"),
+        controls={
+            "OSPS-GV-01.01": ControlConfig(
+                name="Governance",
+                description="Unconditional file_create is the first handler",
+                level=1,
+                passes=[],
+                remediation=RemediationConfig(
+                    handlers=[HandlerInvocation(handler="file_create", path="GOVERNANCE.md")],
+                ),
+            ),
+            "OSPS-GV-01.02": ControlConfig(
+                name="Maintainers",
+                description="Conditional file_create is not guaranteed",
+                level=1,
+                passes=[],
+                remediation=RemediationConfig(
+                    handlers=[
+                        HandlerInvocation(
+                            handler="file_create",
+                            path="MAINTAINERS.md",
+                            when={"detected_ecosystem": "python"},
+                        )
+                    ],
+                ),
+            ),
+            "OSPS-VM-05.02": ControlConfig(
+                name="SCA",
+                description="Conditional handler before a later file_create",
+                level=1,
+                passes=[],
+                remediation=RemediationConfig(
+                    strategy="first_match",
+                    handlers=[
+                        HandlerInvocation(handler="manual", when={"scan.app_kusari_inspector": "true"}),
+                        HandlerInvocation(handler="file_create", path=".github/workflows/sca.yml"),
+                    ],
+                ),
+            ),
+            "OSPS-QA-00": ControlConfig(
+                name="Unreachable",
+                description="Unconditional non-create first, so the later file is uncertain",
+                level=1,
+                passes=[],
+                remediation=RemediationConfig(
+                    strategy="first_match",
+                    handlers=[
+                        HandlerInvocation(handler="manual"),
+                        HandlerInvocation(handler="file_create", path="NOT-CREATED.md"),
+                    ],
+                ),
+            ),
+            "OSPS-ALL": ControlConfig(
+                name="All",
+                description="strategy all runs every unconditional file_create",
+                level=1,
+                passes=[],
+                remediation=RemediationConfig(
+                    strategy="all",
+                    handlers=[
+                        HandlerInvocation(handler="file_create", path="FILE-A.md"),
+                        HandlerInvocation(
+                            handler="file_create",
+                            path="MAYBE.md",
+                            when={"detected_ecosystem": "node"},
+                        ),
+                        HandlerInvocation(handler="file_create", path="FILE-B.md"),
+                    ],
+                ),
+            ),
+            "OSPS-HONOR": ControlConfig(
+                name="Honored",
+                description="Skipped because the claim is honored",
+                level=1,
+                passes=[],
+                remediation=RemediationConfig(
+                    handlers=[HandlerInvocation(handler="file_create", path="HONORED.md")],
+                ),
+            ),
+        },
+    )
+    control_ids = [
+        "OSPS-GV-01.01",
+        "OSPS-GV-01.02",
+        "OSPS-VM-05.02",
+        "OSPS-QA-00",
+        "OSPS-ALL",
+        "OSPS-HONOR",
+    ]
+
+    paths = _scheduled_file_create_paths(framework, control_ids, skipped={"OSPS-HONOR"})
+
+    assert "GOVERNANCE.md" in paths
+    assert paths == {"GOVERNANCE.md", "FILE-A.md", "FILE-B.md"}
+    assert ".github/workflows/sca.yml" not in paths
+    assert "NOT-CREATED.md" not in paths
+    assert "MAINTAINERS.md" not in paths
+    assert "MAYBE.md" not in paths
+    assert "HONORED.md" not in paths
+
+    honored_alone = _scheduled_file_create_paths(framework, ["OSPS-HONOR"])
+    assert honored_alone == {"HONORED.md"}

@@ -6,9 +6,21 @@ Thanks for using << REPO >>! Here are some ways to get help:
 
 ### Documentation
 
-- [README](README.md) — project overview and quickstart
-- [docs/](docs/) — architecture, guides, and policy documents
-- [CONTRIBUTING](CONTRIBUTING.md) — how to contribute
+<% if scan.readme_link %>
+- << scan.readme_link >> — project overview and quickstart
+<% else %>
+- TODO: No README was found. Add a README before linking to it.
+<% endif %>
+<% if scan.docs_link %>
+- << scan.docs_link >> — architecture, guides, and policy documents
+<% else %>
+- TODO: No docs/ directory was found. Add documentation before linking to that directory.
+<% endif %>
+<% if scan.contributing_link %>
+- << scan.contributing_link >> — how to contribute
+<% else %>
+- TODO: No CONTRIBUTING.md was found. Add a contributing guide before linking to it.
+<% endif %>
 
 ### Issues
 
@@ -20,7 +32,11 @@ If you've found a bug or have a feature request:
 
 **Please do not report security vulnerabilities through public issues.**
 
-See our [Security Policy](SECURITY.md) for responsible disclosure instructions.
+<% if scan.security_policy_link %>
+See our << scan.security_policy_link >> for responsible disclosure instructions.
+<% else %>
+TODO: No SECURITY.md was found. Document a security policy before linking to it.
+<% endif %>
 
 ## Response Times
 
@@ -29,7 +45,11 @@ maintainer availability. We appreciate your patience!
 
 ## Contributing
 
-Want to help improve << REPO >>? See our [Contributing Guide](CONTRIBUTING.md).
+<% if scan.contributing_link %>
+Want to help improve << REPO >>? See our << scan.contributing_link >>.
+<% else %>
+TODO: No CONTRIBUTING.md was found. Add a contributing guide before referring readers to it.
+<% endif %>
 
 ## Support Scope
 

@@ -5,31 +5,68 @@
 - Node.js 18 or later
 - Install dependencies:
 
+<% if scan.node_has_lockfile == 'true' and scan.node_package_manager == 'yarn' %>
+```bash
+yarn install --frozen-lockfile
+```
+<% elif scan.node_package_manager == 'yarn' %>
+```bash
+yarn install
+```
+<% elif scan.node_has_lockfile == 'true' and scan.node_package_manager == 'pnpm' %>
+```bash
+pnpm install --frozen-lockfile
+```
+<% elif scan.node_package_manager == 'pnpm' %>
+```bash
+pnpm install
+```
+<% elif scan.node_has_lockfile == 'true' and scan.node_package_manager == 'bun' %>
+```bash
+bun install --frozen-lockfile
+```
+<% elif scan.node_package_manager == 'bun' %>
+```bash
+bun install
+```
+<% elif scan.node_has_lockfile == 'true' and scan.node_package_manager == 'npm' %>
 ```bash
 npm ci
 ```
+<% elif scan.node_package_manager == 'npm' %>
+```bash
+npm install
+```
+<% else %>
+TODO: No Node package manager was identified. Install dependencies with this project's package manager before running tests.
+<% endif %>
 
 ## Running Tests
 
+<% if scan.node_test_command %>
 ```bash
 # Run the full test suite
-npm test
+<< scan.node_test_command >>
+<% if scan.node_coverage_command %>
 
 # Run with coverage
-npm run test:coverage
+<< scan.node_coverage_command >>
+<% endif %>
+<% if scan.node_watch_command %>
 
 # Run in watch mode during development
-npm run test:watch
-
-# Run a specific test file
-npx jest tests/example.test.js
+<< scan.node_watch_command >>
+<% endif %>
 ```
+<% else %>
+TODO: No test command was found. This project's test command has not been identified.
+<% endif %>
 
 ## Test Requirements
 
 - All pull requests must include tests for new functionality
 - Bug fixes should include a regression test
-- Tests must pass in CI before a pull request can be merged
+- Run the project's test command before a pull request can be merged
 
 ## Writing Tests
 

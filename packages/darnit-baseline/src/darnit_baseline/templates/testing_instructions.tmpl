@@ -2,17 +2,20 @@
 
 ## Running Tests
 
+<% if scan.test_command %>
 ```bash
 # Run the full test suite
-# TODO: Replace with your project's test command
-make test
+<< scan.test_command >>
 ```
+<% else %>
+TODO: No test command was found. This project's test command has not been identified.
+<% endif %>
 
 ## Test Requirements
 
 - All pull requests must include tests for new functionality
 - Bug fixes should include a regression test
-- Tests must pass in CI before a pull request can be merged
+- Run the project's test command before a pull request can be merged
 
 ## Writing Tests
 
