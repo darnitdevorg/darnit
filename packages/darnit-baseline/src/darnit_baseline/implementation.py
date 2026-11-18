@@ -143,8 +143,17 @@ class OSPSBaselineImplementation:
             # FileChanges for the executor to write. They record only the UTC
             # scan date, so its preview equals its apply.
             supports_plan=True,
-            # template is resolved to content by the remediation executor.
-            settings={"path", "overwrite", "content", "template", "shallow_threshold", "max_findings"},
+            # template and project_reference are read by the remediation
+            # executor.
+            settings={
+                "path",
+                "overwrite",
+                "content",
+                "template",
+                "project_reference",
+                "shallow_threshold",
+                "max_findings",
+            },
         )
         # Feature 032: ruleset-aware branch-protection verdict. Observes
         # ground truth (queries GitHub for protection state), so it may
