@@ -244,10 +244,12 @@ def detect_license_type(local_path: str) -> str | None:
 # The control only applies "when the package management system supports it",
 # so a project written only in a language with no package manager (shell
 # scripts) has nothing to list.  The detection below is deliberately
-# conservative: it concludes "unsupported" only when it positively sees shell
-# scripts and nothing from any language or manifest it recognizes.  Anything
-# else, including an empty repository, an unfamiliar language, or a scan that
-# hit its limits, is left undetected so the control runs and can FAIL.
+# conservative: it concludes "unsupported" only when the scan was complete and
+# every file it saw is a shell script or a known non-code file (documentation,
+# licenses, CI and editor configuration, images).  Anything else, including an
+# empty repository, a file in a language nobody listed, or a scan that hit
+# either of its limits (entry count or directory depth), is left undetected so
+# the control runs and can FAIL.
 
 # Manifests whose presence means a package manager is in use.
 _PACKAGE_MANIFEST_NAMES: frozenset[str] = frozenset(
@@ -280,13 +282,28 @@ _PACKAGE_MANAGED_EXTENSIONS: frozenset[str] = frozenset(
     }
 )  # fmt: skip
 
-# Source files in languages darnit does not classify; seeing one means we
-# cannot say the project has no package manager.
-_OTHER_SOURCE_EXTENSIONS: frozenset[str] = frozenset(
+# Files that are not source code in any language.  A script-only conclusion
+# requires every file to be a shell script or one of these; any other file
+# might be code in a language with a package manager, so it leaves darnit
+# uncertain.
+_NON_CODE_EXTENSIONS: frozenset[str] = frozenset(
     {
-        ".c", ".h", ".cc", ".cpp", ".cxx", ".hpp", ".m", ".mm", ".pl", ".pm",
-        ".lua", ".jl", ".hs", ".ml", ".zig", ".nim", ".r", ".clj", ".erl",
-        ".groovy", ".v", ".sol",
+        # documentation
+        ".md", ".markdown", ".rst", ".txt", ".adoc", ".asciidoc",
+        # images
+        ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".webp", ".bmp",
+        # CI, editor and tool configuration, shell completion definitions
+        ".yml", ".yaml", ".json", ".toml", ".ini", ".cfg", ".conf", ".completion",
+    }
+)  # fmt: skip
+
+# Whole file names (lower-cased) that carry no extension of their own.
+_NON_CODE_NAMES: frozenset[str] = frozenset(
+    {
+        "license", "licence", "copying", "notice", "authors", "contributors",
+        "maintainers", "codeowners", "changelog", "readme", "dockerfile",
+        "makefile", ".gitignore", ".gitattributes", ".editorconfig",
+        ".dockerignore", "allowed_signers",
     }
 )  # fmt: skip
 
@@ -304,30 +321,41 @@ _PACKAGE_SCAN_MAX_DEPTH = 4
 _PACKAGE_SCAN_MAX_ENTRIES = 5000
 
 
+def _is_non_code_file(name: str, suffix: str) -> bool:
+    """True for documentation, licenses, configuration and images."""
+    return suffix in _NON_CODE_EXTENSIONS or name.lower() in _NON_CODE_NAMES
+
+
 def detect_package_manager_support(local_path: str) -> str | None:
     """Detect whether the project is written in something a package manager covers.
 
     Returns:
         ``"supported"`` if a package manifest or package-managed source file is
-        present; ``"unsupported"`` if the repository holds shell scripts and no
-        manifest or source file in any language darnit recognizes; ``None`` if
-        uncertain (no scripts, an unclassified language, or an oversized tree).
-        Only ``"unsupported"`` can make a control not applicable.
+        present; ``"unsupported"`` if the scan was complete and every file is a
+        shell script or a known non-code file (and at least one is a script);
+        ``None`` if uncertain (no scripts, a file nobody classified, or a scan
+        that stopped at its entry or depth limit).  Only ``"unsupported"`` can
+        make a control not applicable.
     """
     root = Path(local_path)
     if not root.is_dir():
         return None
 
     seen_script = False
-    seen_other_source = False
+    seen_unclassified = False
+    depth_limited = False
     entries = 0
 
     for current, dirnames, filenames in os.walk(root):
         depth = len(Path(current).relative_to(root).parts)
         # Sorted so the scan, and a scan that hits the limit, is deterministic.
-        dirnames[:] = sorted(
-            d for d in dirnames if d not in _SKIPPED_DIRS and not d.startswith(".") and depth < _PACKAGE_SCAN_MAX_DEPTH
-        )
+        descend = sorted(d for d in dirnames if d not in _SKIPPED_DIRS and not d.startswith("."))
+        if descend and depth >= _PACKAGE_SCAN_MAX_DEPTH:
+            # Directories below the depth limit are never read, so the scan is
+            # incomplete: a manifest could be down there.
+            depth_limited = True
+            descend = []
+        dirnames[:] = descend
         for name in sorted(filenames):
             entries += 1
             if entries > _PACKAGE_SCAN_MAX_ENTRIES:
@@ -337,12 +365,12 @@ def detect_package_manager_support(local_path: str) -> str | None:
             suffix = Path(name).suffix.lower()
             if suffix in _PACKAGE_MANAGED_EXTENSIONS:
                 return "supported"
-            if suffix in _OTHER_SOURCE_EXTENSIONS:
-                seen_other_source = True
-            elif suffix in _SCRIPT_EXTENSIONS:
+            if suffix in _SCRIPT_EXTENSIONS:
                 seen_script = True
+            elif not _is_non_code_file(name, suffix):
+                seen_unclassified = True
 
-    if seen_script and not seen_other_source:
+    if seen_script and not seen_unclassified and not depth_limited:
         return "unsupported"
     return None
 

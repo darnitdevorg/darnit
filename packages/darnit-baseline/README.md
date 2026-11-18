@@ -148,7 +148,7 @@ Confirm context with the `confirm_project_data` MCP tool, which records who conf
 
 **Auto-detected without prompting:** `detected_ecosystem` (from manifest files: pyproject.toml → python, package.json → node, Cargo.toml → rust, go.mod → go) is detected automatically by `collect_auto_context()` and injected into both audit and remediation paths. It never appears in `get_pending_data` questions.
 
-`package_manager_support` is detected the same way and gates OSPS-QA-02.01, which applies only when the package management system supports a dependency list. It is `supported` when a package manifest or package-managed source file is found, and `unsupported` only when the repository holds shell scripts and nothing from any language darnit recognizes, which makes QA-02.01 N/A. When darnit cannot tell (an empty repository, docs only, an unclassified language, or a very large tree) the key is left unset and QA-02.01 runs as usual.
+`package_manager_support` is detected the same way and gates OSPS-QA-02.01, which applies only when the package management system supports a dependency list. It is `supported` when a package manifest or package-managed source file is found, and `unsupported` only when the scan was complete and every file is a shell script or a known non-code file (documentation, licenses, configuration, images), which makes QA-02.01 N/A. When darnit cannot tell (an empty repository, docs only, a file in a language darnit does not recognize, or a tree too large or too deep to scan fully) the key is left unset and QA-02.01 runs as usual.
 
 ## Remediation Capabilities
 

@@ -2,6 +2,8 @@
 
 import os
 
+import pytest
+
 from darnit.context.auto_detect import (
     _extract_hostname,
     collect_auto_context,
@@ -187,6 +189,44 @@ class TestDetectPackageManagerSupport:
         for i in range(5):
             (tmp_path / f"notes{i}.txt").write_text("x")
         assert detect_package_manager_support(str(tmp_path)) is None
+
+    def test_manifest_below_depth_limit_is_uncertain(self, tmp_path):
+        """A scan that stopped at the depth limit has not seen everything."""
+        (tmp_path / "run.sh").write_text("echo hi")
+        deep = tmp_path / "a" / "b" / "c" / "d" / "e"
+        deep.mkdir(parents=True)
+        (deep / "package.json").write_text("{}")
+        assert detect_package_manager_support(str(tmp_path)) is None
+
+    def test_manifest_at_depth_limit_is_still_found(self, tmp_path):
+        (tmp_path / "run.sh").write_text("echo hi")
+        edge = tmp_path / "a" / "b" / "c" / "d"
+        edge.mkdir(parents=True)
+        (edge / "package.json").write_text("{}")
+        assert detect_package_manager_support(str(tmp_path)) == "supported"
+
+    def test_shallow_script_project_is_not_blocked_by_depth_limit(self, tmp_path):
+        """Reaching depth 4 with nothing deeper is a complete scan."""
+        (tmp_path / "run.sh").write_text("echo hi")
+        edge = tmp_path / "a" / "b" / "c" / "d"
+        edge.mkdir(parents=True)
+        (edge / "helper.sh").write_text("echo hi")
+        assert detect_package_manager_support(str(tmp_path)) == "unsupported"
+
+    @pytest.mark.parametrize(
+        "other_file",
+        ["analysis.ipynb", "deploy.ps1", "model.fs", "main.tf", "flake.nix", "script"],
+    )
+    def test_file_nobody_classified_is_uncertain(self, tmp_path, other_file):
+        """Shell scripts plus a file darnit cannot classify must not conclude."""
+        (tmp_path / "run.sh").write_text("echo hi")
+        (tmp_path / other_file).write_text("x")
+        assert detect_package_manager_support(str(tmp_path)) is None
+
+    def test_known_non_code_files_do_not_block_the_conclusion(self, tmp_path):
+        for name in ["run.sh", "README.md", "LICENSE", "logo.png", "ci.yml", ".editorconfig", "Dockerfile"]:
+            (tmp_path / name).write_text("x")
+        assert detect_package_manager_support(str(tmp_path)) == "unsupported"
 
 
 class TestCollectAutoContextPackageManagerSupport:

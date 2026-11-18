@@ -48,11 +48,15 @@ class TestQA0201Applicability:
             [],  # empty repository
             ["README.md"],  # no code at all
             ["run.sh", "main.c"],  # a language darnit does not classify
+            ["run.sh", "analysis.ipynb"],  # a notebook is not a known non-code file
+            ["run.sh", "a/b/c/d/e/package.json"],  # below the scan's depth limit
         ],
     )
     def test_uncertain_project_is_still_checked(self, tmp_path, files_in_repo):
         for name in files_in_repo:
-            (tmp_path / name).write_text("x")
+            path = tmp_path / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("x")
         assert _applies(tmp_path) is True
 
 
