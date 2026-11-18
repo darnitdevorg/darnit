@@ -2,7 +2,6 @@
 
 **Framework:** OpenSSF Baseline v<SCRUBBED-VERSION>
 **Spec Version:** OSPS v2026.02.19
-**Generated At:** <SCRUBBED-TIMESTAMP>
 **Repository:** baseline-owner/baseline-repo
 **Level Assessed:** 1
 
