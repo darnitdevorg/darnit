@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from darnit_baseline.threat_model.discovery_models import (
     CandidateFinding,
     CodeSnippet,
@@ -194,3 +196,26 @@ class TestT018aEdgeCases:
         # 1 entry in unmitigated section
         unmitigated_rows = _table_data_rows(output, "## Unmitigated Findings")
         assert len(unmitigated_rows) == 1
+
+    def test_repository_from_caller_identity(self) -> None:
+        output = render_summary(
+            [],
+            {},
+            DiscoveryResult(),
+            GeneratorOptions(),
+            owner="whiskeytastingfoundation",
+            repo="wtf-frontend",
+        )
+        assert "| Repository | `whiskeytastingfoundation/wtf-frontend` |" in output
+
+    def test_repository_fallback_to_repo_path(self, tmp_path: Any) -> None:
+        custom_dir = tmp_path / "custom-app"
+        custom_dir.mkdir()
+        output = render_summary(
+            [],
+            {},
+            DiscoveryResult(),
+            GeneratorOptions(),
+            repo_path=str(custom_dir),
+        )
+        assert "| Repository | `custom-app` |" in output

@@ -102,6 +102,22 @@ class TestRawJsonMetadata:
         data = json.loads(render_raw_json(result, [], {}, repo_path=str(project_dir)))
         assert data["metadata"]["repository"] == "custom-service"
 
+    def test_repo_display_name_from_caller_identity(self, tmp_path: Any) -> None:
+        project_dir = tmp_path / "custom-service"
+        project_dir.mkdir()
+        result = DiscoveryResult()
+        data = json.loads(
+            render_raw_json(
+                result,
+                [],
+                {},
+                repo_path=str(project_dir),
+                owner="whiskeytastingfoundation",
+                repo="wtf-frontend",
+            )
+        )
+        assert data["metadata"]["repository"] == "whiskeytastingfoundation/wtf-frontend"
+
 
 class TestRawJsonFindings:
     """Candidate findings and sidecar mitigation serialization tests."""

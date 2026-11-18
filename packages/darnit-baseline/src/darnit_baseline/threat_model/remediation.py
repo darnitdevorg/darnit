@@ -443,6 +443,9 @@ def generate_threat_model_handler(
     # Derive output directory from the configured path's parent.
     output_dir = posixpath.dirname(path)
 
+    owner = config.get("owner") or context.owner or None
+    repo = config.get("repo") or context.repo or None
+
     try:
         contents: dict[str, str] = {
             path: render_summary(
@@ -453,6 +456,8 @@ def generate_threat_model_handler(
                 overflow_hint=overflow_hint,
                 repo_path=local_path,
                 cli_families=ts_output.cli_families,
+                owner=owner,
+                repo=repo,
             ),
             posixpath.join(output_dir, "data-flow.md"): render_data_flow(result=result, options=options),
             posixpath.join(output_dir, "raw-findings.json"): render_raw_json(
@@ -460,6 +465,8 @@ def generate_threat_model_handler(
                 all_findings=ranked,
                 sidecar_matches=sidecar_matches,
                 repo_path=local_path,
+                owner=owner,
+                repo=repo,
             ),
         }
         # Per-class detail files: findings/<slug>.md

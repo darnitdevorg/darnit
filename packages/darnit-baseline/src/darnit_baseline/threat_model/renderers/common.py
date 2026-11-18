@@ -106,24 +106,49 @@ def query_id_to_slug(query_id: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def repo_display_name(repo_path: str) -> str:
+def _remote_owner_repo(repo_path: str) -> tuple[str | None, str | None]:
+    for remote in ("origin", "upstream"):
+        try:
+            proc = subprocess.run(  # noqa: S603,S607
+                ["git", "-C", repo_path, "remote", "get-url", remote],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if proc.returncode == 0:
+                url = proc.stdout.strip().rstrip("/")
+                m = re.search(r"[:/]([^/:]+)/([^/]+?)(?:\.git)?$", url)
+                if m:
+                    return m.group(1), m.group(2)
+        except (subprocess.SubprocessError, FileNotFoundError, OSError):
+            pass
+    return None, None
+
+
+def repo_display_name(
+    repo_path: str,
+    owner: str | None = None,
+    repo: str | None = None,
+) -> str:
     """Derive a safe display name for the repository.
 
-    Tries git remote URL first (``owner/repo``), then falls back to the
-    directory basename.  Never leaks an absolute local path.
+    Uses the explicitly given repository identity first (``owner/repo``),
+    then tries git remote URL (``owner/repo``), and finally falls back to
+    the directory basename. Never leaks an absolute local path.
     """
-    try:
-        proc = subprocess.run(  # noqa: S603,S607
-            ["git", "-C", repo_path, "remote", "get-url", "origin"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        if proc.returncode == 0:
-            url = proc.stdout.strip()
-            m = re.search(r"[:/]([^/:]+/[^/]+?)(?:\.git)?$", url)
-            if m:
-                return m.group(1)
-    except (subprocess.SubprocessError, FileNotFoundError, OSError):
-        pass
-    return os.path.basename(os.path.abspath(repo_path))
+    clean_owner = (owner or "").strip().strip("/")
+    clean_repo = (repo or "").strip().strip("/")
+
+    if "/" in clean_repo:
+        return clean_repo
+
+    if clean_owner and clean_repo:
+        return f"{clean_owner}/{clean_repo}"
+
+    remote_owner, remote_repo = _remote_owner_repo(repo_path)
+    final_owner = clean_owner or remote_owner
+    final_repo = clean_repo or remote_repo or os.path.basename(os.path.abspath(repo_path))
+
+    if final_owner:
+        return f"{final_owner}/{final_repo}"
+    return final_repo

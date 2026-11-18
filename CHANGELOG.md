@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The threat model names the repository using the repository identity (`owner`
+  and `repo`) provided by the caller in `SUMMARY.md`, `raw-findings.json`, and
+  single-file Markdown drafts, falling back to git remotes (`origin`, `upstream`)
+  and directory basename only when no identity is given (fixes #754).
+
 - In the gittuf commit signature check (GT-02.01), when commits lack good
   signatures, the FAIL message states how many recent commits have a good
   signature and reports commits that could not be checked on the machine

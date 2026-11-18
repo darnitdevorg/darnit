@@ -62,10 +62,12 @@ def _render_executive_summary(
     result: DiscoveryResult,
     all_findings: list[CandidateFinding],
     repo_path: str,
+    owner: str | None = None,
+    repo: str | None = None,
 ) -> list[str]:
     md: list[str] = ["## Executive Summary", ""]
 
-    display = repo_display_name(repo_path)
+    display = repo_display_name(repo_path, owner=owner, repo=repo)
     # A date, not a time: the remediation preview must equal its apply (framework-design 4.2).
     scan_date = datetime.now(tz=UTC).date().isoformat()
 
@@ -382,6 +384,8 @@ def render_summary(
     overflow_hint: TrimmedOverflow | None = None,
     repo_path: str = ".",
     cli_families: list[Any] | None = None,
+    owner: str | None = None,
+    repo: str | None = None,
 ) -> str:
     """Render the top-level ``SUMMARY.md`` for the multi-file threat model.
 
@@ -406,6 +410,10 @@ def render_summary(
         014-cobra-threat-model). When non-empty, surfaces a ``## Entry
         Points`` / ``### CLI Entry Points`` section in the rendered
         document. When ``None`` or empty, no CLI section is emitted (FR-014).
+    owner:
+        Optional repository owner given by caller.
+    repo:
+        Optional repository name given by caller.
 
     Returns
     -------
@@ -418,7 +426,7 @@ def render_summary(
         all_findings.extend(group.findings)
 
     md: list[str] = ["# Threat Model Report", ""]
-    md.extend(_render_executive_summary(result, all_findings, repo_path))
+    md.extend(_render_executive_summary(result, all_findings, repo_path, owner=owner, repo=repo))
     md.extend(_render_top_risks(groups, sidecar_matches, options, overflow_hint))
     md.extend(_render_unmitigated(groups, sidecar_matches))
     md.extend(
