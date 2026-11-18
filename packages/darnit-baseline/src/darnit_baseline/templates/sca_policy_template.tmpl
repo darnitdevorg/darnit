@@ -2,9 +2,11 @@
 
 ## Scanning Frequency
 
-- **Every pull request**: Automated dependency review before merge
-- **Daily**: Automated vulnerability scanning of all dependencies
-- **On release**: Full dependency audit before each release
+<% if scan.ci_sca_tools %>
+Detected SCA tools: << scan.ci_sca_tools >>. The workflow file, when present, is the source for which events run the scan. This document does not add a schedule the workflow does not show.
+<% else %>
+TODO: No SCA tool was detected. Do not describe automated dependency alerts or review as configured.
+<% endif %>
 
 ## Severity Thresholds
 
@@ -17,7 +19,12 @@
 
 ## Remediation Process
 
-1. Automated alerts from << scan.ci_sca_tools | default('GitHub Dependency Review') >> — see [`.github/workflows/sca.yml`](../.github/workflows/sca.yml) for configuration
+1. <% if scan.ci_sca_tools %>Detected SCA tools: << scan.ci_sca_tools >>.<% else %>TODO: No SCA tool was detected. Do not describe automated alerts as configured.<% endif %>
+<% if scan.sca_workflow_path %>
+   See [`<< scan.sca_workflow_path >>`](../<< scan.sca_workflow_path >>) for the workflow file.
+<% else %>
+   TODO: No SCA workflow file was found. Describe where dependency review runs without linking to a missing file.
+<% endif %>
 2. Triage by maintainers to confirm applicability
 3. Apply patch, upgrade, or document as not affected (VEX)
 4. Verify fix does not introduce regressions

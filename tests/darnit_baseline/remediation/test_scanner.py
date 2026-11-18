@@ -1,6 +1,7 @@
 """Tests for the repository scanner module."""
 
 
+import json
 
 from darnit_baseline.remediation.scanner import (
     APP_CAPABILITY_MAP,
@@ -243,7 +244,10 @@ class TestScanLanguagesAndCommands:
     """Tests for _scan_languages_and_commands()."""
 
     def test_python_with_uv(self, tmp_path):
-        (tmp_path / "pyproject.toml").touch()
+        (tmp_path / "pyproject.toml").write_text(
+            "[project]\nname = 'demo'\nversion = '0.1.0'\n"
+            "dependencies = ['pytest', 'ruff']\n"
+        )
         (tmp_path / "uv.lock").touch()
 
         langs, test_cmds, lint_cmds, build_cmds = _scan_languages_and_commands(
@@ -254,7 +258,8 @@ class TestScanLanguagesAndCommands:
         assert lint_cmds["python"] == "uv run ruff check ."
 
     def test_go_project(self, tmp_path):
-        (tmp_path / "go.mod").touch()
+        (tmp_path / "go.mod").write_text("module example.com/demo\n\ngo 1.22\n")
+        (tmp_path / ".golangci.yml").write_text("run:\n  timeout: 5m\n")
 
         langs, test_cmds, lint_cmds, _ = _scan_languages_and_commands(str(tmp_path))
         assert "go" in langs
@@ -262,8 +267,8 @@ class TestScanLanguagesAndCommands:
         assert lint_cmds["go"] == "golangci-lint run"
 
     def test_multi_language(self, tmp_path):
-        (tmp_path / "pyproject.toml").touch()
-        (tmp_path / "package.json").touch()
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'demo'\ndependencies = ['pytest']\n")
+        (tmp_path / "package.json").write_text('{"scripts": {"test": "vitest run"}}\n')
 
         langs, test_cmds, _, _ = _scan_languages_and_commands(str(tmp_path))
         assert "python" in langs
@@ -375,6 +380,49 @@ class TestScanCIWorkflows:
         # CodeQL should appear only once even though found in two files
         assert tools["sast"].count("CodeQL") == 1
 
+    def test_commented_codeql_action_is_not_detected(self, tmp_path):
+        """A commented uses: entry is not an installed SAST tool."""
+        wf_dir = tmp_path / ".github" / "workflows"
+        wf_dir.mkdir(parents=True)
+        (wf_dir / "ci.yml").write_text(
+            "jobs:\n  build:\n    steps:\n"
+            "      # - uses: github/codeql-action/init@v3\n"
+            "      - run: echo hello\n"
+        )
+
+        tools = _scan_ci_workflows(str(tmp_path))
+        assert "CodeQL" not in tools.get("sast", [])
+        assert tools == {}
+
+    def test_commented_dependency_review_action_is_not_detected(self, tmp_path):
+        """A commented dependency-review action is not an SCA tool."""
+        wf_dir = tmp_path / ".github" / "workflows"
+        wf_dir.mkdir(parents=True)
+        (wf_dir / "ci.yml").write_text(
+            "jobs:\n  build:\n    steps:\n"
+            "      # - uses: actions/dependency-review-action@v4\n"
+            "      - run: echo hello\n"
+        )
+
+        tools = _scan_ci_workflows(str(tmp_path))
+        assert "GitHub Dependency Review" not in tools.get("sca", [])
+        assert tools == {}
+
+    def test_real_codeql_and_dependency_review_actions_are_detected(self, tmp_path):
+        """Uncommented uses: steps still identify CodeQL and dependency review."""
+        wf_dir = tmp_path / ".github" / "workflows"
+        wf_dir.mkdir(parents=True)
+        (wf_dir / "security.yml").write_text(
+            "jobs:\n  analyze:\n    steps:\n"
+            "      - uses: github/codeql-action/init@v3\n"
+            "      - name: Review\n"
+            "        uses: actions/dependency-review-action@v4\n"
+        )
+
+        tools = _scan_ci_workflows(str(tmp_path))
+        assert "CodeQL" in tools.get("sast", [])
+        assert "GitHub Dependency Review" in tools.get("sca", [])
+
 
 # =============================================================================
 # Existing docs scanning tests (T039)
@@ -436,7 +484,7 @@ class TestScanRepository:
         assert ctx.directory_tree.top_level == []
 
     def test_python_repo(self, tmp_path):
-        (tmp_path / "pyproject.toml").touch()
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'demo'\ndependencies = ['pytest']\n")
         (tmp_path / "uv.lock").touch()
         (tmp_path / "src" / "main").mkdir(parents=True)
         gh_dir = tmp_path / ".github"
@@ -512,3 +560,254 @@ class TestGitHubAppsCapabilityMerge:
         ctx = RepoScanContext()
         flat = flatten_scan_context(ctx)
         assert "scan.github_apps" not in flat
+
+
+# =============================================================================
+# Issue #751: test commands must come from the repository
+# =============================================================================
+
+# Commands the scanner currently invents for JavaScript. A Vue/Vite package
+# whose scripts do not include "test" must not be reported as having any of them.
+_UNVERIFIED_JS_TEST_COMMANDS = (
+    "npm test",
+    "npm run test",
+    "make test",
+    "npx jest",
+    "test:coverage",
+    "test:watch",
+)
+
+_VUE_VITE_SCRIPTS_WITHOUT_TESTS = {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+}
+
+
+def _write_vue_vite_package_json(root, scripts: dict[str, str]) -> None:
+    """Write a Vue/Vite-style package.json whose scripts are exactly ``scripts``."""
+    package = {
+        "name": "vue-vite-app",
+        "private": True,
+        "version": "0.0.0",
+        "type": "module",
+        "scripts": scripts,
+        "dependencies": {"vue": "^3.5.13"},
+        "devDependencies": {
+            "@vitejs/plugin-vue": "^5.2.1",
+            "vite": "^6.0.0",
+        },
+    }
+    (root / "package.json").write_text(json.dumps(package, indent=2) + "\n")
+
+
+def _javascript_test_claim(local_path: str) -> tuple[str, str]:
+    """Return the JavaScript test command and every place the scan publishes it."""
+    ctx = scan_repository(local_path)
+    command = ctx.test_commands.get("javascript", "").strip()
+    flat = flatten_scan_context(ctx)
+    published = "\n".join(
+        part
+        for part in (
+            command,
+            flat.get("scan.test_command", ""),
+            flat.get("scan.test_commands_all", ""),
+        )
+        if part
+    )
+    return command, published
+
+
+class TestJavaScriptTestCommandAccuracy:
+    """Issue #751: only report a JavaScript test command the repository defines."""
+
+    def test_vue_vite_without_test_script_does_not_claim_a_test_command(self, tmp_path):
+        """A package.json with dev, build, and preview has no verified test command."""
+        _write_vue_vite_package_json(tmp_path, dict(_VUE_VITE_SCRIPTS_WITHOUT_TESTS))
+
+        ctx = scan_repository(str(tmp_path))
+        assert "javascript" in ctx.languages
+
+        command, published = _javascript_test_claim(str(tmp_path))
+        invented = [item for item in _UNVERIFIED_JS_TEST_COMMANDS if item in published or item in command]
+        assert invented == [], f"scanner claimed a verified test command that package.json does not define: {invented}"
+
+    def test_vue_vite_with_test_script_identifies_that_command(self, tmp_path):
+        """scripts.test is identified for that repository and not for one without it."""
+        declared = "vitest run"
+        with_tests = tmp_path / "with-tests"
+        without_tests = tmp_path / "without-tests"
+        with_tests.mkdir()
+        without_tests.mkdir()
+        _write_vue_vite_package_json(
+            with_tests,
+            {**_VUE_VITE_SCRIPTS_WITHOUT_TESTS, "test": declared},
+        )
+        _write_vue_vite_package_json(without_tests, dict(_VUE_VITE_SCRIPTS_WITHOUT_TESTS))
+
+        ctx = scan_repository(str(with_tests))
+        assert "javascript" in ctx.languages
+        command, published = _javascript_test_claim(str(with_tests))
+        assert command, "scanner did not identify a test command"
+        assert declared in command or command in {"npm test", "npm run test"}
+        assert command in published
+
+        _, absent_claim = _javascript_test_claim(str(without_tests))
+        assert command not in absent_claim, (
+            f"scanner reported {command!r} for a package.json with scripts.test, "
+            "but that same command is also reported when no test script exists"
+        )
+
+    def test_yarn_lock_invokes_the_test_script_with_yarn(self, tmp_path):
+        """A Yarn lockfile selects yarn test when scripts.test exists."""
+        _write_vue_vite_package_json(tmp_path, {**_VUE_VITE_SCRIPTS_WITHOUT_TESTS, "test": "vitest run"})
+        (tmp_path / "yarn.lock").touch()
+
+        command, _published = _javascript_test_claim(str(tmp_path))
+        assert command == "yarn test"
+
+    def test_coverage_and_watch_require_their_own_scripts(self, tmp_path):
+        """Coverage and watch commands are published only when those scripts exist."""
+        _write_vue_vite_package_json(
+            tmp_path,
+            {
+                **_VUE_VITE_SCRIPTS_WITHOUT_TESTS,
+                "test": "vitest run",
+                "test:coverage": "vitest run --coverage",
+                "test:watch": "vitest",
+            },
+        )
+
+        ctx = scan_repository(str(tmp_path))
+        assert ctx.node_coverage_command == "npm run test:coverage"
+        assert ctx.node_watch_command == "npm run test:watch"
+
+        bare = tmp_path / "bare"
+        bare.mkdir()
+        _write_vue_vite_package_json(bare, {**_VUE_VITE_SCRIPTS_WITHOUT_TESTS, "test": "vitest run"})
+        bare_ctx = scan_repository(str(bare))
+        assert bare_ctx.test_commands.get("javascript") == "npm test"
+        assert bare_ctx.node_coverage_command is None
+        assert bare_ctx.node_watch_command is None
+
+    def test_invalid_package_json_does_not_publish_a_test_command(self, tmp_path):
+        """A package.json that does not parse contributes no test command."""
+        (tmp_path / "package.json").write_text("{ this is not json\n")
+
+        ctx = scan_repository(str(tmp_path))
+        assert "javascript" in ctx.languages
+        assert "javascript" not in ctx.test_commands
+        assert ctx.node_coverage_command is None
+
+    def test_python_without_pytest_does_not_claim_pytest(self, tmp_path):
+        """uv.lock and an empty pyproject.toml are not evidence of pytest."""
+        (tmp_path / "pyproject.toml").touch()
+        (tmp_path / "uv.lock").touch()
+
+        _langs, test_cmds, lint_cmds, _build = _scan_languages_and_commands(str(tmp_path))
+        assert "python" not in test_cmds
+        assert "python" not in lint_cmds
+
+    def test_pyproject_prose_does_not_select_pytest_or_ruff(self, tmp_path):
+        """A description that names pytest is not a dependency or a config table."""
+        (tmp_path / "pyproject.toml").write_text(
+            '[project]\nname = "demo"\ndescription = "We do not use pytest or ruff"\n'
+        )
+
+        _langs, test_cmds, lint_cmds, _build = _scan_languages_and_commands(str(tmp_path))
+        assert "pytest" not in test_cmds.get("python", "")
+        assert "python" not in lint_cmds
+
+    def test_commented_test_command_is_not_a_ci_test(self, tmp_path):
+        """npm test in a comment is not an executed step."""
+        workflow = tmp_path / ".github" / "workflows" / "ci.yml"
+        workflow.parent.mkdir(parents=True)
+        workflow.write_text(
+            "name: docs\n"
+            "on:\n"
+            "  pull_request:\n"
+            "jobs:\n"
+            "  build:\n"
+            "    steps:\n"
+            "      - run: echo hello\n"
+            "# npm test\n"
+        )
+
+        ctx = scan_repository(str(tmp_path))
+        assert ctx.ci_pr_test_workflows is None
+        assert ctx.ci_test_workflows_without_pull_request is None
+
+    def test_push_only_test_workflow_does_not_claim_pull_requests(self, tmp_path):
+        """A test command that runs only on push is not pull-request evidence."""
+        workflow = tmp_path / ".github" / "workflows" / "ci.yml"
+        workflow.parent.mkdir(parents=True)
+        workflow.write_text(
+            "name: test\n"
+            "on:\n"
+            "  push:\n"
+            "    branches: [main]\n"
+            "jobs:\n"
+            "  test:\n"
+            "    steps:\n"
+            "      - run: npm test\n"
+        )
+
+        ctx = scan_repository(str(tmp_path))
+        assert ctx.ci_pr_test_workflows is None
+        assert ctx.ci_test_workflows_without_pull_request == ".github/workflows"
+
+    def test_pull_request_workflow_executes_test_command(self, tmp_path):
+        """A pull_request job whose run step is npm test is pull-request evidence."""
+        workflow = tmp_path / ".github" / "workflows" / "ci.yml"
+        workflow.parent.mkdir(parents=True)
+        workflow.write_text(
+            "name: test\n"
+            "on: pull_request\n"
+            "jobs:\n"
+            "  test:\n"
+            "    steps:\n"
+            "      - run: npm test\n"
+        )
+
+        ctx = scan_repository(str(tmp_path))
+        assert ctx.ci_pr_test_workflows == ".github/workflows"
+        assert ctx.ci_test_workflows_without_pull_request is None
+
+    def test_package_manager_field_without_lockfile_selects_pnpm(self, tmp_path):
+        """packageManager names the test command when no lockfile is present."""
+        (tmp_path / "package.json").write_text(
+            '{"packageManager": "pnpm@9.0.0", "scripts": {"test": "vitest run"}}\n'
+        )
+
+        ctx = scan_repository(str(tmp_path))
+        assert ctx.test_commands["javascript"] == "pnpm test"
+        assert ctx.node_package_manager == "pnpm"
+        assert ctx.node_has_lockfile is False
+
+    def test_scheduled_paths_count_as_present_for_links(self, tmp_path):
+        """A file this remediation run will create may be linked before it exists."""
+        ctx = scan_repository(
+            str(tmp_path),
+            scheduled_paths={".github/workflows/sca.yml", "MAINTAINERS.md", ".github/dependabot.yml"},
+        )
+        assert ctx.sca_workflow_path == ".github/workflows/sca.yml"
+        assert ctx.maintainers_path == "MAINTAINERS.md"
+        assert ctx.dependency_update_tool == "Dependabot"
+        assert ctx.dependency_config_path == ".github/dependabot.yml"
+        assert ctx.codeowners_path is None
+
+    def test_existing_governance_files_are_recorded(self, tmp_path):
+        """Links use the path that is actually in the repository."""
+        (tmp_path / "MAINTAINERS.md").write_text("# Maintainers\n")
+        (tmp_path / ".github").mkdir()
+        (tmp_path / ".github" / "CODEOWNERS").write_text("* @team\n")
+        (tmp_path / "renovate.json").write_text("{}\n")
+
+        ctx = scan_repository(str(tmp_path))
+        assert ctx.maintainers_path == "MAINTAINERS.md"
+        assert ctx.codeowners_path == ".github/CODEOWNERS"
+        assert ctx.dependency_update_tool == "Renovate"
+        assert ctx.dependency_config_path == "renovate.json"
+        flat = flatten_scan_context(ctx)
+        assert flat["scan.maintainers_link"] == "[MAINTAINERS.md](MAINTAINERS.md)"
+        assert flat["scan.codeowners_link"] == "[CODEOWNERS](.github/CODEOWNERS)"

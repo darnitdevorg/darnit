@@ -6,32 +6,20 @@
 
 ## Running Tests
 
+<% if scan.go_test_command %>
 ```bash
 # Run the full test suite
-go test ./...
-
-# Run with verbose output
-go test -v ./...
-
-# Run with race detector
-go test -race ./...
-
-# Run with coverage
-go test -coverprofile=coverage.out ./...
-go tool cover -html=coverage.out
-
-# Run a specific test
-go test -run TestName ./...
-
-# Run benchmarks
-go test -bench=. ./...
+<< scan.go_test_command >>
 ```
+<% else %>
+TODO: No test command was found. This project's test command has not been identified.
+<% endif %>
 
 ## Test Requirements
 
 - All pull requests must include tests for new functionality
 - Bug fixes should include a regression test
-- Tests must pass in CI before a pull request can be merged
+- Run the project's test command before a pull request can be merged
 
 ## Writing Tests
 

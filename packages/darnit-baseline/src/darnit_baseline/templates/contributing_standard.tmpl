@@ -14,7 +14,13 @@ and respectable.
 2. Clone your fork: `git clone https://github.com/YOUR-USERNAME/<< REPO >>.git`
 3. Create a branch: `git checkout -b feature/your-feature-name`
 4. Make your changes
-5. Run tests: `make test` (or equivalent)
+<% if scan.test_commands_all %>
+5. Run tests:
+
+<< scan.test_commands_all >>
+<% else %>
+5. Run tests: TODO: No test command was found. This project's test command has not been identified.
+<% endif %>
 6. Commit your changes with a clear message
 7. Push to your fork: `git push origin feature/your-feature-name`
 8. Open a Pull Request

@@ -10,8 +10,16 @@ This document describes the governance model for << REPO >>.
 ### Maintainers
 
 Maintainers are responsible for the overall direction and health of the project.
-See [MAINTAINERS.md](MAINTAINERS.md) for the current list and [CODEOWNERS](CODEOWNERS)
-for code review assignments.
+<% if scan.maintainers_link %>
+See << scan.maintainers_link >> for the current list.
+<% else %>
+TODO: No MAINTAINERS.md was found. List the current maintainers here, or add that file before linking to it.
+<% endif %>
+<% if scan.codeowners_link %>
+See << scan.codeowners_link >> for code review assignments.
+<% else %>
+TODO: No CODEOWNERS file was found. Add CODEOWNERS before referring readers to code review assignments.
+<% endif %>
 
 ### Contributors
 
@@ -35,12 +43,24 @@ maintainers. Criteria include:
 
 ## Code of Conduct
 
-All participants are expected to follow our << scan.code_of_conduct_link | default('[Code of Conduct](CODE_OF_CONDUCT.md)') >>.
+<% if scan.code_of_conduct_link %>
+All participants are expected to follow our << scan.code_of_conduct_link >>.
+<% else %>
+TODO: No CODE_OF_CONDUCT.md was found. Add a code of conduct before linking to it.
+<% endif %>
 
 ## Related Documents
 
-- << scan.security_policy_link | default('[Security Policy](SECURITY.md)') >>
-- [Contributing Guide](CONTRIBUTING.md)
+<% if scan.security_policy_link %>
+- << scan.security_policy_link >>
+<% else %>
+- TODO: No SECURITY.md was found. Document a security policy before linking to it.
+<% endif %>
+<% if scan.contributing_link %>
+- << scan.contributing_link >>
+<% else %>
+- TODO: No CONTRIBUTING.md was found. Add a contributing guide before linking to it.
+<% endif %>
 
 ## Changes to Governance
 

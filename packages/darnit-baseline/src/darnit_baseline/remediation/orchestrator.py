@@ -317,6 +317,7 @@ def _apply_control_remediation(
     target: str | None = None,
     platform: Any | None = None,
     run_id: str | None = None,
+    scheduled_paths: Collection[str] | None = None,
 ) -> dict[str, Any]:
     """Apply remediation for a single control, driven entirely by TOML.
 
@@ -332,6 +333,9 @@ def _apply_control_remediation(
         platform: The run's platform session (policy, approvals, and every
             platform requirement of the run; feature 043)
         run_id: Remediation run whose manifest records this control's writes
+        scheduled_paths: Files this remediation run will create. Templates may
+            link to them; a path that is neither here nor already in the tree
+            is not linked.
 
     Returns:
         Dict with control_id, status, and result details
@@ -406,6 +410,7 @@ def _apply_control_remediation(
             target=target,
             platform=platform,
             run_id=run_id,
+            scheduled_paths=scheduled_paths,
         )
         # Tag unsafe remediations for review
         if not remediation_config.safe:
@@ -446,6 +451,7 @@ def _apply_declarative_remediation(
     target: str | None = None,
     platform: Any | None = None,
     run_id: str | None = None,
+    scheduled_paths: Collection[str] | None = None,
 ) -> dict[str, Any]:
     """Apply a declarative remediation from TOML config.
 
@@ -501,7 +507,7 @@ def _apply_declarative_remediation(
                 flatten_scan_context,
                 scan_repository,
             )
-            scan_ctx = scan_repository(local_path)
+            scan_ctx = scan_repository(local_path, scheduled_paths=scheduled_paths)
             scan_values = flatten_scan_context(scan_ctx)
         except Exception as exc:
             logger.warning(f"Repository scanning failed: {exc}")
@@ -1051,6 +1057,65 @@ def remediate_audit_findings(
     ).markdown
 
 
+def _handler_create_path(invocation: Any) -> str | None:
+    """Repository-relative ``file_create`` path, if this invocation declares one."""
+    extra = getattr(invocation, "model_extra", None) or {}
+    raw = extra.get("path")
+    if not isinstance(raw, str):
+        return None
+    path = raw.replace("\\", "/").strip()
+    while path.startswith("./"):
+        path = path[2:]
+    path = path.strip("/")
+    return path or None
+
+
+def _scheduled_file_create_paths(
+    framework: Any,
+    control_ids: Collection[str],
+    *,
+    skipped: Collection[str] = (),
+) -> set[str]:
+    """Files this run will create, predicted only when that prediction is certain.
+
+    ``skipped`` ids (honored not-applicable claims) are omitted before any
+    path is collected. A handler with ``when`` is not a guaranteed write.
+    On ``first_match``, only an unconditional ``file_create`` that is the
+    first handler is scheduled: a later create does not run when an earlier
+    handler matches, and a conditional first handler makes every later
+    create uncertain. On ``all``, every unconditional ``file_create`` runs,
+    so those paths are scheduled and conditional ones are not.
+    """
+    skipped_ids = set(skipped)
+    paths: set[str] = set()
+    controls = getattr(framework, "controls", None) or {}
+    for control_id in control_ids:
+        if control_id in skipped_ids:
+            continue
+        control = controls.get(control_id)
+        remediation = getattr(control, "remediation", None) if control else None
+        if remediation is None:
+            continue
+        handlers = list(getattr(remediation, "handlers", None) or [])
+        if not handlers:
+            continue
+        if getattr(remediation, "strategy", "all") == "first_match":
+            first = handlers[0]
+            if not getattr(first, "when", None) and getattr(first, "handler", None) == "file_create":
+                path = _handler_create_path(first)
+                if path:
+                    paths.add(path)
+            continue
+        for invocation in handlers:
+            if getattr(invocation, "when", None):
+                continue
+            if getattr(invocation, "handler", None) == "file_create":
+                path = _handler_create_path(invocation)
+                if path:
+                    paths.add(path)
+    return paths
+
+
 def run_remediation(
     local_path: str = ".",
     owner: str | None = None,
@@ -1260,6 +1325,7 @@ def run_remediation(
     # ------------------------------------------------------------------
     # Apply remediations
     # ------------------------------------------------------------------
+    scheduled_paths = _scheduled_file_create_paths(framework, remediable_ids, skipped=honored_claims)
     results = []
     for control_id in remediable_ids:
         if control_id in honored_claims:
@@ -1280,6 +1346,7 @@ def run_remediation(
             target=target,
             platform=session,
             run_id=None if dry_run else run_id,
+            scheduled_paths=scheduled_paths,
         )
         results.append(result)
 

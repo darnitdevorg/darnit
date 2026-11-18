@@ -21,4 +21,8 @@ Before each major release, the following security assessment steps are performed
 
 ### Vulnerability Reporting
 
-See [SECURITY.md](../SECURITY.md) for responsible disclosure instructions.
+<% if scan.security_policy_link_from_docs %>
+See << scan.security_policy_link_from_docs >> for responsible disclosure instructions.
+<% else %>
+TODO: No SECURITY.md was found. Document a security policy before linking to it.
+<% endif %>

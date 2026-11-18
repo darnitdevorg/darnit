@@ -10,15 +10,22 @@ All contributions must include appropriate tests:
 
 ## Running Tests Locally
 
-<< scan.test_commands_all | default('```bash
-# Run tests
-make test
-# or
-npm test
-```') >>
+<% if scan.test_commands_all %>
+<< scan.test_commands_all >>
+<% else %>
+TODO: No test command was found. This project's test command has not been identified.
+<% endif %>
 
 ## CI Checks
 
-All pull requests are tested in CI — see [`.github/workflows/`](../.github/workflows/)
-for workflow configuration. Tests must pass before merge. Maintainers may request
-additional test coverage during review.
+<% if scan.ci_pr_test_workflows %>
+Pull requests are tested in CI. See [`.github/workflows/`](../<< scan.ci_pr_test_workflows >>/)
+for the workflow that runs tests. Maintainers may request additional test coverage during review.
+<% elif scan.ci_test_workflows_without_pull_request %>
+A workflow runs tests, and no pull-request trigger was found for that command.
+TODO: Do not claim pull requests are tested in CI. See [`.github/workflows/`](../<< scan.ci_test_workflows_without_pull_request >>/)
+for the workflow that was found. Maintainers may request additional test coverage during review.
+<% else %>
+TODO: No CI workflow that runs tests was found. Do not assume tests run in CI until a workflow is configured.
+Maintainers may request additional test coverage during review.
+<% endif %>

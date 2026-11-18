@@ -3,35 +3,36 @@
 ## Prerequisites
 
 - Python 3.11 or later
-- Install development dependencies:
+- Install this project's dependencies before running tests.
 
+<% if scan.package_manager == 'uv' %>
 ```bash
-pip install -e ".[dev]"
-# or with uv:
-uv pip install -e ".[dev]"
+uv sync
 ```
+<% elif scan.package_manager == 'poetry' %>
+```bash
+poetry install
+```
+<% else %>
+TODO: No uv or Poetry lockfile was found. Install dependencies with this project's package manager.
+<% endif %>
 
 ## Running Tests
 
+<% if scan.python_test_command %>
 ```bash
 # Run the full test suite
-pytest tests/ -v
-
-# Run with coverage
-pytest tests/ --cov --cov-report=term-missing
-
-# Run a specific test file
-pytest tests/test_example.py -v
-
-# Run tests matching a pattern
-pytest tests/ -k "test_pattern" -v
+<< scan.python_test_command >>
 ```
+<% else %>
+TODO: No test command was found. This project's test command has not been identified.
+<% endif %>
 
 ## Test Requirements
 
 - All pull requests must include tests for new functionality
 - Bug fixes should include a regression test
-- Tests must pass in CI before a pull request can be merged
+- Run the project's test command before a pull request can be merged
 
 ## Writing Tests
 
