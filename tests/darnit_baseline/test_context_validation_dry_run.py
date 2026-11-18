@@ -241,8 +241,24 @@ class TestPreflightContextCheck:
     """CRITICAL: Verify pre-flight check blocks remediation until context is confirmed."""
 
     @pytest.mark.unit
-    def test_preflight_blocks_governance_domain(self, temp_repo):
-        """Pre-flight should aggregate context needs across governance controls."""
+    def test_preflight_blocks_when_all_controls_require_context(self, temp_repo):
+        """When all failing controls need unconfirmed context, pre-flight blocks the entire run."""
+        from unittest.mock import patch
+
+        from darnit_baseline.remediation.orchestrator import remediate_audit_findings
+
+        with patch("darnit.core.audit_cache.read_audit_cache", return_value={"results": [{"id": "OSPS-GV-01.01", "status": "FAIL"}]}):
+            result = remediate_audit_findings(
+                local_path=temp_repo,
+                dry_run=True,
+            )
+
+        assert "BLOCKED: Remediation Cannot Proceed" in result
+        assert "Would Apply" not in result, "a blocked run previews nothing"
+
+    @pytest.mark.unit
+    def test_preflight_applies_confirmed_and_reports_unconfirmed(self, temp_repo):
+        """Controls without context needs proceed, while unconfirmed ones report needs_confirmation (#767)."""
         from darnit_baseline.remediation.orchestrator import remediate_audit_findings
 
         result = remediate_audit_findings(
@@ -251,8 +267,10 @@ class TestPreflightContextCheck:
             dry_run=True,
         )
 
-        assert "BLOCKED: Remediation Cannot Proceed" in result
-        assert "Would Apply" not in result, "a blocked run previews nothing"
+        assert "Would Apply" in result
+        assert "OSPS-GV-03.01" in result
+        assert "Needs Confirmation" in result
+        assert "OSPS-GV-01.01" in result
 
     @pytest.mark.unit
     def test_preflight_allows_after_confirmation(self, temp_repo, trusted_target):

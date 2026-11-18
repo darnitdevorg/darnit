@@ -1287,16 +1287,27 @@ def run_remediation(
     # ------------------------------------------------------------------
     # Pre-flight context check (prompt for ALL missing context upfront)
     # ------------------------------------------------------------------
+    active_remediable_ids = [c for c in remediable_ids if c not in honored_claims]
     context_ready, context_info = _preflight_context_check(
-        control_ids=remediable_ids,
+        control_ids=active_remediable_ids,
         local_path=local_path,
         owner=owner,
         repo=repo,
         target=target,
     )
 
+    ready_control_ids = active_remediable_ids
     if not context_ready:
-        return RemediationReport(_format_preflight_prompt(context_info, local_path))
+        missing_keys = set(context_info.get("missing_context", []))
+        key_to_controls = context_info.get("key_to_controls", {})
+        blocked_control_ids = {
+            cid
+            for key in missing_keys
+            for cid in key_to_controls.get(key, [])
+        }
+        ready_control_ids = [c for c in active_remediable_ids if c not in blocked_control_ids]
+        if not ready_control_ids:
+            return RemediationReport(_format_preflight_prompt(context_info, local_path))
 
     # ------------------------------------------------------------------
     # Platform session: one policy, one set of approvals, and every
@@ -1317,7 +1328,7 @@ def run_remediation(
     )
     session = PlatformSession(
         repository,
-        platform_requests(framework, [c for c in remediable_ids if c not in honored_claims]),
+        platform_requests(framework, [c for c in ready_control_ids if c not in honored_claims]),
         policy=policy,
         approvals=approve or [],
     )

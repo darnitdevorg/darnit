@@ -44,7 +44,7 @@ class TestRemediationE2EFlow:
             dry_run=False,
         )
 
-        assert "BLOCKED: Remediation Cannot Proceed" in result1 or "Needs Confirmation" in result1
+        assert "BLOCKED: Remediation Cannot Proceed" in result1 or "needs_confirmation" in result1.lower()
         assert "confirm_project_data" in result1
         assert not (Path(temp_git_repo) / "GOVERNANCE.md").exists()
 

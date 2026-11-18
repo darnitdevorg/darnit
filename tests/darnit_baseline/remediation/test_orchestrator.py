@@ -244,6 +244,75 @@ def test_remediate_audit_findings_dry_run(
     assert not (temp_git_repo / "GOVERNANCE.md").exists()
 
 
+@patch("darnit_baseline.remediation.orchestrator._get_framework_config")
+@patch("darnit.core.audit_cache.read_audit_cache")
+@patch("darnit_baseline.remediation.orchestrator._preflight_context_check")
+def test_remediate_audit_findings_unconfirmed_context_partitions_controls(
+    mock_preflight,
+    mock_read_cache,
+    mock_get_framework,
+    mock_framework,
+    temp_git_repo,
+):
+    """When some controls require unconfirmed context and others are ready,
+
+    the ready controls proceed to Would Apply while unconfirmed ones report
+    needs_confirmation (#767).
+    """
+    mock_get_framework.return_value = mock_framework
+    mock_read_cache.return_value = {
+        "results": [
+            {"id": "OSPS-GV-01.01", "status": "FAIL"},
+            {"id": "OSPS-AC-01.01", "status": "FAIL"},
+        ]
+    }
+    # GV-01.01 is blocked by missing context, AC-01.01 is ready
+    mock_preflight.return_value = (
+        False,
+        {
+            "missing_context": ["maintainers"],
+            "key_to_controls": {"maintainers": ["OSPS-GV-01.01"]},
+            "prompts": ["Please confirm maintainers."],
+            "auto_detected": {},
+            "candidates": {},
+        },
+    )
+
+    with patch(
+        "darnit_baseline.remediation.orchestrator._apply_control_remediation"
+    ) as mock_apply:
+        mock_apply.side_effect = lambda control_id, **kwargs: (
+            {
+                "control_id": control_id,
+                "status": "needs_confirmation",
+                "description": "Test Governance Control",
+                "controls": [control_id],
+                "missing_context": ["maintainers"],
+                "result": "Please confirm maintainers.",
+            }
+            if control_id == "OSPS-GV-01.01"
+            else {
+                "control_id": control_id,
+                "status": "would_apply",
+                "description": "Test Access Control",
+                "controls": [control_id],
+                "plan": [],
+            }
+        )
+        result = remediate_audit_findings(
+            local_path=str(temp_git_repo),
+            owner="test-owner",
+            repo="test-repo",
+            dry_run=True,
+        )
+
+    assert "Would Apply" in result
+    assert "Needs Confirmation" in result
+    assert "OSPS-GV-01.01" in result
+    assert "OSPS-AC-01.01" in result
+    assert "BLOCKED: Remediation Cannot Proceed" not in result
+
+
 # ---------------------------------------------------------
 # Phase 4: Side Effects (LLM Enhancement)
 # ---------------------------------------------------------
