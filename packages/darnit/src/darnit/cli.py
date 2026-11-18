@@ -438,6 +438,7 @@ def cmd_plan(args: argparse.Namespace) -> int:
         load_effective_config_by_name,
         refuse_framework_inside_checkout,
     )
+    from darnit.core.composition import CompositionError
     from darnit.filtering import matches_filters, parse_tags_arg
 
     repo_path = Path(args.repo_path).resolve()
@@ -453,7 +454,7 @@ def cmd_plan(args: argparse.Namespace) -> int:
                 config = load_effective_config_by_name(args.framework)
         else:
             config = load_effective_config_auto()
-    except (ValueError, FileNotFoundError) as e:
+    except (ValueError, FileNotFoundError, CompositionError) as e:
         logger.error(f"Failed to load framework: {e}")
         return 1
 
