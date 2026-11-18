@@ -544,6 +544,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Composite frameworks now fail to load when `include_controls` names an ID
+  absent from the source framework. The error lists the missing IDs and the
+  source. Update stale IDs in custom framework TOML before loading it (#723).
+
 - OpenSSF Baseline OSPS-AC-02.01 was renamed from `AllowForking` to
   `RestrictCollaboratorPermissions`. It now records the organization's base
   repository permission as evidence and keeps invitation verification manual.

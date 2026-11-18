@@ -1,6 +1,6 @@
 # Darnit Framework Design Specification
 
-> **Version**: 1.0.0-alpha.23
+> **Version**: 1.0.0-alpha.24
 > **Status**: Authoritative
 > **Last Updated**: 2026-11-17
 
@@ -88,6 +88,10 @@ url = "https://..."               # OPTIONAL: Spec URL
 [controls]
 # Control definitions (main content)
 ```
+
+Each ID in a `[[compose]]` block's `include_controls` list must exist in that block's source framework.
+An unknown ID fails framework loading and the error names the source and the missing ID.
+Other filters can still narrow a valid selection to zero controls.
 
 ### 2.2 Control Definition
 
@@ -2655,6 +2659,7 @@ The following requirements have been superseded: by the handler dispatch archite
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.0.0-alpha.24 | 2026-11-17 | Composite framework loading fails when `include_controls` lists an ID absent from its source (Section 2.1; feature 013; #723) |
 | 1.0.0-alpha.23 | 2026-11-17 | `exec` omits `GH_TOKEN` and `GITHUB_TOKEN` from the child environment when the value is exactly `""` (Sections 3.3, 4.4; #752). An undeclared CLI argument rejection is ERROR, class `usage`; other undeclared exits stay INCONCLUSIVE with `unexpected_exit`; a code in `pass_exit_codes` or `fail_exit_codes` stays PASS or FAIL with no class (Sections 3.3, 5.2; #752) |
 | 1.0.0-alpha.22 | 2026-10-25 | Plugin signature verification removed: it made no cryptographic check and never refused a plugin; `[plugins] allowed` is applied before a plugin left out is loaded; operator `plugins.allow_unsigned` and `plugins.trusted_publishers` fail loading; the framework TOML `[plugins]` table is not read (Sections 6.5, 6.6, 14.1; Appendix C) |
 | 1.0.0-alpha.21 | 2026-10-29 | Removed shared handlers (`[shared_handlers]`, the `shared` step key): a second control referencing a shared step got the first control's verdict without evaluating its own `expr`, and the effective configuration never resolved them; declaring either now fails loading (Section 3.0.3; Appendix C) |

@@ -87,7 +87,7 @@ The underscore prefix on `_composed_from` / `_original_control_id` follows Pytho
 - **Decision**: Per FR-003, multiple inclusion expressions within a single `[[compose]]` block are evaluated as an **intersection**:
   - If `include_all = true`, start with the source's full control set.
   - Else if `include_levels` is present, start with controls whose level ∈ `include_levels`.
-  - Then if `include_controls` is present, intersect: only keep controls whose ID ∈ `include_controls`.
+  - Then if `include_controls` is present, intersect: validate every listed ID against the resolved source before filtering, then keep controls whose ID ∈ `include_controls`. An unknown ID fails loading and the error names the source and missing IDs.
   - Then if `include_tags` is present, intersect: only keep controls whose tags satisfy ALL named tag-value pairs.
   - Finally, `exclude_controls` removes its named IDs from whatever set is left.
 - **Rationale**: Intersection-semantics for inclusion is the principle of least surprise — adding a second selector narrows the result, never broadens it. "Union of selectors" would create surprising behavior (e.g., `include_levels = [1]` + `include_controls = ["L3-CTRL"]` would silently pull a level-3 control, which the level filter implied was excluded).
