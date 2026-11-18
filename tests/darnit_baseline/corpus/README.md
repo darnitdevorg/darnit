@@ -45,6 +45,7 @@ change.
 | `platform-permission-denied` | 403 and 401 from the platform |
 | `platform-rate-limited` | 429, and a 403 whose message is a rate limit |
 | `platform-org-2fa-hidden` | Org hides its 2FA requirement; the auditor has 2FA |
+| `platform-user-2fa-enabled` | User-owned repo; the auditor's 2FA is evidence only |
 | `zizmor-no-findings-document` | zizmor exits 0 and prints nothing; the workflow has a template injection and `write-all` (feature 044, #479) |
 | `plugin-redefines-manual` | A plugin tries to register `manual` as a step type that concludes PASS (feature 044, #486) |
 | `docs-rst` | Documentation in README.rst and CONTRIBUTING.rst (#702) |

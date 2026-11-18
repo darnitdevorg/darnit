@@ -369,6 +369,14 @@ detect = [
     { handler = "file_exists", files = [".github"], value_if_pass = "github" },
 ]
 
+# Confirmed values take precedence over detection under the context trust model.
+[context.github_owner_type]
+prompt = "What type of account owns the GitHub repository?"
+type = "enum"
+values = ["User", "Organization"]
+auto_detect = true
+detect = [{ handler = "github_repository_owner_type" }]
+
 [context.license_type]
 type = "enum"
 prompt = "Which license should darnit use when it creates a LICENSE file?"
@@ -425,21 +433,25 @@ enforcement when the repository sits inside an organization.
 
 location_hint = ".github/settings.yml"
 
-# gh_api (feature 041): 404 (a user, not an org) and 401/403 are ERROR,
-# never FAIL. No has() guard: the field is only visible to org owners, so
-# an absent field is an evaluation ERROR (unmeasured), not a FAIL.
+# A confirmed or detected user owner skips the organization lookup.
+# If detection fails, the missing key leaves this step eligible, preserving
+# the API error for 404/401/403. No has() guard: only org owners can read
+# the 2FA requirement, and a hidden field must surface an evaluation error.
 [[controls."OSPS-AC-01.01".passes]]
+when = { github_owner_type = "Organization" }
 handler = "gh_api"
 endpoint = "/orgs/$OWNER"
 expr = 'response.body.two_factor_requirement_enabled == true'
 
-# Evidence only: /user describes the account running the audit, not the
-# project. It also runs when an org hides its 2FA field from this token,
-# where concluding PASS from the auditor's own 2FA would be a false PASS.
-# Requires `gh auth refresh -s read:user` to see the field. Only the fields
-# the check reads are kept, so the auditor's profile never reaches reports
-# or attestations (feature 044).
+# /user describes the signed-in auditor, who may not be the repository owner.
+# Keep concludes = [] so the auditor's MFA cannot produce a PASS (feature 041).
+# The MFA field may be hidden without read:user. A missing field is unreadable and produces an
+# evaluation error. With GitHub CLI, use
+# gh auth refresh -s read:user to request that scope.
+# Keep evidence_fields limited to login and MFA status so unrelated profile
+# data stays out of audit reports and attestations (feature 044).
 [[controls."OSPS-AC-01.01".passes]]
+when = { github_owner_type = "User" }
 handler = "gh_api"
 endpoint = "/user"
 expr = 'response.body.two_factor_authentication == true'
@@ -447,11 +459,16 @@ evidence_fields = ["login", "two_factor_authentication"]
 concludes = []
 
 [[controls."OSPS-AC-01.01".passes]]
+when = { github_owner_type = "Organization" }
+handler = "manual"
+steps = ["In Organization Settings → Authentication security, verify that MFA is required."]
+
+[[controls."OSPS-AC-01.01".passes]]
+when = { github_owner_type = "User" }
 handler = "manual"
 steps = [
-    "Navigate to Organization Settings → Security",
-    "Verify 'Require two-factor authentication' is enabled",
-    "(For user-owned repos) Verify the maintainer has 2FA enabled on their account: Settings → Password and authentication",
+    "This repository is user-owned. Verify that the owner has MFA enabled under GitHub Settings → Password and authentication.",
+    "If the signed-in account's MFA field is unavailable, check the setting directly or grant gh the read:user scope.",
 ]
 
 # Manual under every remediation policy (feature 043): GitHub offers no API

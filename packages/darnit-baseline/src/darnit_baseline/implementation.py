@@ -126,6 +126,7 @@ class OSPSBaselineImplementation:
         from darnit.sieve.handler_registry import get_sieve_handler_registry
 
         from .branch_protection import github_branch_protection_handler
+        from .github_context import github_repository_owner_type
         from .github_workflows import github_workflows_present_handler
         from .threat_model.remediation import generate_threat_model_handler
 
@@ -155,6 +156,13 @@ class OSPSBaselineImplementation:
             description="Ruleset-aware branch-protection verdict",
             ceiling={"pass", "fail"},
             settings={"requirement", "required_approvals_minimum", "owner", "repo", "branch"},
+        )
+        sieve_registry.register(
+            "github_repository_owner_type",
+            phase="deterministic",
+            handler_fn=github_repository_owner_type,
+            description="Detect the GitHub repository owner type for context routing",
+            ceiling=frozenset(),
         )
         # #584: WARN, concluding under {fail}, when there is no workflow file
         # (or, with `actions = true`, no action definition either) to audit;

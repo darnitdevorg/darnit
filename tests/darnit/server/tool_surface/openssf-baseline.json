@@ -436,6 +436,19 @@
           "default": null,
           "title": "Expires At"
         },
+        "github_owner_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What type of account owns the GitHub repository? One of: User, Organization.",
+          "title": "Github Owner Type"
+        },
         "governance_model": {
           "anyOf": [
             {
