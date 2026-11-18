@@ -203,3 +203,39 @@ class TestRemediationThroughTheExecutor:
 
         assert list(elsewhere.iterdir()) == []
         assert result.changed is False
+
+    def test_created_summary_is_recorded_as_the_threat_model(self, repo: Path) -> None:
+        result = self._apply(repo)
+
+        project = (repo / ".project" / "project.yaml").read_text(encoding="utf-8")
+        assert "threat_model:\n    path: docs/threatmodel/SUMMARY.md\n" in project
+        notes = [e["project_reference"] for e in result.details["handlers"] if "project_reference" in e]
+        assert notes == [
+            {"reference": "security.threat_model", "path": "docs/threatmodel/SUMMARY.md", "recorded": True}
+        ]
+
+    def test_a_different_existing_reference_is_kept(self, repo: Path) -> None:
+        project = "name: repo\nsecurity:\n  threat_model:\n    path: docs/THREAT_MODEL.md\n"
+        (repo / ".project").mkdir()
+        (repo / ".project" / "project.yaml").write_text(project, encoding="utf-8")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-q", "--no-gpg-sign", "-m", "project")
+
+        result = self._apply(repo)
+
+        assert (repo / "docs" / "threatmodel" / "SUMMARY.md").exists()
+        assert (repo / ".project" / "project.yaml").read_text(encoding="utf-8") == project
+        [note] = [e["project_reference"] for e in result.details["handlers"] if "project_reference" in e]
+        assert note["recorded"] is False
+        assert note["reason"] == "security.threat_model already names docs/THREAT_MODEL.md"
+
+    def test_an_existing_threat_model_records_nothing(self, repo: Path) -> None:
+        (repo / "docs" / "threatmodel").mkdir(parents=True)
+        (repo / "docs" / "threatmodel" / "SUMMARY.md").write_text("# Threat model\n", encoding="utf-8")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-q", "--no-gpg-sign", "-m", "threat model")
+
+        result = self._apply(repo)
+
+        assert result.changed is False, result.details
+        assert not (repo / ".project").exists()
