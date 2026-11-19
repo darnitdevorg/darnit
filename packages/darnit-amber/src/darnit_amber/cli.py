@@ -53,7 +53,12 @@ def main(argv: list[str] | None = None) -> int:
         help="run the Amber audit and the experiment under Witness; write a run bundle",
         epilog="darnit-amber run --key k.pem -- ./run_experiment.sh   (inside the artifact checkout; outputs are inferred)",
     )
-    r.add_argument("artifact", nargs="?", default=".", help="local path or git URL of the artifact (default: .)")
+    r.add_argument(
+        "artifact",
+        nargs="?",
+        default=".",
+        help="local path, git URL, or archive (.zip/.tar.gz) of the artifact (default: .)",
+    )
     r.add_argument("--ref", help="commit, branch or tag to check out (URL artifacts only)")
     r.add_argument("--key", type=Path, help="signing key (PEM); default: a key generated once under darnit's data dir")
     r.add_argument("--tsa", default=TSA_URL, help="RFC 3161 timestamp authority (default: Sigstore's)")
@@ -81,7 +86,7 @@ def main(argv: list[str] | None = None) -> int:
             _add_verify_args(q)
             q.add_argument("--yes", action="store_true", help="execute the bundle's command without asking")
             q.add_argument(
-                "--artifact", help="path or URL to clone when the bundle names a local artifact (local/<name>)"
+                "--artifact", help="path or URL to clone or fetch when the bundle names a local artifact or archive"
             )
             q.add_argument("--key", type=Path, help="signing key for this rerun (default: the generated one)")
             q.add_argument("--tsa", default=TSA_URL)
