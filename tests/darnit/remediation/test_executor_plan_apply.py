@@ -466,3 +466,117 @@ class TestApproveItem:
 
         assert asked == [["it cannot be previewed exactly"]]
         assert (approval is not None) is answer
+
+
+class TestOneCreationPerPath:
+    """Three controls plan the same new file; the apply writes it once (#755).
+
+    The preview must say so: the first control creates the path, the later
+    ones report ``created_by_other_control`` naming it, in preview and apply
+    alike, so the plan items carry the same digest in both.
+    """
+
+    SUPPORT_A = HandlerInvocation(handler="file_create", path="SUPPORT.md", content="# Support\n")
+    SUPPORT_B = HandlerInvocation(handler="file_create", path="SUPPORT.md", content="# Support scope\n")
+    SUPPORT_C = HandlerInvocation(handler="file_create", path="SUPPORT.md", content="# End of support\n")
+
+    def _run(self, repo: Path, dry_run: bool) -> dict[str, list[FileChange]]:
+        executor = _executor(repo)
+        out = {}
+        for control, inv in (("DO-03", self.SUPPORT_A), ("DO-04", self.SUPPORT_B), ("DO-05", self.SUPPORT_C)):
+            result = executor.execute(control, _config(inv), dry_run=dry_run)
+            assert result.success, result.message
+            out[control] = [c for item in result.plan for c in item.file_changes] if dry_run else result.file_changes
+            out[f"{control}:digest"] = [item.digest for item in result.plan]
+        return out
+
+    def test_preview_names_the_creating_control(self, repo: Path, data_root: Path) -> None:
+        before = snapshot(repo)
+        out = self._run(repo, dry_run=True)
+        assert snapshot(repo) == before
+        assert [c.action for c in out["DO-03"]] == ["create"]
+        for later in ("DO-04", "DO-05"):
+            [c] = out[later]
+            assert (c.action, c.reason, c.created_by) == ("none", "created_by_other_control", "DO-03")
+            assert c.content is None
+
+    def test_apply_writes_once_and_reports_the_same_plan(self, repo: Path, data_root: Path) -> None:
+        preview = self._run(repo, dry_run=True)
+        applied = self._run(repo, dry_run=False)
+        assert (repo / "SUPPORT.md").read_text(encoding="utf-8") == "# Support\n"
+        assert [c.action for c in applied["DO-03"]] == ["create"]
+        for later in ("DO-04", "DO-05"):
+            [c] = applied[later]
+            assert (c.action, c.reason, c.created_by) == ("none", "created_by_other_control", "DO-03")
+            # The apply recomputes each control's plan; it must match what the person approved in the preview.
+            assert applied[f"{later}:digest"] == preview[f"{later}:digest"]
+
+    def test_a_control_that_did_not_write_does_not_keep_the_claim(self, repo: Path, data_root: Path) -> None:
+        """If the claimer's write is refused, the next control's create goes through and claims the path."""
+        executor = _executor(repo)
+        (repo / "SUPPORT.md").write_text("theirs\n", encoding="utf-8")
+        first = executor.execute("DO-03", _config(self.SUPPORT_A), dry_run=False)
+        [c] = first.file_changes
+        assert (c.action, c.reason) == ("none", "already_exists")  # the file was there before this run
+        (repo / "SUPPORT.md").unlink()
+        second = executor.execute("DO-04", _config(self.SUPPORT_B), dry_run=False)
+        [c] = second.file_changes
+        assert c.action == "create" and (repo / "SUPPORT.md").read_text(encoding="utf-8") == "# Support scope\n"
+
+    def test_the_same_control_may_plan_its_own_path_twice(self, repo: Path, data_root: Path) -> None:
+        """Two steps of one control on one path are that control's business, not a cross-control claim."""
+        result = _executor(repo).execute("DO-03", _config(self.SUPPORT_A, self.SUPPORT_B), dry_run=True)
+        actions = [c.action for item in result.plan for c in item.file_changes]
+        assert actions == ["create", "create"]
+
+
+def test_run_output_names_the_creating_control() -> None:
+    """`darnit run` prints the control that creates the path, not a bare reason code (#755)."""
+    from darnit.cli import _remediation_lines
+
+    results = [
+        {
+            "control_id": "OSPS-DO-04.01",
+            "plan": [
+                {
+                    "step": "file_create[0]",
+                    "file_changes": [
+                        {
+                            "path": "SUPPORT.md",
+                            "action": "none",
+                            "reason": "created_by_other_control",
+                            "created_by": "OSPS-DO-03.01",
+                        }
+                    ],
+                    "commands": [],
+                    "previewable": True,
+                    "requires_individual_approval": False,
+                    "digest": "d",
+                }
+            ],
+        }
+    ]
+    lines = _remediation_lines(results, applied=False)
+    assert any(line.strip() == "SUPPORT.md: not written (created by OSPS-DO-03.01)" for line in lines), lines
+    results[0]["file_changes"] = results[0]["plan"][0]["file_changes"]
+    lines = _remediation_lines(results, applied=True)
+    assert any(line.strip() == "SUPPORT.md: not written (created by OSPS-DO-03.01)" for line in lines), lines
+
+
+def test_every_report_names_the_creating_control():
+    """The MCP preview (what a person approves from), the approval text and the CLI all say
+    `not written (created by OSPS-DO-03.01)`, not the bare reason code (review of #758)."""
+    from darnit.remediation.plan import PlanItem
+    from darnit.remediation.platform.policy import describe_plan_item
+    from darnit_baseline.remediation.orchestrator import _file_lines as mcp_file_lines
+
+    change = FileChange(path="SUPPORT.md", action="none", reason="created_by_other_control", created_by="OSPS-DO-03.01")
+    assert change.not_written_because() == "created by OSPS-DO-03.01"
+    assert mcp_file_lines([change], preview=True) == ["- `SUPPORT.md`: not written (created by OSPS-DO-03.01)"]
+    assert mcp_file_lines([change], preview=False) == ["- `SUPPORT.md`: not written (created by OSPS-DO-03.01)"]
+    item = PlanItem(
+        control_id="OSPS-DO-04.01", step="file_create[0]", file_changes=[change], commands=[], previewable=True
+    )
+    assert "  SUPPORT.md: not written (created by OSPS-DO-03.01)" in describe_plan_item(item, [])
+    plain = FileChange(path="SUPPORT.md", action="none", reason="already_exists")
+    assert plain.not_written_because() == "already_exists"

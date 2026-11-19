@@ -1,8 +1,8 @@
 # Darnit Framework Design Specification
 
-> **Version**: 1.0.0-alpha.24
+> **Version**: 1.0.0-alpha.25
 > **Status**: Authoritative
-> **Last Updated**: 2026-11-17
+> **Last Updated**: 2026-11-19
 
 This specification defines the authoritative design of the Darnit framework, including the sieve orchestrator, TOML schema, built-in pass types, remediation actions, and plugin protocol.
 
@@ -915,7 +915,7 @@ Every remediation runs in one of two modes. The executor passes the mode to each
 | Field | Type | Description |
 |-------|------|-------------|
 | `path` | `str` | Repository-relative path |
-| `action` | `"create"` \| `"modify"` \| `"none"` | `none` carries a `reason`: `already_exists`, `user_changes_present`, or `when_not_met` |
+| `action` | `"create"` \| `"modify"` \| `"none"` | `none` carries a `reason`: `already_exists`, `user_changes_present`, `when_not_met`, or `created_by_other_control` (with `created_by`, the control that creates the path in this run; 15.2) |
 | `ignored` | `bool` | The path matches the repository's ignore rules: it is written but never staged or committed (15.7) |
 | `content` | `str \| None` | Resulting content for `create` and `modify` |
 | `before_digest`, `after_digest` | `str \| None` | Content digests before and after |
@@ -2280,6 +2280,13 @@ A person approves by digest: an apply call carries the approved digests (`approv
 - An apply flag alone (`dry_run = False`) never approves anything. An agent passes only the digests the person approved.
 - Approvals are single-use and are recorded only in the run record: `Approval` = `digest`, `approved_by` (the operator identity, feature 040), `approved_at`. Approvals are not confirmations and are never stored in the confirmation store (sections 5.4, 7.5).
 
+**One creation per path.** Within one run, the first control to plan a `create` of a path creates it; a later control that plans the same path gets `none` with reason `created_by_other_control` and `created_by` naming that control, in the preview and in the apply alike (at apply time the file exists, and the later control's `already_exists` is reported the same way), so the two plan items carry the same digest and the preview says what the apply does. The later control's outcome comes from the re-check (15.5). If the creating control's write was refused, the path is not claimed and the later control's `create` goes through.
+
+#### Scenario: Three controls, one new file
+- **WHEN** OSPS-DO-03.01, DO-04.01 and DO-05.01 each plan to create `SUPPORT.md` and the file does not exist
+- **THEN** the preview MUST list `create SUPPORT.md` under DO-03.01 and `not written (created by OSPS-DO-03.01)` under the other two
+- **AND** the apply MUST write the file once, with DO-03.01's content, and report the other two the same way as the preview
+
 #### Scenario: Stale preview
 - **WHEN** a person approved a change set's digest and the target's settings changed before the apply
 - **THEN** darnit MUST write nothing for that change set
@@ -2659,6 +2666,7 @@ The following requirements have been superseded: by the handler dispatch archite
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.0.0-alpha.25 | 2026-11-19 | One creation per path in a remediation run: a later control planning a path another control creates reports `created_by_other_control`, in preview and apply alike (Section 15.2; `FileChange` reasons) |
 | 1.0.0-alpha.24 | 2026-11-17 | Composite framework loading fails when `include_controls` lists an ID absent from its source (Section 2.1; feature 013; #723) |
 | 1.0.0-alpha.23 | 2026-11-17 | `exec` omits `GH_TOKEN` and `GITHUB_TOKEN` from the child environment when the value is exactly `""` (Sections 3.3, 4.4; #752). An undeclared CLI argument rejection is ERROR, class `usage`; other undeclared exits stay INCONCLUSIVE with `unexpected_exit`; a code in `pass_exit_codes` or `fail_exit_codes` stays PASS or FAIL with no class (Sections 3.3, 5.2; #752) |
 | 1.0.0-alpha.22 | 2026-10-25 | Plugin signature verification removed: it made no cryptographic check and never refused a plugin; `[plugins] allowed` is applied before a plugin left out is loaded; operator `plugins.allow_unsigned` and `plugins.trusted_publishers` fail loading; the framework TOML `[plugins]` table is not read (Sections 6.5, 6.6, 14.1; Appendix C) |
