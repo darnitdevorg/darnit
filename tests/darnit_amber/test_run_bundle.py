@@ -241,7 +241,7 @@ class _FsStore:
 def _fake_witness(products: dict[str, bytes], exit_code: int = 0):
     """Stand in for ``_witness``: the experiment step writes ``products`` into the checkout and the exit file."""
 
-    def fake(step, key, out, cwd, cmd, tsa=None):
+    def fake(step, key, out, cwd, cmd, tsa=None, *args, **kwargs):
         env = {
             "payload": base64.b64encode(b'{"predicate":{"attestations":[]}}').decode(),
             "payloadType": "t",
@@ -1436,3 +1436,293 @@ def test_a_bundle_made_with_the_earlier_wrapper_still_verifies(tmp_path, stamped
     other_store, other, key2, pub2 = _key_bundle(tmp_path / "other", wrapper='(./other.sh)\nprintf %s "$?" > "$0"\n')
     bad = rr.verify(other_store, other["id"], pub2)
     assert bad["command_matches_witness"] is False and bad["verified"] is False
+
+
+def test_is_archive_helper():
+    assert amber_run._is_archive("https://zenodo.org/records/12345/files/artifact.zip?download=1") is True
+    assert amber_run._is_archive("https://example.org/data.tar.gz#section") is True
+    assert amber_run._is_archive("http://example.org/files/code.tgz") is True
+    assert amber_run._is_archive("local/pkg.tar.bz2") is True
+    assert amber_run._is_archive("test.tar.xz") is True
+    assert amber_run._is_archive("my_archive.zip") is True
+    assert amber_run._is_archive("https://github.com/darnitdevorg/darnit.git") is False
+    assert amber_run._is_archive("/path/to/git_repo") is False
+
+
+def test_run_archive_zip_artifact(tmp_path, no_signing):
+    """darnit-amber run accepts a zip archive, computes sha256 digest, and skips git commit (#746)."""
+    import zipfile
+
+    archive_path = tmp_path / "experiment.zip"
+    with zipfile.ZipFile(archive_path, "w") as zf:
+        zf.writestr("run.sh", "echo metric: 100 > out.txt\n")
+
+    entry = {
+        "run": {"command": "./run.sh"},
+        "claims": [{"id": "c1", "threshold": "== 100", "measure": {"file": "out.txt", "regex": r"metric: (\d+)"}}],
+    }
+    bundle = _execute(archive_path, no_signing, {"out.txt": b"metric: 100\n"}, entry)
+    subj = bundle["statement"]["subject"][0]
+    expected_sha256 = hashlib.sha256(archive_path.read_bytes()).hexdigest()
+
+    assert subj["name"] == f"local/{archive_path.name}"
+    assert subj["digest"] == {"sha256": expected_sha256}
+    assert "gitCommit" not in subj["digest"]
+
+    pred = bundle["statement"]["predicate"]
+    assert pred["entry"]["artifact"] == {"archive": f"local/{archive_path.name}", "sha256": expected_sha256}
+    (claim,) = pred["claims"]
+    assert (claim["measured"], claim["verdict"]) == ("100", "REPRODUCED")
+
+
+def test_run_archive_tar_gz_artifact(tmp_path, no_signing):
+    """darnit-amber run accepts a tar.gz archive and records sha256 (#746)."""
+    import io
+    import tarfile
+
+    archive_path = tmp_path / "experiment.tar.gz"
+    with tarfile.open(archive_path, "w:gz") as tf:
+        data = b"echo speedup: 3.5 > out.txt\n"
+        ti = tarfile.TarInfo("run.sh")
+        ti.size = len(data)
+        tf.addfile(ti, io.BytesIO(data))
+
+    entry = {
+        "run": {"command": "./run.sh"},
+        "claims": [{"id": "c1", "threshold": ">= 3.0", "measure": {"file": "out.txt", "regex": r"speedup: ([\d.]+)"}}],
+    }
+    bundle = _execute(archive_path, no_signing, {"out.txt": b"speedup: 3.5\n"}, entry)
+    subj = bundle["statement"]["subject"][0]
+    expected_sha256 = hashlib.sha256(archive_path.read_bytes()).hexdigest()
+
+    assert subj["name"] == f"local/{archive_path.name}"
+    assert subj["digest"] == {"sha256": expected_sha256}
+    pred_art = bundle["statement"]["predicate"]["entry"]["artifact"]
+    assert pred_art == {"archive": f"local/{archive_path.name}", "sha256": expected_sha256}
+
+
+def test_archive_skips_witness_git_attestor(tmp_path, no_signing, repo):
+    """Witness git attestor is skipped for archive artifacts; git repo runs still use it (#746)."""
+    import zipfile
+
+    archive_path = tmp_path / "pkg.zip"
+    with zipfile.ZipFile(archive_path, "w") as zf:
+        zf.writestr("test.txt", "hello\n")
+
+    recorded_attestors = []
+
+    def capturing_witness(step, key, out, cwd, cmd, tsa=None, attestors=None):
+        recorded_attestors.append(attestors)
+        return _fake_witness({"out.txt": b"ok\n"})(step, key, out, cwd, cmd, tsa)
+
+    entry = {"run": {"command": "cat test.txt"}}
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(amber_run, "_witness", capturing_witness)
+        mp.setattr(amber_run, "_witness_bin", lambda: "witness")
+        no_signing._root.mkdir(exist_ok=True)
+        # 1. Archive run
+        amber_run.execute(str(archive_path), None, None, entry, no_signing, tsa=None)
+        assert all(a is None for a in recorded_attestors)
+
+        recorded_attestors.clear()
+        # 2. Git repo run
+        amber_run.execute(str(repo), None, None, entry, no_signing, tsa=None)
+        assert any(a == "git" for a in recorded_attestors)
+
+
+def _archive_bundle(tmp_path, archive_path, sha256=None):
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+
+    key = ec.generate_private_key(ec.SECP256R1())
+    k_path = tmp_path / "k.pem"
+    k_path.write_bytes(
+        key.private_bytes(
+            serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()
+        )
+    )
+    fp = _write_pub(key, tmp_path / "k.pub")
+    sha = sha256 or hashlib.sha256(archive_path.read_bytes()).hexdigest()
+    stmt_subj = [{"name": f"local/{archive_path.name}", "digest": {"sha256": sha}}]
+    exit_blob = b"0"
+    report = b'{"results": [{"id": "RE-01.01", "status": "FAIL"}]}'
+    sign = lambda payload: _key_envelope(key, payload)  # noqa: E731
+    audit_payload = json.dumps(
+        {
+            "predicate": {
+                "attestations": [
+                    {
+                        "type": "https://witness.dev/attestations/command-run/v0.1",
+                        "attestation": {"cmd": ["sh", "-c", amber_run.audit_command()], "exitcode": 0},
+                    },
+                    {
+                        "type": "https://witness.dev/attestations/product/v0.1",
+                        "attestation": {amber_run.AUDIT_RECORD: {"digest": {"sha256": hashlib.sha256(report).hexdigest()}}},
+                    },
+                ]
+            }
+        }
+    ).encode()
+    witness = {
+        "amber-audit": sign(audit_payload),
+        "experiment": _witness_experiment_envelope(sign, "./run.sh", {"res.txt": b"v=10\n", amber_run.EXIT_RECORD: exit_blob}),
+    }
+    predicate = {
+        "signing": {"method": "key", "key_fingerprint": fp},
+        "audit": {
+            "framework": "amber",
+            "command": ["sh", "-c", amber_run.audit_command()],
+            "exit_code": 0,
+            "report": {"path": amber_run.AUDIT_RECORD, "sha256": hashlib.sha256(report).hexdigest()},
+            "results": amber_run.audit_results(json.loads(report)),
+        },
+        "experiment": {
+            "command": "./run.sh",
+            "exit_code": 0,
+            "exit_status": {"path": amber_run.EXIT_RECORD, "sha256": hashlib.sha256(exit_blob).hexdigest()},
+            "outputs": [{"path": "res.txt", "sha256": hashlib.sha256(b"v=10\n").hexdigest(), "captured": True, "stored": True}],
+        },
+        "entry": {"artifact": {"archive": f"local/{archive_path.name}", "sha256": sha}},
+        "claims": [],
+        "verdict": "REPRODUCED",
+        "witness_envelopes_sha256": {n: hashlib.sha256(amber_run._canonical(e)).hexdigest() for n, e in witness.items()},
+    }
+    stmt = {
+        "_type": amber_run.STATEMENT_TYPE,
+        "subject": stmt_subj,
+        "predicateType": amber_run.PREDICATE_TYPE,
+        "predicate": predicate,
+    }
+    bundle_id = hashlib.sha256(amber_run._canonical(stmt)).hexdigest()
+    bundle = {
+        "id": bundle_id,
+        "statement": stmt,
+        "statement_envelope": _key_envelope(key, amber_run._canonical(stmt), amber_run.STATEMENT_TYPE),
+        "witness_envelopes": witness,
+        "publication": None,
+    }
+    store = _FsStore(tmp_path)
+    store.write(bundle_id, amber_run._canonical(bundle), "")
+    amber_run.write_blob(store, bundle_id, "res.txt", b"v=10\n")
+    amber_run.write_blob(store, bundle_id, amber_run.EXIT_RECORD, exit_blob)
+    amber_run.write_blob(store, bundle_id, amber_run.AUDIT_RECORD, report)
+    return store, bundle, k_path, tmp_path / "k.pub"
+
+
+def test_rerun_archive_artifact_matches(tmp_path, stamped):
+    """rerun of an archive bundle verifies and executes against matching archive (#746)."""
+    import zipfile
+
+    from darnit_amber import rerun as rr
+
+    archive_path = tmp_path / "code.zip"
+    with zipfile.ZipFile(archive_path, "w") as zf:
+        zf.writestr("run.sh", "echo v=10 > res.txt\n")
+
+    sub = tmp_path / "archive_repo"
+    sub.mkdir()
+    store, bundle, key, pub = _archive_bundle(sub, archive_path)
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(amber_run.Path, "exists", lambda self: True)
+        mp.setattr(amber_run, "_witness", _fake_witness({"res.txt": b"v=10\n"}))
+        mp.setattr(amber_run, "_witness_bin", lambda: "witness")
+        mp.setattr(
+            amber_run,
+            "sign_statement",
+            lambda stmt, key, tsa: {
+                "payloadType": "stmt",
+                "payload": base64.b64encode(amber_run._canonical(stmt)).decode(),
+                "signatures": [],
+            },
+        )
+        res = rr.rerun(
+            store,
+            bundle["id"],
+            key,
+            tsa=None,
+            pubkey=pub,
+            consent=lambda _: True,
+            artifact=str(archive_path),
+        )
+        assert res["rerun_of"] == bundle["id"]
+
+
+def test_rerun_archive_artifact_refuses_when_digest_differs(tmp_path, stamped):
+    """rerun of an archive bundle refuses when the provided archive digest differs (#746)."""
+    import zipfile
+
+    from darnit_amber import rerun as rr
+
+    archive_path = tmp_path / "code.zip"
+    with zipfile.ZipFile(archive_path, "w") as zf:
+        zf.writestr("run.sh", "echo v=10 > res.txt\n")
+
+    sub = tmp_path / "diff_repo"
+    sub.mkdir()
+    sha = "0000000000000000000000000000000000000000000000000000000000000000"
+    store, bundle, key, pub = _archive_bundle(sub, archive_path, sha256=sha)
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(amber_run.Path, "exists", lambda self: True)
+        mp.setattr(amber_run, "_witness", _fake_witness({"res.txt": b"v=10\n"}))
+        mp.setattr(amber_run, "_witness_bin", lambda: "witness")
+        mp.setattr(
+            amber_run,
+            "sign_statement",
+            lambda stmt, key, tsa: {
+                "payloadType": "stmt",
+                "payload": base64.b64encode(amber_run._canonical(stmt)).decode(),
+                "signatures": [],
+            },
+        )
+        with pytest.raises(amber_run.RunError, match="archive digest differs from bundle"):
+            rr.rerun(
+                store,
+                bundle["id"],
+                key,
+                tsa=None,
+                pubkey=pub,
+                consent=lambda _: True,
+                artifact=str(archive_path),
+            )
+
+
+def test_rerun_archive_local_requires_artifact(tmp_path, stamped):
+    """rerun of a local archive bundle requires --artifact (#746)."""
+    import zipfile
+
+    from darnit_amber import rerun as rr
+
+    archive_path = tmp_path / "code.zip"
+    with zipfile.ZipFile(archive_path, "w") as zf:
+        zf.writestr("run.sh", "echo v=10 > res.txt\n")
+
+    sub = tmp_path / "req_repo"
+    sub.mkdir()
+    store, bundle, key, pub = _archive_bundle(sub, archive_path)
+
+    with pytest.raises(amber_run.RunError, match="pass --artifact with the path or URL of the archive"):
+        rr.rerun(
+            store,
+            bundle["id"],
+            key,
+            tsa=None,
+            pubkey=pub,
+            consent=lambda _: True,
+            artifact=None,
+        )
+
+
+def test_archive_zip_slip_rejected(tmp_path, no_signing):
+    """Archives containing path traversal members are rejected (#746)."""
+    import zipfile
+
+    archive_path = tmp_path / "malicious.zip"
+    with zipfile.ZipFile(archive_path, "w") as zf:
+        zf.writestr("../../etc/passwd", "root:x:0:0\n")
+
+    entry = {"run": {"command": "true"}}
+    with pytest.raises(amber_run.RunError, match="archive contains path traversing outside destination"):
+        _execute(archive_path, no_signing, {}, entry)
+

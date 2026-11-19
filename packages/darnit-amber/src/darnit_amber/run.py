@@ -20,7 +20,10 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
+import urllib.request
+import zipfile
 from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal, localcontext
@@ -156,6 +159,74 @@ def _is_url(s: str) -> bool:
     return s.startswith(("https://", "http://", "git@", "ssh://"))
 
 
+ARCHIVE_EXTENSIONS = (
+    ".zip",
+    ".tar.gz",
+    ".tgz",
+    ".tar.bz2",
+    ".tbz2",
+    ".tar.xz",
+    ".txz",
+    ".tar",
+)
+
+
+def _is_archive(path_or_url: str | Path) -> bool:
+    s = str(path_or_url)
+    if _is_url(s):
+        path_part = urlsplit(s).path.lower()
+    else:
+        path_part = Path(s).name.lower()
+    return any(path_part.endswith(ext) for ext in ARCHIVE_EXTENSIONS)
+
+
+def _file_sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        while chunk := f.read(65536):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _download_url(url: str, dest: Path) -> str:
+    """Download url to dest and return its sha256 digest."""
+    req = urllib.request.Request(url, headers={"User-Agent": "darnit-amber"})
+    h = hashlib.sha256()
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp, open(dest, "wb") as f:
+            while chunk := resp.read(65536):
+                f.write(chunk)
+                h.update(chunk)
+    except Exception as e:
+        raise RunError(f"downloading {url} failed: {e}") from e
+    return h.hexdigest()
+
+
+def _unpack_archive(archive_path: Path, dest: Path) -> None:
+    dest = dest.resolve()
+    dest.mkdir(parents=True, exist_ok=True)
+    name = archive_path.name.lower()
+    if name.endswith(".zip"):
+        with zipfile.ZipFile(archive_path) as zf:
+            for member in zf.infolist():
+                target = (dest / member.filename).resolve()
+                if not target.is_relative_to(dest):
+                    raise RunError(f"archive contains path traversing outside destination: {member.filename}")
+            zf.extractall(dest)
+    elif any(name.endswith(ext) for ext in (".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tar.xz", ".txz", ".tar")):
+        with tarfile.open(archive_path) as tf:
+            if hasattr(tarfile, "data_filter"):
+                tf.extractall(dest, filter="data")
+            else:
+                for member in tf.getmembers():
+                    target = (dest / member.name).resolve()
+                    if not target.is_relative_to(dest):
+                        raise RunError(f"archive contains path traversing outside destination: {member.name}")
+                tf.extractall(dest)
+    else:
+        raise RunError(f"unsupported archive format: {archive_path.name}")
+
+
 def public_url(url: str) -> str:
     """``url`` without credentials, query or fragment: a token in a clone URL must not end up in a shared bundle."""
     if not url.startswith(("https://", "http://", "ssh://")):
@@ -284,7 +355,7 @@ def _environment(checkout: Path | None = None) -> dict[str, Any]:
     mem = None
     try:
         mem = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
-    except (ValueError, OSError):
+    except (ValueError, OSError, AttributeError):
         pass
     variables = {k: os.environ[k] for k in ENV_ALLOWLIST if k in os.environ}
     for k in _PATH_VARIABLES:
@@ -583,14 +654,14 @@ def _witness(
     cwd: Path,
     cmd: list[str],
     tsa: str | None = TSA_URL,
+    attestors: str | None = WITNESS_ATTESTORS,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     full = [
         _witness_bin(),
         "run",
         "--step",
         step,
-        "--attestations",
-        WITNESS_ATTESTORS,
+        *(["--attestations", attestors] if attestors else []),
         *_signer_args(key),
         *(["-t", tsa] if tsa else []),  # RFC 3161 countersignature: proves when the signature existed
         "-o",
@@ -736,7 +807,34 @@ def execute(
         tmpdir = Path(tmp)
         dirty: list[str] = []
         local_name: str | None = None
-        if _is_url(artifact):
+        is_archive = _is_archive(artifact)
+        archive_sha256: str | None = None
+
+        if is_archive:
+            if _is_url(artifact):
+                url_path = urlsplit(artifact).path
+                ext = Path(url_path).name or "archive.zip"
+                archive_file = tmpdir / f"downloaded-{ext}"
+                archive_sha256 = _download_url(artifact, archive_file)
+            else:
+                source = Path(artifact).resolve()
+                if not source.is_file():
+                    raise RunError(f"{artifact} is not an archive file")
+                archive_file = source
+                archive_sha256 = _file_sha256(source)
+                local_name = f"local/{source.name}"
+
+            if rerun_of:
+                first_stmt = rerun_of.get("statement", {})
+                first_digest = (first_stmt.get("subject", [{}])[0].get("digest") or {}).get("sha256")
+                if first_digest and archive_sha256 != first_digest:
+                    raise RunError(
+                        f"archive digest differs from bundle: expected {first_digest}, got {archive_sha256}"
+                    )
+
+            repo = tmpdir / "artifact"
+            _unpack_archive(archive_file, repo)
+        elif _is_url(artifact):
             repo = _clone(artifact, ref, tmpdir / "artifact")
         else:
             source = Path(artifact).resolve()
@@ -764,6 +862,7 @@ def execute(
         # The record dir is removed after each step, success or failure: nothing of darnit's is left for the
         # experiment to read, or in the user's checkout when --allow-dirty ran in place.
         record_dir.mkdir()
+        attestors = None if is_archive else WITNESS_ATTESTORS
         try:
             audit_env, audit_w = _witness(
                 "amber-audit",
@@ -772,6 +871,7 @@ def execute(
                 repo,
                 ["sh", "-c", audit_command()],  # darnit: on PATH, see _witness_env
                 tsa,
+                attestors=attestors,
             )
             audit_blob, audit_record = _record(repo, AUDIT_RECORD, audit_w, "the audit report")
         finally:
@@ -792,6 +892,7 @@ def execute(
                     repo,
                     ["sh", "-c", wrap_command(exp_cmd), EXIT_RECORD],
                     tsa,
+                    attestors=attestors,
                 )
                 exit_blob, exit_record = _record(repo, EXIT_RECORD, exp_w, "the experiment's exit status")
             finally:
@@ -833,7 +934,7 @@ def execute(
             c["signed_by"] = "signing"  # the run's signer stands behind this claim; claim() marks its own
         for c in claims:
             c["matches_expected"] = (c["verdict"] == c["expected_verdict"]) if c.get("expected_verdict") else None
-        commit = None if dirty else _git_commit(repo)
+        commit = None if (dirty or is_archive) else _git_commit(repo)
         subject_name = public_url(artifact if _is_url(artifact) else local_name or _local_subject(repo))
 
         envelopes = {"amber-audit": audit_env, **({"experiment": exp_env} if exp_env else {})}
@@ -864,7 +965,11 @@ def execute(
             "corpus_entry": entry.get("id"),
             "entry": {
                 "source": entry.get("_source", "file"),
-                "artifact": {"clone": subject_name, "ref": commit, "dirty": bool(dirty)},
+                "artifact": (
+                    {"archive": subject_name, "sha256": archive_sha256}
+                    if is_archive
+                    else {"clone": subject_name, "ref": commit, "dirty": bool(dirty)}
+                ),
                 "run": {"command": exp_cmd, "outputs": exp_outputs},
                 "environment": entry.get("environment"),
             },
@@ -885,9 +990,15 @@ def execute(
                 name: hashlib.sha256(_canonical(env)).hexdigest() for name, env in envelopes.items()
             },
         }
+        subject_digest: dict[str, str] = {}
+        if is_archive and archive_sha256:
+            subject_digest["sha256"] = archive_sha256
+        elif commit:
+            subject_digest["gitCommit"] = commit
+
         statement = {
             "_type": STATEMENT_TYPE,
-            "subject": [{"name": subject_name, "digest": {"gitCommit": commit} if commit else {}}],
+            "subject": [{"name": subject_name, "digest": subject_digest}],
             "predicateType": PREDICATE_TYPE,
             "predicate": predicate,
         }
@@ -922,6 +1033,8 @@ def run(
     if artifact in (".", "") and (entry.get("artifact") or {}).get("clone"):
         artifact = entry["artifact"]["clone"]
         ref = ref or entry["artifact"].get("ref")
+    elif artifact in (".", "") and (entry.get("artifact") or {}).get("archive"):
+        artifact = entry["artifact"]["archive"]
     if command:
         entry = {**entry, "run": {**(entry.get("run") or {}), "command": shlex.join(command)}}
         if not claims:

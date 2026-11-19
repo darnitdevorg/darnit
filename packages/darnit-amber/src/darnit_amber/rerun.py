@@ -17,6 +17,7 @@ from .run import (
     TSA_URL,
     RunError,
     _canonical,
+    _is_archive,
     _is_url,
     audit_command,
     audit_results,
@@ -390,17 +391,27 @@ def rerun(
     if not exp:
         raise RunError("bundle has no experiment to rerun")
     subject = stmt["subject"][0]["name"]
-    commit = stmt["subject"][0]["digest"].get("gitCommit")
-    if not commit:
-        raise RunError("bundle records no commit (run with --allow-dirty), so there is nothing to rerun at")
+    digest = stmt["subject"][0].get("digest") or {}
+    commit = digest.get("gitCommit")
+    archive_sha256 = digest.get("sha256")
+    if not commit and not archive_sha256:
+        raise RunError("bundle records no commit or archive digest (run with --allow-dirty), so there is nothing to rerun at")
     if artifact is None:
         artifact = subject
-    if not _is_url(artifact) and not Path(artifact).is_dir():
-        raise RunError(
-            f"the bundle names {subject}, which is not a URL; pass --artifact with the path or URL of a clone"
-            if artifact == subject
-            else f"{artifact} is not a directory"
-        )
+    if archive_sha256:
+        if not _is_url(artifact) and not (Path(artifact).is_file() and _is_archive(artifact)):
+            raise RunError(
+                f"the bundle names {subject}, which is not a URL; pass --artifact with the path or URL of the archive"
+                if artifact == subject
+                else f"{artifact} is not an archive file"
+            )
+    else:
+        if not _is_url(artifact) and not Path(artifact).is_dir():
+            raise RunError(
+                f"the bundle names {subject}, which is not a URL; pass --artifact with the path or URL of a clone"
+                if artifact == subject
+                else f"{artifact} is not a directory"
+            )
     if consent is None or not consent(exp["command"]):
         raise RunError("rerun not confirmed")
     entry = {

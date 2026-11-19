@@ -67,6 +67,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `verify` names two signers for a derived bundle (`--pubkey`,
   `--claimer-pubkey`); values, thresholds and tolerances must be finite
   plain decimals and are compared exactly, as decimals, never as floats.
+- `darnit-amber run` accepts archive artifacts (`.zip`, `.tar.gz`, `.tar.bz2`,
+  `.tar.xz`, `.tgz`) by URL or local file path in addition to Git repositories,
+  records the archive's SHA-256 digest in the statement's subject, skips the
+  Git attestor under Witness, and refuses `rerun` when the archive digest differs
+  (fixes #746).
 
 - Developer test flow automation scripts (`scripts/clean_and_install_dev.sh`,
   `scripts/setup_dev_projects.sh`, `scripts/run_dev_test_flow.sh`) to
