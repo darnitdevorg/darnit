@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Remediation preflight context check no longer blocks ready controls when some controls require unconfirmed context; ready controls proceed through remediation, and unconfirmed ones report `needs_confirmation` (fixes #767). The preflight prompt blocks the run only when every failing control lacks context.
+
 ### Fixed
 
 - Threat-model findings use the rule id (darnit.entry.flask-route), not the
