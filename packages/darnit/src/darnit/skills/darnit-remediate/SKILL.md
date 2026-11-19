@@ -4,7 +4,7 @@ description: Apply automated fixes for failing compliance controls. Shows a plan
 compatibility: Requires darnit MCP server running (darnit serve)
 metadata:
   author: kusari-oss
-  version: "2.3"
+  version: "2.4"
 ---
 
 # Compliance Remediation
@@ -81,21 +81,27 @@ Read them. The templates are designed to produce correct output — trust them.
 
 **The test for whether a change is justified:** Would a wrong value here cause someone to do the wrong thing or break a CI pipeline? If no, leave it alone.
 
-If any files needed syntax fixes, make a new commit describing the specific fixes. If everything is clean (which is the expected case), say so and move on.
+If any files needed syntax fixes:
+- State plainly that a generated file needing a syntax fix is a template bug.
+- List the files left uncommitted in the working tree and describe the specific fixes for the person to review.
+- Warn that `create_remediation_pr` pushes only what remediation committed: the pull request will not contain these working-tree fixes, and the branch as pushed still carries the unpatched template file. The person must review, commit, and push the fixes to the PR branch after it is opened.
+
+If everything is clean (which is the expected case), say so and move on.
 
 ### 4. Offer PR creation
 
-Ask if the user wants a PR. If yes, call `create_remediation_pr` and display the URL.
+After reporting any uncommitted syntax fixes and template bugs, ask if the user wants a PR. If yes, call `create_remediation_pr` and display the URL.
 
 ### 5. Summary
 
-Show: branch name, controls fixed, files changed, PR URL (if created), and remaining manual items.
+Show: branch name, controls fixed, files changed, any syntax fixes left uncommitted (flagged as template bugs for human review and commit), PR URL (if created), and remaining manual items.
 
 ## Gotchas
 
 - Always show the dry-run plan first. Never apply changes without confirmation.
 - Do NOT call `audit_openssf_baseline` separately — `remediate_audit_findings` handles audit internally.
 - Do NOT call `create_remediation_branch` or `commit_remediation_changes` separately — use the `branch_name` and `auto_commit` params instead.
+- Darnit tools commit only content written directly by remediation. Any manual or agent syntax fixes remain uncommitted in the working tree for the person to review and commit after the PR is opened.
 - If `remediate_audit_findings` fails mid-way, report which files were already changed so the user can review.
 - Unsafe remediations (`safe = false`), steps that cannot be previewed exactly, and high-impact platform changes run only when their own digest is in `approve`. Approving a batch never covers them.
 - The operator's `[remediation]` policy decides how platform changes are made: `prompt` (approve by digest), `manual` (darnit only reports the steps; give them to the person), or `auto` (applied without a digest). The report states the policy in effect. Never try to change it from the repository.

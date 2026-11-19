@@ -21,6 +21,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and integers above 3) when loading framework configurations or applying
   composite overrides, ensuring `darnit audit` fails closed instead of silently
   omitting controls whose level exceeds the default audit maximum (fixes #701).
+- In `/darnit-comply` and `/darnit-remediate`, tell the agent to list
+  enhanced files and syntax fixes for review before offering a pull request,
+  stating plainly that the pull request will not contain uncommitted working-tree
+  edits and leaving them for the person to review and commit, keeping darnit's
+  rule that it never commits content it did not write. Before, `/darnit-comply`
+  instructed the agent to make a new commit with its improvements, but
+  `commit_remediation_changes` deliberately commits only the run's files whose
+  content matches what remediation wrote, leaving an agent without a shell with
+  no tool to commit them (fixes #738).
 - Pin DOT_PROJECT_SPEC_VERSION to canonical upstream CNCF 1.0.0 and remove
   project_path = "security.policy" from OSPS-DO-02.01 (fixes #502). Existing
   .project/project.yaml files declaring schema_version: 1.4.0 are left as

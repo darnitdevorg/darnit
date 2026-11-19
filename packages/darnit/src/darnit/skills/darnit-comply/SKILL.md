@@ -4,7 +4,7 @@ description: Run the full compliance pipeline — audit, collect data, remediate
 compatibility: Requires darnit MCP server running (darnit serve) and gh CLI for PR creation
 metadata:
   author: kusari-oss
-  version: "2.4"
+  version: "2.5"
 ---
 
 # Full Compliance Pipeline
@@ -70,7 +70,7 @@ Read the generated template files and improve them with project-specific content
 - Improve language and formatting
 - Make templates feel like real documentation rather than boilerplate
 
-If files were enhanced, make a new commit with the improvements.
+Leave enhanced files uncommitted in the working tree: darnit tools commit only content written directly by remediation, and `commit_remediation_changes` commits only files whose content still matches what remediation wrote (framework-design 15.7). Keep track of every file you changed so you can report it in step 9 before offering a PR.
 
 ### 7. Judge what changed
 
@@ -82,9 +82,16 @@ Call `get_pass_candidates` with `owner`, `repo`, `local_path`, and `run_id` set 
 
 ### 9. Final audit, PR, and report
 
-Call the audit again (same arguments as step 1). Ask if the user wants a PR. If yes, call `create_remediation_pr` and display the URL.
+Call the audit again (same arguments as step 1).
 
-Show the before/after comparison and the changes made, then list separately: controls that pass; controls awaiting the person's confirmation; controls awaiting a judgment, with why; controls you judged as not meeting the requirement, with the finding and what the person would need to change; and the remaining manual items. Say that confirmations are recorded for the person on this machine only: CI or another maintainer sees those controls PENDING until they confirm there.
+Before offering to create a pull request:
+1. List any files enhanced in step 6 (left uncommitted in the working tree) and ask the person to review them.
+2. State plainly that the pull request will not contain them: `create_remediation_pr` pushes only what remediation committed. The person commits and pushes their reviewed edits to the PR branch after it is opened.
+3. Note that the judgments and confirmations in steps 7–8 describe these uncommitted working-tree versions rather than the generated template versions.
+
+Ask if the user wants a PR. If yes, call `create_remediation_pr` and display the URL.
+
+Show the before/after comparison and the changes made, then list separately: controls that pass; controls awaiting the person's confirmation; controls awaiting a judgment, with why; controls you judged as not meeting the requirement, with the finding and what the person would need to change; the uncommitted enhanced files reviewed above; and the remaining manual items. Say that confirmations are recorded for the person on this machine only: CI or another maintainer sees those controls PENDING until they confirm there.
 
 ## Gotchas
 
@@ -92,6 +99,7 @@ Show the before/after comparison and the changes made, then list separately: con
 - Use `output_format: "summary"` for audits to keep token usage low.
 - Do NOT run an audit just to feed `remediate_audit_findings`: it audits internally. The one audit after collecting data (step 4) is for showing the person what changed.
 - Do NOT call `create_remediation_branch` or `commit_remediation_changes` separately — use the built-in `branch_name` and `auto_commit` params.
+- Darnit tools commit only content written directly by remediation itself. Files improved by the agent in step 6 stay uncommitted in the working tree for the person to review and commit after the PR is opened.
 - Unsafe remediations, steps that cannot be previewed exactly, and high-impact platform changes run only when the person approved their own digest; a batch approval never covers them.
 - Platform changes follow the operator's `[remediation]` policy (`prompt`, `manual`, or `auto`), stated in the report. Never try to change it from the repository.
 - If any step fails, report what was accomplished and suggest continuing manually.
