@@ -356,8 +356,7 @@ class RemediationConfig(BaseModel):
             _reject_removed_properties(extra)
             if handler.handler == "platform_setting":
                 _validate_platform_setting(extra)
-            if handler.handler == "file_create":
-                _validate_project_reference(extra.get("project_reference"))
+            _validate_project_reference(handler.handler, extra.get("project_reference"))
             if handler.handler == "exec":
                 _validate_exec_declarations(extra)
         return handlers
@@ -417,16 +416,14 @@ def _validate_platform_setting(fields: dict[str, Any]) -> None:
     PlatformRequirement(target=fields["target"], require=fields["require"], branch=fields.get("branch"))
 
 
-def _validate_project_reference(reference: Any) -> None:
-    """``file_create.project_reference`` names a project path field (framework-design 4.3)."""
+def _validate_project_reference(handler: str, reference: Any) -> None:
+    """A step's ``project_reference`` names a project path field (framework-design 4.3)."""
     if reference is None:
         return
     from darnit.config.resolver import reference_key
 
     if not isinstance(reference, str) or reference_key(reference) is None:
-        raise ValueError(
-            f"file_create project_reference {reference!r} is not a project path field (<section>.<field>)"
-        )
+        raise ValueError(f"{handler} project_reference {reference!r} is not a project path field (<section>.<field>)")
 
 
 class ProjectUpdateRemediationConfig(BaseModel):
