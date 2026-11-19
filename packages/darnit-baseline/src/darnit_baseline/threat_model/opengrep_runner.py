@@ -218,4 +218,25 @@ def run_opengrep(
     )
 
 
-__all__ = ["OpengrepResult", "run_opengrep"]
+def clean_opengrep_check_id(check_id: str) -> str:
+    """Extract the clean rule id from Opengrep's check_id (#776).
+
+    Opengrep prefixes each rule id with the path of the rules directory
+    passed to --config (e.g. ``Users.<user>..local.share.....threat_model.opengrep_rules.darnit.datastore.sqlite``).
+    This strips everything up to and including ``opengrep_rules.`` (or slash variants)
+    and anchors to the canonical rule prefix if present.
+    """
+    if not check_id:
+        return check_id
+
+    for marker in ("opengrep_rules.", "opengrep_rules/", "opengrep_rules\\"):
+        if marker in check_id:
+            remainder = check_id.rsplit(marker, 1)[1]
+            if ".darnit." in remainder:
+                return "darnit." + remainder.split(".darnit.", 1)[1]
+            return remainder
+
+    return check_id
+
+
+__all__ = ["OpengrepResult", "clean_opengrep_check_id", "run_opengrep"]
