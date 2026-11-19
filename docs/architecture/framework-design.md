@@ -1,6 +1,6 @@
 # Darnit Framework Design Specification
 
-> **Version**: 1.0.0-alpha.28
+> **Version**: 1.0.0-alpha.29
 > **Status**: Authoritative
 > **Last Updated**: 2026-11-22
 
@@ -2686,6 +2686,7 @@ The following requirements have been superseded: by the handler dispatch archite
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.0.0-alpha.29 | 2026-11-22 | `project_reference` is accepted on any step whose handler declares it in its settings, not only `file_create`; on a handler other than `file_create` it records only the file at the step's `path`. OSPS-SA-03.02 records `security.threat_model` through `project_reference` on `generate_threat_model` instead of an unconditional `project_update` (Sections 4.3, 7.9; #545) |
 | 1.0.0-alpha.28 | 2026-11-22 | Fenced JSON block returned by `remediate_audit_findings` omits file contents in `file_changes` in the plan and outcomes (keeping `path`, `action`, `reason`, `ignored`, `before_digest`, and `after_digest`) to keep report output within client limits (Section 15.4; #725) |
 | 1.0.0-alpha.27 | 2026-11-20 | Operator `[llm] provider = "openai"` selects OpenAI for the harness's model judgments: `model` is required for it, the key is read from `OPENAI_API_KEY`, the credential check runs after `[llm]` is applied, and every model judgment result records the model as `<provider>:<model>` in `llm_model` (Section 14.1; #764) |
 | 1.0.0-alpha.26 | 2026-11-20 | Preflight context check and tool guard allow ready remediations to proceed: ready controls preview and apply with platform requests planned for them, while controls requiring unconfirmed context report `needs_confirmation`; the run blocks only when every failing control lacks context (Sections 7.10, 15.4; #767) |
