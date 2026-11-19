@@ -826,12 +826,28 @@ def get_pending_data(
             target=target,
         )
 
+        # Reuse only a fresh full audit with the same repository trust target.
+        # Failed and unresolved controls may still need answers for remediation.
+        from darnit.tools.audit import read_full_audit_cache
+
+        try:
+            cached = read_full_audit_cache(str(repo_path), "openssf-baseline", level=3, target=target)
+        except Exception:
+            cached = None
+        if cached is not None:
+            statuses = {result["id"]: result.get("status") for result in cached["results"]}
+            pending = [
+                request for request in pending
+                if not request.control_ids
+                or not all(statuses.get(control_id) in ("PASS", "N/A") for control_id in request.control_ids)
+            ]
+
         stored = stored_unconfirmed(str(repo_path), target=target)
 
         if not pending:
             complete: dict = {
                 "status": "complete",
-                "message": "All context has been confirmed. No additional input needed.",
+                "message": "No additional context is needed for the selected controls.",
                 "procedure": procedure,
                 "questions": [],
             }
