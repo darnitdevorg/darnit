@@ -66,6 +66,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- An OpenSSF Security Insights file (`security-insights.yml` at the root or
+  in `.github/` / `.gitlab/`, schema 1.x or 2.x) proposes the project's
+  security contact as an unconfirmed candidate in `get_pending_data`, with the
+  file named as its origin. It is never used until a person confirms it and
+  never replaces a value stored in `.project/` (#497).
 - Developer test flow automation scripts (`scripts/clean_and_install_dev.sh`,
   `scripts/setup_dev_projects.sh`, `scripts/run_dev_test_flow.sh`) to
   generate reproducible test fixtures (`failing-empty`,
