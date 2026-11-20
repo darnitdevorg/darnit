@@ -16,7 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Baseline pending-data questions are skipped when every affected control is
   PASS or N/A in a fresh full audit of the same repository target. Questions
   remain when results are missing or unresolved, or remediation may need an
-  answer. Correct context-to-control mappings used by this filter (#649).
+  answer. Responses list omitted keys and reasons in skipped_questions. Correct
+  context-to-control mappings used by this filter (#649).
 
 - Remediation templates state a test command or link a file only when the
   repository scan found it or the same run writes it; otherwise, they leave

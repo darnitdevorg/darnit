@@ -794,6 +794,7 @@ def get_pending_data(
     Returns:
         JSON with the procedure, the questions, ask_user_batch (for AskUserQuestion),
         answer_mapping for confirm_project_data, a progress indicator, and
+        skipped_questions: omitted keys, affected controls, and the reason;
         stored_unconfirmed: values stored in .project/ without a confirmation,
         with their locations, for review with confirm_stored / reject_stored.
     """
@@ -839,13 +840,22 @@ def get_pending_data(
             cached = read_full_audit_cache(str(repo_path), "openssf-baseline", level=3, target=target)
         except Exception:
             cached = None
+        skipped_questions = []
         if cached is not None:
             statuses = {result["id"]: result.get("status") for result in cached["results"]}
-            pending = [
-                request for request in pending
-                if not request.control_ids
-                or not all(statuses.get(control_id) in ("PASS", "N/A") for control_id in request.control_ids)
-            ]
+            remaining = []
+            for request in pending:
+                if request.control_ids and all(
+                    statuses.get(control_id) in ("PASS", "N/A") for control_id in request.control_ids
+                ):
+                    skipped_questions.append({
+                        "key": request.key,
+                        "affects_controls": request.control_ids,
+                        "reason": "All affected controls are PASS or N/A in the latest matching audit.",
+                    })
+                else:
+                    remaining.append(request)
+            pending = remaining
 
         stored = stored_unconfirmed(str(repo_path), target=target)
 
@@ -855,6 +865,7 @@ def get_pending_data(
                 "message": "No additional context is needed for the selected controls.",
                 "procedure": procedure,
                 "questions": [],
+                "skipped_questions": skipped_questions,
             }
             if stored:
                 complete["stored_unconfirmed"] = stored
@@ -908,6 +919,7 @@ def get_pending_data(
                 "total": total,
             },
             "questions": questions,
+            "skipped_questions": skipped_questions,
             "stored_unconfirmed": stored,
         }
 
