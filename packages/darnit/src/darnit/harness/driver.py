@@ -17,7 +17,15 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from darnit.core.llm_step import ConsultationRequest, LLMJudgment, LLMStep, PydanticAILLMStep
+from darnit.core.llm_step import (
+    PROVIDER_API_KEY_ENV,
+    ConsultationRequest,
+    LLMJudgment,
+    LLMStep,
+    PydanticAILLMStep,
+    api_key_env,
+    model_provider,
+)
 from darnit.core.logging import get_logger
 from darnit.harness.answer_sources import (
     AnswerResolver,
@@ -181,8 +189,11 @@ class HarnessRun:
 
         Fails fast in <2s per SC-002. Two checks (both required):
 
-        1. ``ANTHROPIC_API_KEY`` env var set. Does NOT ping the API; a real
-           check would add per-run latency and cost. If the key is invalid,
+        1. The configured provider's API key env var is set
+           (``ANTHROPIC_API_KEY`` for ``anthropic``, ``OPENAI_API_KEY`` for
+           ``openai``; #764). Runs after the operator's ``[llm]`` settings are
+           applied, so it checks the provider the run will actually call.
+           Does NOT ping the API; a real check would add per-run latency and cost. If the key is invalid,
            the first LLM call surfaces the 401 via R6's INCONCLUSIVE-on-error
            path.
 
@@ -194,14 +205,21 @@ class HarnessRun:
            a misleading "complete, exit 0" report where every LLM step
            silently degraded to WARN.
         """
-        if not os.environ.get("ANTHROPIC_API_KEY"):
-            return "missing ANTHROPIC_API_KEY environment variable"
+        env_var = api_key_env(self.llm_provider)
+        if env_var is None:
+            return f"unsupported LLM model {self.llm_provider!r}"
+        if not os.environ.get(env_var):
+            return f"missing {env_var} environment variable (llm provider {model_provider(self.llm_provider)!r})"
         # If the default LLM step is PydanticAILLMStep, verify its SDK is
         # importable. Callers who inject a MockLLMStep (tests) skip this
         # check because their step doesn't need pydantic_ai.
         if isinstance(self.llm_step, PydanticAILLMStep):
             try:
                 import pydantic_ai  # noqa: F401
+
+                if model_provider(self.llm_step.model) == "openai":
+                    # Needs the pydantic-ai-slim[openai] extra (the openai SDK).
+                    import pydantic_ai.models.openai  # noqa: F401
             except ImportError:
                 return (
                     "pydantic_ai module not importable. Run `uv sync` from "
@@ -223,19 +241,30 @@ class HarnessRun:
     def _apply_operator_llm_settings(self) -> None:
         """Apply the operator's ``[llm]`` provider and model to the default LLM step.
 
+        ``provider`` is ``anthropic`` (default) or ``openai`` (#764). The
+        default model is an Anthropic one, so ``openai`` also needs
+        ``model``; darnit does not pick an OpenAI model for the operator.
+
         ``max_cost_usd_per_run`` is not enforced: the LLM step does not track cost.
         """
         llm = self.operator_config.config.llm if self.operator_config else None
-        if llm is None:
-            return
-        provider = llm.provider or "anthropic"
-        if provider != "anthropic":
-            raise HarnessSetupError(
-                f"operator configuration llm.provider {provider!r} is not supported; "
-                "the harness supports 'anthropic'"
-            )
-        if llm.model and isinstance(self.llm_step, PydanticAILLMStep):
-            self.llm_step.model = f"{provider}:{llm.model}"
+        if llm is not None:
+            provider = llm.provider or "anthropic"
+            if provider not in PROVIDER_API_KEY_ENV:
+                raise HarnessSetupError(
+                    f"operator configuration llm.provider {provider!r} is not supported; "
+                    f"the harness supports {', '.join(repr(p) for p in sorted(PROVIDER_API_KEY_ENV))}"
+                )
+            if provider != "anthropic" and not llm.model:
+                raise HarnessSetupError(
+                    f"operator configuration llm.provider {provider!r} needs llm.model; "
+                    "darnit has no default model for it"
+                )
+            if llm.model and isinstance(self.llm_step, PydanticAILLMStep):
+                self.llm_step.model = f"{provider}:{llm.model}"
+        # The report, the evidence fallback and the credential check all name
+        # the model the default step will call.
+        if isinstance(self.llm_step, PydanticAILLMStep):
             self.llm_provider = self.llm_step.model
 
     def _initial_audit(
@@ -339,6 +368,7 @@ class HarnessRun:
                 status=PassOutcome.ERROR,
                 confidence=0.0,
                 reasoning=f"LLM call failed: timeout after {self.per_call_timeout_s}s",
+                model=self.llm_provider,
                 error_class="unavailable",
             )
         except Exception as exc:
@@ -354,6 +384,7 @@ class HarnessRun:
                 status=PassOutcome.ERROR,
                 confidence=0.0,
                 reasoning=f"LLM call failed: {type(exc).__name__}: {safe_exc_msg}",
+                model=self.llm_provider,
                 # A ValueError (pydantic's ValidationError included) means the
                 # model answered but its answer could not be used.
                 error_class="evaluation" if isinstance(exc, ValueError) else "unavailable",
@@ -975,11 +1006,12 @@ class HarnessRun:
         Raises HarnessSetupError on class-2 conditions; caller in
         ``cmd_harness`` catches and maps to exit code + stderr summary.
         """
-        # Startup credential check
+        # Operator [llm] settings first, so the credential check looks for the
+        # key of the provider this run will call (#764).
+        self._resolve_operator_config()
         cred_error = self._check_credentials()
         if cred_error is not None:
             raise HarnessSetupError(cred_error)
-        self._resolve_operator_config()
 
         logger.info("harness: starting audit of %s", self.local_path)
         logger.info(self.answer_resolver.summary())

@@ -1,8 +1,8 @@
 # Darnit Framework Design Specification
 
-> **Version**: 1.0.0-alpha.25
+> **Version**: 1.0.0-alpha.26
 > **Status**: Authoritative
-> **Last Updated**: 2026-11-19
+> **Last Updated**: 2026-11-20
 
 This specification defines the authoritative design of the Darnit framework, including the sieve orchestrator, TOML schema, built-in pass types, remediation actions, and plugin protocol.
 
@@ -2171,6 +2171,15 @@ Design principle: **the audited repository is untrusted input in its entirety, i
 - Every report records the operator configuration source and a digest of its content.
 - The `[remediation]` section sets the remediation policy for platform changes (section 15.1).
 - The `[plugins]` section restricts which installed plugins darnit loads (section 6.6).
+- The `[llm]` section selects the model the harness calls for `llm_eval` steps. `provider` is `anthropic` (default) or `openai`; any other value is a setup error. `model` is the provider's model name; `openai` has no default model, so `provider = "openai"` without `model` is a setup error. The API key comes only from the environment variable for the configured provider (`ANTHROPIC_API_KEY` or `OPENAI_API_KEY`), checked before the audit starts after `[llm]` is applied, and again when the model is first called. The report (`llm_calls.provider`) and every model judgment result, whatever its outcome, record the model as `<provider>:<model>` (evidence `llm_model`, with the provider's `llm_model_version` when it returns one). The provider does not change what a model judgment can conclude (section 3.0.1). `max_cost_usd_per_run` is accepted and not enforced.
+
+#### Scenario: OpenAI provider
+- **WHEN** operator configuration has `[llm] provider = "openai"` and `model = "gpt-5"`, `OPENAI_API_KEY` is set and `ANTHROPIC_API_KEY` is not
+- **THEN** the harness starts, calls `openai:gpt-5` for model judgments, and records `openai:gpt-5` in the report and in each judgment's evidence
+
+#### Scenario: Missing key for the configured provider
+- **WHEN** operator configuration has `[llm] provider = "openai"` and `OPENAI_API_KEY` is not set
+- **THEN** the harness stops before the audit with a setup error naming `OPENAI_API_KEY` and the provider, even if `ANTHROPIC_API_KEY` is set
 
 ### 14.2 Trusted repositories and CI
 
@@ -2677,6 +2686,7 @@ The following requirements have been superseded: by the handler dispatch archite
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.0.0-alpha.26 | 2026-11-20 | Operator `[llm] provider = "openai"` selects OpenAI for the harness's model judgments: `model` is required for it, the key is read from `OPENAI_API_KEY`, the credential check runs after `[llm]` is applied, and every model judgment result records the model as `<provider>:<model>` in `llm_model` (Section 14.1; #764) |
 | 1.0.0-alpha.25 | 2026-11-19 | OpenSSF Security Insights (schema 1.x and 2.x) proposes `security_contact` as a sieve-hint candidate with the file's repository-relative path as its origin; it never writes the loaded configuration, never replaces a stored value, and its policy link is not imported (Section 7.12; #497) |
 | 1.0.0-alpha.24 | 2026-11-17 | Composite framework loading fails when `include_controls` lists an ID absent from its source (Section 2.1; feature 013; #723) |
 | 1.0.0-alpha.23 | 2026-11-17 | `exec` omits `GH_TOKEN` and `GITHUB_TOKEN` from the child environment when the value is exactly `""` (Sections 3.3, 4.4; #752). An undeclared CLI argument rejection is ERROR, class `usage`; other undeclared exits stay INCONCLUSIVE with `unexpected_exit`; a code in `pass_exit_codes` or `fail_exit_codes` stays PASS or FAIL with no class (Sections 3.3, 5.2; #752) |
