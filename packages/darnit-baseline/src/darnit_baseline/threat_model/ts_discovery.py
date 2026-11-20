@@ -34,7 +34,7 @@ from .discovery_models import (
 )
 from .file_discovery import ScannedFile, walk_repo
 from .models import StrideCategory
-from .opengrep_runner import OpengrepResult, run_opengrep
+from .opengrep_runner import OpengrepResult, clean_opengrep_check_id, run_opengrep
 from .parsing import node_text, parse_source, run_query
 from .queries import go as go_queries
 from .queries import javascript as js_queries
@@ -1677,13 +1677,16 @@ def _normalize_opengrep_findings(
     return candidates
 
 
+_clean_opengrep_check_id = clean_opengrep_check_id
+
+
 def _normalize_one_opengrep_finding(
     entry: dict,
     scanned_files: list[ScannedFile],
     file_cache: dict[str, bytes],
 ) -> CandidateFinding | None:
     """Convert a single Opengrep JSON result to a CandidateFinding."""
-    check_id = entry.get("check_id", "unknown")
+    check_id = _clean_opengrep_check_id(entry.get("check_id", "unknown"))
     path = entry.get("path", "")
     start = entry.get("start", {})
     end = entry.get("end", {})

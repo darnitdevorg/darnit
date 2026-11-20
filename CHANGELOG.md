@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Threat-model findings use the rule id (darnit.entry.flask-route), not the
+  Opengrep rules directory path, so generated file names and query_id values no
+  longer carry the install location (fixes #776).
 - Remediation templates state a test command or link a file only when the
   repository scan found it or the same run writes it; otherwise, they leave
   a marked TODO gap (fixes #751).
