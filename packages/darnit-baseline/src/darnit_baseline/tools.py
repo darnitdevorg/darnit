@@ -794,6 +794,7 @@ def get_pending_data(
     Returns:
         JSON with the procedure, the questions, ask_user_batch (for AskUserQuestion),
         answer_mapping for confirm_project_data, a progress indicator, and
+        skipped_questions: omitted keys, affected controls, and the reason;
         stored_unconfirmed: values stored in .project/ without a confirmation,
         with their locations, for review with confirm_stored / reject_stored.
     """
@@ -831,14 +832,40 @@ def get_pending_data(
             target=target,
         )
 
+        # Reuse only a fresh full audit with the same repository trust target.
+        # Failed and unresolved controls may still need answers for remediation.
+        from darnit.tools.audit import read_full_audit_cache
+
+        try:
+            cached = read_full_audit_cache(str(repo_path), "openssf-baseline", level=3, target=target)
+        except Exception:
+            cached = None
+        skipped_questions = []
+        if cached is not None:
+            statuses = {result["id"]: result.get("status") for result in cached["results"]}
+            remaining = []
+            for request in pending:
+                if request.control_ids and all(
+                    statuses.get(control_id) in ("PASS", "N/A") for control_id in request.control_ids
+                ):
+                    skipped_questions.append({
+                        "key": request.key,
+                        "affects_controls": request.control_ids,
+                        "reason": "All affected controls are PASS or N/A in the latest matching audit.",
+                    })
+                else:
+                    remaining.append(request)
+            pending = remaining
+
         stored = stored_unconfirmed(str(repo_path), target=target)
 
         if not pending:
             complete: dict = {
                 "status": "complete",
-                "message": "All context has been confirmed. No additional input needed.",
+                "message": "No additional context is needed for the selected controls.",
                 "procedure": procedure,
                 "questions": [],
+                "skipped_questions": skipped_questions,
             }
             if stored:
                 complete["stored_unconfirmed"] = stored
@@ -892,6 +919,7 @@ def get_pending_data(
                 "total": total,
             },
             "questions": questions,
+            "skipped_questions": skipped_questions,
             "stored_unconfirmed": stored,
         }
 

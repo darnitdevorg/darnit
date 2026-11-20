@@ -714,3 +714,57 @@ class TestConfirmProjectDataNextStep:
         result = confirm_project_data_impl(str(tmp_path), maintainers="@someone", framework_name="openssf-baseline")
 
         assert "get_pending_data" not in result
+
+
+@pytest.mark.parametrize(
+    ("results", "expected_keys"),
+    [
+        ([{"id": "CTRL-01", "status": "PASS"}, {"id": "CTRL-02", "status": "N/A"}], []),
+        ([{"id": "CTRL-01", "status": "PASS"}, {"id": "CTRL-02", "status": "FAIL"}], ["key_2"]),
+        ([{"id": "CTRL-01", "status": "WARN"}], ["key_1", "key_2"]),
+    ],
+)
+def test_pending_questions_use_completed_audit(results, expected_keys, tmp_path):
+    pending = _make_pending(2)
+    with (
+        patch("darnit.config.context_storage.get_pending_context", return_value=pending),
+        patch("darnit.tools.audit.read_full_audit_cache", return_value={"results": results}),
+    ):
+        data = _parse_json_from_result(get_pending_data(local_path=str(tmp_path), limit=0))
+
+    assert [question["key"] for question in data["questions"]] == expected_keys
+    expected_skipped = [
+        {
+            "key": request.key,
+            "affects_controls": request.control_ids,
+            "reason": "All affected controls are PASS or N/A in the latest matching audit.",
+        }
+        for request in pending
+        if request.key not in expected_keys
+    ]
+    assert data["skipped_questions"] == expected_skipped
+
+
+def test_missing_audit_keeps_pending_questions(tmp_path):
+    with (
+        patch("darnit.config.context_storage.get_pending_context", return_value=_make_pending(2)),
+        patch("darnit.tools.audit.read_full_audit_cache", return_value=None),
+    ):
+        data = _parse_json_from_result(get_pending_data(local_path=str(tmp_path), limit=0))
+
+    assert len(data["questions"]) == 2
+    assert data["skipped_questions"] == []
+
+
+def test_shared_question_stays_when_one_control_needs_an_answer(tmp_path):
+    pending = _make_pending(1)
+    pending[0].control_ids = ["CTRL-01", "CTRL-02"]
+    with (
+        patch("darnit.config.context_storage.get_pending_context", return_value=pending),
+        patch("darnit.tools.audit.read_full_audit_cache", return_value={
+            "results": [{"id": "CTRL-01", "status": "PASS"}, {"id": "CTRL-02", "status": "FAIL"}],
+        }),
+    ):
+        data = _parse_json_from_result(get_pending_data(local_path=str(tmp_path)))
+
+    assert [question["key"] for question in data["questions"]] == ["key_1"]
