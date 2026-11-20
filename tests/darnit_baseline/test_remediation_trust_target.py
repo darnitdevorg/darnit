@@ -18,7 +18,7 @@ OWN = f"github.com/{OWNER}/{REPO}"
 CLAIMED = "OSPS-DO-03.01"
 # An honored claim makes the control N/A in the audit, so remediation leaves it out.
 REMEDIATED = f"### {CLAIMED} "
-BLOCKED = "Cannot remediate yet"
+BLOCKED = "Needs Confirmation"
 CONFIRMED_VALUES = {
     "has_releases": False,
     "maintainers": ["@alice"],

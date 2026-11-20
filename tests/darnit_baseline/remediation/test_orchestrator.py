@@ -313,6 +313,25 @@ def test_remediate_audit_findings_unconfirmed_context_partitions_controls(
     assert "BLOCKED: Remediation Cannot Proceed" not in result
 
 
+def test_preflight_context_check_aggregates_all_controls_per_key(temp_git_repo):
+    """Verify key_to_controls maps a context key to ALL controls requiring it (#767)."""
+    from darnit_baseline.remediation.orchestrator import _preflight_context_check
+
+    ready, info = _preflight_context_check(
+        control_ids=["OSPS-GV-01.01", "OSPS-GV-01.02", "OSPS-GV-04.01"],
+        local_path=str(temp_git_repo),
+        owner="test-owner",
+        repo="test-repo",
+    )
+    assert not ready
+    assert "maintainers" in info["missing_context"]
+    assert set(info["key_to_controls"]["maintainers"]) == {
+        "OSPS-GV-01.01",
+        "OSPS-GV-01.02",
+        "OSPS-GV-04.01",
+    }
+
+
 # ---------------------------------------------------------
 # Phase 4: Side Effects (LLM Enhancement)
 # ---------------------------------------------------------

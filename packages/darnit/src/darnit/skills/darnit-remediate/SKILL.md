@@ -28,6 +28,7 @@ Present the plan:
 - **File changes**: every file that will be created or modified
 - **Platform changes**: for each change set, the target (repository or branch), every field as `before -> after`, and its `impact_notes` word for word. A high-impact change (repository visibility, organization settings) is shown on its own, with its impact, never folded into a list
 - **Needs individual approval**: items with `requires_individual_approval: true` (unsafe, cannot be previewed exactly, or high-impact), each with its digest
+- **Needs confirmation**: controls that require unconfirmed project context data (e.g. maintainers, security contact). Ask the person for the keys the preview reports as `needs_confirmation` and record them with `confirm_project_data` before they approve the apply
 - **Manual**: why these can't be auto-fixed, what to do instead
 - **No fix available**: controls without remediation handlers
 
@@ -108,7 +109,7 @@ Show: branch name, controls fixed, files changed, any syntax fixes left uncommit
 - `enable_branch_protection` follows the same rules: it previews by default, never lowers existing settings, and applies only with `dry_run: false` and `approve` set to the change-set digest the person approved.
 - Register darnit's MCP server at user scope (`darnit install` does this by default); a repository-scoped `uv run darnit serve` runs the repository's own copy of darnit.
 - Only controls whose not-applicable claim is `honored` are skipped. Controls with a `pending` or `contradicted` claim are remediated like any other failing control. Do not confirm a pending claim to avoid a remediation; confirm one only when the operator explicitly tells you to.
-- If there are unresolved data questions, the remediation tool will block and tell you. Call `get_pending_data` with `owner`, `repo`, and `local_path` and follow the `procedure` in its result, then preview again.
+- If controls have unconfirmed context questions, the preview reports them as `needs_confirmation` while ready controls proceed. Ask the person for the keys reported as `needs_confirmation` and confirm them with `confirm_project_data` before they approve the apply. If every failing control lacks context, the remediation tool blocks and prompts for all needed context.
 - The §3a verification-prompt-block files (today: `THREAT_MODEL.md` / `docs/threatmodel/SUMMARY.md`) are the ONE exception to §3b's "trust the template" stance. Always ask the user before doing a large triage pass on these — don't silently rewrite dozens of findings, and don't silently skip them either. The default "skip enhancement" rule from §3b is wrong for these files.
 
 ## Error handling

@@ -863,8 +863,9 @@ def _preflight_context_check(
     """
     framework = _get_framework_config()
 
-    # Aggregate context requirements across all controls (deduplicate by key)
-    all_requirements: dict[str, tuple[str, Any]] = {}  # key -> (control_id, requirement)
+    # Aggregate context requirements across all controls
+    unique_requirements: dict[str, Any] = {}  # key -> requirement
+    key_to_controls: dict[str, list[str]] = {}  # key -> list of control_ids
 
     for control_id in control_ids:
         if not framework:
@@ -875,14 +876,18 @@ def _preflight_context_check(
             continue
 
         for req in control.remediation.requires_context:
-            if req.key not in all_requirements:
-                all_requirements[req.key] = (control_id, req)
+            if req.key not in unique_requirements:
+                unique_requirements[req.key] = req
+            if req.key not in key_to_controls:
+                key_to_controls[req.key] = []
+            if control_id not in key_to_controls[req.key]:
+                key_to_controls[req.key].append(control_id)
 
-    if not all_requirements:
-        return True, {"missing_context": [], "auto_detected": {}, "candidates": {}, "prompts": []}
+    if not unique_requirements:
+        return True, {"missing_context": [], "auto_detected": {}, "candidates": {}, "prompts": [], "key_to_controls": {}}
 
     # Check all requirements at once
-    requirements_list = [req for _, req in all_requirements.values()]
+    requirements_list = list(unique_requirements.values())
     check_result = check_context_requirements(
         requirements=requirements_list,
         local_path=local_path,
@@ -891,13 +896,6 @@ def _preflight_context_check(
         repo=repo,
         target=target,
     )
-
-    # Build control mapping for context keys
-    key_to_controls: dict[str, list[str]] = {}
-    for key, (control_id, _) in all_requirements.items():
-        if key not in key_to_controls:
-            key_to_controls[key] = []
-        key_to_controls[key].append(control_id)
 
     return check_result.ready, {
         "missing_context": check_result.missing_context,
