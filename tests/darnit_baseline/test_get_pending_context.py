@@ -733,6 +733,16 @@ def test_pending_questions_use_completed_audit(results, expected_keys, tmp_path)
         data = _parse_json_from_result(get_pending_data(local_path=str(tmp_path), limit=0))
 
     assert [question["key"] for question in data["questions"]] == expected_keys
+    expected_skipped = [
+        {
+            "key": request.key,
+            "affects_controls": request.control_ids,
+            "reason": "All affected controls are PASS or N/A in the latest matching audit.",
+        }
+        for request in pending
+        if request.key not in expected_keys
+    ]
+    assert data["skipped_questions"] == expected_skipped
 
 
 def test_missing_audit_keeps_pending_questions(tmp_path):
@@ -743,6 +753,7 @@ def test_missing_audit_keeps_pending_questions(tmp_path):
         data = _parse_json_from_result(get_pending_data(local_path=str(tmp_path), limit=0))
 
     assert len(data["questions"]) == 2
+    assert data["skipped_questions"] == []
 
 
 def test_shared_question_stays_when_one_control_needs_an_answer(tmp_path):
