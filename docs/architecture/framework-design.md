@@ -1,8 +1,8 @@
 # Darnit Framework Design Specification
 
-> **Version**: 1.0.0-alpha.24
+> **Version**: 1.0.0-alpha.25
 > **Status**: Authoritative
-> **Last Updated**: 2026-11-17
+> **Last Updated**: 2026-11-19
 
 This specification defines the authoritative design of the Darnit framework, including the sieve orchestrator, TOML schema, built-in pass types, remediation actions, and plugin protocol.
 
@@ -1832,6 +1832,24 @@ Every consumer reads context values from the resolver's usable mapping (7.4) and
 - **WHEN** a remediation template reads `<< context.security_contact | default('security@example.org') >>` and `security_contact` has no usable value
 - **THEN** that control's remediation returns `confirmation required: security_contact` and writes nothing
 
+### 7.12 OpenSSF Security Insights
+
+An OpenSSF Security Insights file is evidence for project context, never a source of it. The context sieve reads the first of `security-insights.yml`, `SECURITY-INSIGHTS.yml`, `.github/security-insights.yml`, and `.gitlab/security-insights.yml` that exists in the repository (read inside the repository, 3.0.4) and proposes `security_contact` from it:
+
+- schema 1.x: the primary `security-contacts` entry of type `email` or `url`, else the first such entry, else `vulnerability-reporting.email-contact`;
+- schema 2.x: `project.vulnerability-reporting.contact.email`;
+- any other schema version, an unreadable file, or a contact with no email or URL proposes nothing.
+
+The value is a sieve hint for a judgment key, so it is a `candidate` (7.4) whose origin method names the file by its repository-relative path, and the key's `detect_filter` applies to it. It is never written into the loaded project configuration, never replaces a value stored in `.project/`, and is never usable until a person confirms it. A Security Insights policy link is not imported: `security.policy` names a file in the repository, and the file gives a URL.
+
+#### Scenario: Security Insights contact is proposed
+- **WHEN** a repository has no stored `security_contact` and `.github/security-insights.yml` (schema 2.0.0) names `project.vulnerability-reporting.contact.email: security@foobar.dev`
+- **THEN** `get_pending_data` offers `security@foobar.dev` as an unconfirmed candidate with origin `sieve_hint` and method `context_sieve (1 signals) from .github/security-insights.yml`, and `security_contact` is absent from the usable mapping
+
+#### Scenario: Stored value is kept
+- **WHEN** `.project/project.yaml` has `security.contact` and the repository also has a Security Insights file naming a different contact
+- **THEN** `security_contact` resolves to the stored value (`confirmed` with a matching record, else `candidate` with origin `stored_unconfirmed`), and the Security Insights contact is not offered
+
 ---
 
 ## 8. Output Formats
@@ -2659,6 +2677,7 @@ The following requirements have been superseded: by the handler dispatch archite
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.0.0-alpha.25 | 2026-11-19 | OpenSSF Security Insights (schema 1.x and 2.x) proposes `security_contact` as a sieve-hint candidate with the file's repository-relative path as its origin; it never writes the loaded configuration, never replaces a stored value, and its policy link is not imported (Section 7.12; #497) |
 | 1.0.0-alpha.24 | 2026-11-17 | Composite framework loading fails when `include_controls` lists an ID absent from its source (Section 2.1; feature 013; #723) |
 | 1.0.0-alpha.23 | 2026-11-17 | `exec` omits `GH_TOKEN` and `GITHUB_TOKEN` from the child environment when the value is exactly `""` (Sections 3.3, 4.4; #752). An undeclared CLI argument rejection is ERROR, class `usage`; other undeclared exits stay INCONCLUSIVE with `unexpected_exit`; a code in `pass_exit_codes` or `fail_exit_codes` stays PASS or FAIL with no class (Sections 3.3, 5.2; #752) |
 | 1.0.0-alpha.22 | 2026-10-25 | Plugin signature verification removed: it made no cryptographic check and never refused a plugin; `[plugins] allowed` is applied before a plugin left out is loaded; operator `plugins.allow_unsigned` and `plugins.trusted_publishers` fail loading; the framework TOML `[plugins]` table is not read (Sections 6.5, 6.6, 14.1; Appendix C) |

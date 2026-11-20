@@ -33,6 +33,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from darnit.core.logging import get_logger
 from darnit.core.repo_files import read_repository_text
 
@@ -41,6 +43,7 @@ from .confidence import (
     SignalSource,
     calculate_confidence,
 )
+from .security_insights import find_security_insights, security_contact_from_insights
 
 logger = get_logger("context.sieve")
 
@@ -451,7 +454,36 @@ class ContextSieve:
                 except Exception as e:
                     logger.debug(f"Error reading {filename}: {e}")
 
+        signals.extend(self._security_contact_from_security_insights(local_path))
         return signals
+
+    def _security_contact_from_security_insights(self, local_path: str) -> list[ContextSignal]:
+        """Propose the contact an OpenSSF Security Insights file names (#497).
+
+        A signal, like the SECURITY.md one: the resolver turns it into a
+        candidate labelled with the repository-relative file name, never the
+        key's value (framework-design.md 7.12).
+        """
+        name = find_security_insights(local_path)
+        if name is None:
+            return []
+        try:
+            data = yaml.safe_load(read_repository_text(local_path, Path(local_path) / name))
+        except (OSError, UnicodeDecodeError, yaml.YAMLError) as e:
+            logger.debug(f"Error reading {name}: {e}")
+            return []
+        contact = security_contact_from_insights(data)
+        if not contact:
+            return []
+        return [
+            ContextSignal(
+                source=SignalSource.EXPLICIT_FILE,
+                value=contact,
+                raw_confidence=0.9,
+                method=f"Parsed {name}",
+                evidence={"file": name},
+            )
+        ]
 
     def _detect_security_contact_heuristic(self, local_path: str) -> list[ContextSignal]:
         """Detect security contact from README or other files."""
