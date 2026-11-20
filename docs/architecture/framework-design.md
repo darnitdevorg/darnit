@@ -796,11 +796,12 @@ expr = 'has(response.body.required_pull_request_reviews)'
 | `fail_on_status` | `list[int]` | HTTP statuses that prove failure (step field) |
 | `expr` | `str` | CEL over `response.status_code` and `response.body` (the parsed JSON body); `true` -> PASS, `false` -> FAIL. Evaluated by the handler, not by the post-step of section 3.7, so `output.*` and `project.*` are not bound. Response headers are not available (`gh api` does not expose them). |
 | `evidence_fields` | `list[str]` | Top-level `response.body` keys kept in the stored evidence. When set, every other body key is dropped from evidence, and so from reports and attestations; `expr` still evaluates against the full response. |
+| `auth_fields` | `dict[str, str]` | Response body keys visible only with specific permissions (e.g. organization owners), mapped to reasons. When a 2xx response omits any of these keys, the handler returns ERROR, class `auth`, naming the field and permission needed. |
 
 **Ceiling**: `{pass, fail}`.
 
 **Behavior**:
-1. 2xx: `expr` decides (no `expr`: PASS); an `expr` that cannot be evaluated over the response -> ERROR, class `evaluation`
+1. 2xx: if an `auth_fields` key is absent from the response body -> ERROR, class `auth`; otherwise `expr` decides (no `expr`: PASS); an `expr` that cannot be evaluated over the response -> ERROR, class `evaluation`
 2. 429, or a 403 whose message is a rate limit -> ERROR, class `rate_limit`, even when the status is in `fail_on_status` (a rate limit never proves failure)
 3. A status in `fail_on_status` -> FAIL
 4. 401 / 403 -> ERROR, class `auth`
@@ -854,6 +855,10 @@ A `gh_api` step reading a personal record MUST declare `evidence_fields`, listin
 #### Scenario: Evidence limited to declared fields
 - **WHEN** a `gh_api` step with `evidence_fields = ["login", "two_factor_authentication"]` receives a body that also has `email` and `bio`
 - **THEN** the stored evidence MUST contain only `login` and `two_factor_authentication` in `response.body`
+
+#### Scenario: Permission-gated response field omitted
+- **WHEN** a `gh_api` step with `auth_fields` receives 200 but the response omits a declared key
+- **THEN** the handler MUST return ERROR, class `auth`, naming the field
 
 ---
 
