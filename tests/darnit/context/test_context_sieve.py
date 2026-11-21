@@ -478,3 +478,162 @@ class TestIntegrationWithValidator:
         assert result.ready is False
         # Should have prompts
         assert len(result.prompts) > 0
+
+
+class TestStatusChecksDetection:
+    """Test required_status_checks API candidate proposing without offline workflow guessing."""
+
+    @pytest.mark.unit
+    def test_detect_status_checks_offline_returns_none_with_matrix_workflows(self, temp_repo):
+        """Offline detection must not propose unexpanded expressions or raw workflow job keys (#697)."""
+        wf_dir = Path(temp_repo) / ".github" / "workflows"
+        wf_dir.mkdir(parents=True)
+        (wf_dir / "ci.yml").write_text("""
+name: CI
+on: [push, pull_request]
+jobs:
+  test:
+    strategy:
+      matrix:
+        python: ['3.10', '3.12']
+        os: [ubuntu-latest, macos-latest]
+    name: pytest (${{ matrix.os }}, ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+  publish:
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+""")
+        with patch("darnit.core.utils.gh_api_with_status", return_value=({}, 500, "offline")):
+            sieve = ContextSieve()
+            result = sieve.detect("required_status_checks", temp_repo, "test-owner", "test-repo")
+            assert result.value is None
+            assert result.signals == []
+
+    @pytest.mark.unit
+    def test_detect_status_checks_api_success(self, temp_repo):
+        """Detect status checks passing on recent merged PRs."""
+
+        def fake_gh_api(endpoint, **kwargs):
+            if "/pulls" in endpoint:
+                return [{"number": 42, "merged_at": "2026-01-01T00:00:00Z", "head": {"sha": "sha123"}}], 200, ""
+            if "/check-runs" in endpoint:
+                return (
+                    {
+                        "check_runs": [
+                            {"name": "ci / build", "conclusion": "success"},
+                            {"name": "failing-check", "conclusion": "failure"},
+                        ]
+                    },
+                    200,
+                    "",
+                )
+            if "/status" in endpoint:
+                return (
+                    {
+                        "statuses": [
+                            {"context": "codecov/patch", "state": "success"},
+                            {"context": "bad/check", "state": "failure"},
+                        ]
+                    },
+                    200,
+                    "",
+                )
+            return {}, 404, "not found"
+
+        with patch("darnit.core.utils.gh_api_with_status", side_effect=fake_gh_api):
+            sieve = ContextSieve()
+            signals = sieve._detect_status_checks_api(temp_repo, "test-owner", "test-repo")
+            assert len(signals) == 1
+            signal = signals[0]
+            assert signal.source == SignalSource.GITHUB_API
+            assert signal.method == "Checks seen on PR #42"
+            assert "ci / build" in signal.value
+            assert "codecov/patch" in signal.value
+            assert "failing-check" in signal.value
+            assert "bad/check" in signal.value
+            assert signal.evidence["pr_counts"]["ci / build"] == 1
+            assert signal.evidence["pr_counts"]["failing-check"] == 1
+
+    @pytest.mark.unit
+    def test_detect_status_checks_api_multiple_merged_prs(self, temp_repo):
+        """Proposes all checks across up to five merged PRs and counts occurrences."""
+
+        def fake_gh_api(endpoint, **kwargs):
+            if "/pulls" in endpoint:
+                return [
+                    {"number": 45, "merged_at": "2026-01-02T00:00:00Z", "head": {"sha": "sha_45"}},
+                    {"number": 42, "merged_at": "2026-01-01T00:00:00Z", "head": {"sha": "sha_42"}},
+                ], 200, ""
+            if "sha_45/check-runs" in endpoint:
+                return {"check_runs": [{"name": "build"}, {"name": "test"}]}, 200, ""
+            if "sha_42/check-runs" in endpoint:
+                return {"check_runs": [{"name": "build"}, {"name": "lint"}]}, 200, ""
+            return {}, 200, ""
+
+        with patch("darnit.core.utils.gh_api_with_status", side_effect=fake_gh_api):
+            sieve = ContextSieve()
+            signals = sieve._detect_status_checks_api(temp_repo, "test-owner", "test-repo")
+            assert len(signals) == 1
+            signal = signals[0]
+            assert signal.method == "Checks seen on PRs #45, #42"
+            assert signal.value == ["build", "lint", "test"]
+            assert signal.evidence["pr_counts"]["build"] == 2
+            assert signal.evidence["pr_counts"]["test"] == 1
+            assert signal.evidence["pr_counts"]["lint"] == 1
+            assert signal.evidence["pr_numbers"] == [45, 42]
+
+    @pytest.mark.unit
+    def test_detect_status_checks_api_skips_unmerged_pr(self, temp_repo):
+        """Unmerged closed PRs are skipped in favor of merged PRs."""
+
+        def fake_gh_api(endpoint, **kwargs):
+            if "/pulls" in endpoint:
+                return [
+                    {"number": 99, "merged_at": None, "head": {"sha": "sha_unmerged"}},
+                    {"number": 42, "merged_at": "2026-01-01T00:00:00Z", "head": {"sha": "sha_merged"}},
+                ], 200, ""
+            if "sha_merged/check-runs" in endpoint:
+                return {"check_runs": [{"name": "tests", "conclusion": "success"}]}, 200, ""
+            if "sha_unmerged/check-runs" in endpoint:
+                return {"check_runs": [{"name": "docs/only", "conclusion": "success"}]}, 200, ""
+            return {}, 200, ""
+
+        with patch("darnit.core.utils.gh_api_with_status", side_effect=fake_gh_api):
+            sieve = ContextSieve()
+            signals = sieve._detect_status_checks_api(temp_repo, "test-owner", "test-repo")
+            assert len(signals) == 1
+            assert signals[0].method == "Checks seen on PR #42"
+            assert signals[0].value == ["tests"]
+
+    @pytest.mark.unit
+    def test_detect_status_checks_api_falls_back_to_default_branch(self, temp_repo):
+        """Falls back to default branch latest commit when no merged PRs exist."""
+
+        def fake_gh_api(endpoint, **kwargs):
+            if "/pulls" in endpoint:
+                return [{"number": 99, "merged_at": None, "head": {"sha": "sha_unmerged"}}], 200, ""
+            if "/commits?per_page=1" in endpoint:
+                return [{"sha": "default_branch_sha"}], 200, ""
+            if "default_branch_sha/check-runs" in endpoint:
+                return {"check_runs": [{"name": "main-ci", "conclusion": "success"}]}, 200, ""
+            return {}, 200, ""
+
+        with patch("darnit.core.utils.gh_api_with_status", side_effect=fake_gh_api):
+            sieve = ContextSieve()
+            signals = sieve._detect_status_checks_api(temp_repo, "test-owner", "test-repo")
+            assert len(signals) == 1
+            assert signals[0].method == "Checks seen on default branch"
+            assert signals[0].value == ["main-ci"]
+
+    @pytest.mark.unit
+    def test_detect_status_checks_api_failure(self, temp_repo):
+        """Gracefully returns empty list on API error."""
+        with patch("darnit.core.utils.gh_api_with_status", return_value=({}, 500, "Server Error")):
+            sieve = ContextSieve()
+            signals = sieve._detect_status_checks_api(temp_repo, "test-owner", "test-repo")
+            assert signals == []
+

@@ -117,6 +117,9 @@ class ContextSieve:
             "governance_model": {
                 "deterministic": self._detect_governance_deterministic,
             },
+            "required_status_checks": {
+                "api": self._detect_status_checks_api,
+            },
         }
 
     def detect(
@@ -715,6 +718,136 @@ class ContextSieve:
             return contributors
         except (subprocess.TimeoutExpired, subprocess.SubprocessError):
             return []
+
+    # =========================================================================
+    # Required Status Checks Detection
+    # =========================================================================
+
+    def _detect_status_checks_api(
+        self,
+        local_path: str,
+        owner: str,
+        repo: str,
+    ) -> list[ContextSignal]:
+        """Detect status check names seen on recent PRs via GitHub API.
+
+        Queries recent closed pull requests, inspects up to five recently merged PRs,
+        and proposes all check names that ran on them (regardless of conclusion).
+        Records in evidence how many of those PRs each check name appeared on.
+        Falls back to checks on the default branch's latest commit.
+        """
+        signals = []
+        from collections import Counter
+
+        from darnit.core.utils import gh_api_with_status
+
+        def _get_checks(sha: str) -> set[str]:
+            checks: set[str] = set()
+            page = 1
+            seen_runs = 0
+            while True:
+                cr_endpoint = f"/repos/{owner}/{repo}/commits/{sha}/check-runs?per_page=100&page={page}"
+                cr_body, cr_status, _ = gh_api_with_status(cr_endpoint)
+                if cr_status != 200 or not isinstance(cr_body, dict):
+                    break
+                cr_list = cr_body.get("check_runs", [])
+                for cr in cr_list:
+                    if isinstance(cr, dict):
+                        name = cr.get("name")
+                        if name:
+                            checks.add(name)
+                total = cr_body.get("total_count", 0)
+                seen_runs += len(cr_list)
+                if not cr_list or seen_runs >= total or len(cr_list) < 100:
+                    break
+                page += 1
+                if page > 5:
+                    break
+
+            st_endpoint = f"/repos/{owner}/{repo}/commits/{sha}/status?per_page=100"
+            st_body, st_status, _ = gh_api_with_status(st_endpoint)
+            if st_status == 200 and isinstance(st_body, dict):
+                for st in st_body.get("statuses", []):
+                    if isinstance(st, dict):
+                        ctx = st.get("context")
+                        if ctx:
+                            checks.add(ctx)
+            return checks
+
+        try:
+            endpoint = f"/repos/{owner}/{repo}/pulls?state=closed&sort=updated&direction=desc&per_page=100"
+            body, status, error = gh_api_with_status(endpoint)
+            merged_prs: list[dict[str, Any]] = []
+            if status == 200 and isinstance(body, list):
+                for pr in body:
+                    if isinstance(pr, dict) and pr.get("merged_at") and pr.get("head", {}).get("sha"):
+                        merged_prs.append(pr)
+                        if len(merged_prs) >= 5:
+                            break
+
+            if merged_prs:
+                all_checks: set[str] = set()
+                pr_counts: Counter[str] = Counter()
+                pr_numbers: list[int] = []
+                for pr in merged_prs:
+                    head_sha = pr["head"]["sha"]
+                    pr_num = pr.get("number")
+                    checks_for_pr = _get_checks(head_sha)
+                    if checks_for_pr:
+                        if pr_num is not None:
+                            pr_numbers.append(pr_num)
+                        all_checks.update(checks_for_pr)
+                        for c in checks_for_pr:
+                            pr_counts[c] += 1
+
+                if all_checks:
+                    checks_list = sorted(all_checks)
+                    if len(pr_numbers) == 1:
+                        method = f"Checks seen on PR #{pr_numbers[0]}"
+                    else:
+                        pr_nums_str = ", ".join(f"#{n}" for n in pr_numbers)
+                        method = f"Checks seen on PRs {pr_nums_str}"
+                    signals.append(
+                        ContextSignal(
+                            source=SignalSource.GITHUB_API,
+                            value=checks_list,
+                            raw_confidence=0.9,
+                            method=method,
+                            evidence={
+                                "pr_numbers": pr_numbers,
+                                "checks": checks_list,
+                                "pr_counts": dict(pr_counts),
+                                "count": len(checks_list),
+                            },
+                        )
+                    )
+
+            if not signals:
+                c_endpoint = f"/repos/{owner}/{repo}/commits?per_page=1"
+                c_body, c_status, _ = gh_api_with_status(c_endpoint)
+                if c_status == 200 and isinstance(c_body, list) and c_body:
+                    c_sha = c_body[0].get("sha")
+                    if c_sha:
+                        checks = _get_checks(c_sha)
+                        if checks:
+                            checks_list = sorted(checks)
+                            signals.append(
+                                ContextSignal(
+                                    source=SignalSource.GITHUB_API,
+                                    value=checks_list,
+                                    raw_confidence=0.9,
+                                    method="Checks seen on default branch",
+                                    evidence={
+                                        "commit_sha": c_sha,
+                                        "checks": checks_list,
+                                        "count": len(checks_list),
+                                    },
+                                )
+                            )
+        except Exception as e:
+            logger.debug(f"GitHub API status check detection failed: {e}")
+
+        return signals
 
 
 # Singleton instance
