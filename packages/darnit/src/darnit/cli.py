@@ -1472,14 +1472,10 @@ def _detect_default_branch(repo_path: Path) -> str:
     """Detect the default branch name."""
     import subprocess
 
+    from darnit.remediation.git_state import run_git
+
     try:
-        result = subprocess.run(
-            ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
-            capture_output=True,
-            text=True,
-            cwd=repo_path,
-            timeout=5,
-        )
+        result = run_git(repo_path, "symbolic-ref", "refs/remotes/origin/HEAD", timeout=5)
         if result.returncode == 0:
             # refs/remotes/origin/main -> main
             return result.stdout.strip().split("/")[-1]

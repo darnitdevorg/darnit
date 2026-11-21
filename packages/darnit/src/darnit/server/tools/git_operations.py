@@ -617,34 +617,19 @@ def get_remediation_status_impl(local_path: str = ".") -> str:
 
     try:
         # Get current branch
-        result = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            cwd=resolved_path,
-            capture_output=True,
-            text=True
-        )
+        result = run_git(resolved_path, "rev-parse", "--abbrev-ref", "HEAD")
         if result.returncode != 0:
             return "Error: Not a git repository"
         current_branch = result.stdout.strip()
 
         # Get status
-        result = subprocess.run(
-            ["git", "status", "--porcelain"],
-            cwd=resolved_path,
-            capture_output=True,
-            text=True
-        )
+        result = run_git(resolved_path, "status", "--porcelain")
         changes = result.stdout.strip()
         changed_files = [line.split(None, 1)[1] if len(line.split(None, 1)) > 1 else line
                         for line in changes.split('\n') if line.strip()]
 
         # Check for unpushed commits
-        result = subprocess.run(
-            ["git", "log", "@{u}..HEAD", "--oneline"],
-            cwd=resolved_path,
-            capture_output=True,
-            text=True
-        )
+        result = run_git(resolved_path, "log", "@{u}..HEAD", "--oneline")
         unpushed = result.stdout.strip().split('\n') if result.returncode == 0 and result.stdout.strip() else []
         unpushed = [c for c in unpushed if c.strip()]
 

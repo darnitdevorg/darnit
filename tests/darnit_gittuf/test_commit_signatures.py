@@ -10,10 +10,8 @@ import base64
 import os
 import subprocess
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
-from darnit_gittuf import handlers
 from darnit_gittuf.handlers import gittuf_commits_signed_handler
 
 from darnit.sieve.handler_registry import HandlerContext, HandlerResultStatus
@@ -147,7 +145,7 @@ def _status_shim(monkeypatch: pytest.MonkeyPatch, status: str) -> None:
 
     def run(args, **kwargs):
         result = real_run(args, **kwargs)
-        if list(args[:2]) == ["git", "log"]:
+        if args and args[0] == "git" and "log" in args:
             lines = []
             for line in result.stdout.splitlines():
                 if "\x1f" in line:
@@ -158,7 +156,7 @@ def _status_shim(monkeypatch: pytest.MonkeyPatch, status: str) -> None:
             result = subprocess.CompletedProcess(args, result.returncode, "\n".join(lines) + "\n", result.stderr)
         return result
 
-    monkeypatch.setattr(handlers, "subprocess", SimpleNamespace(run=run, TimeoutExpired=subprocess.TimeoutExpired))
+    monkeypatch.setattr(subprocess, "run", run)
 
 
 class TestHandlerOnRealGit:

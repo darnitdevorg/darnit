@@ -7,6 +7,7 @@ needed for building attestation subjects and predicates.
 import subprocess
 
 from darnit.core.logging import get_logger
+from darnit.remediation.git_state import run_git
 
 logger = get_logger("attestation.git")
 
@@ -21,12 +22,7 @@ def get_git_commit(local_path: str) -> str | None:
         The full commit SHA or None if not a git repository
     """
     try:
-        result = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=local_path,
-            capture_output=True,
-            text=True
-        )
+        result = run_git(local_path, "rev-parse", "HEAD")
         if result.returncode == 0:
             return result.stdout.strip()
     except (subprocess.SubprocessError, FileNotFoundError, OSError):
@@ -45,24 +41,14 @@ def get_git_ref(local_path: str) -> str | None:
     """
     try:
         # Try to get branch name
-        result = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            cwd=local_path,
-            capture_output=True,
-            text=True
-        )
+        result = run_git(local_path, "rev-parse", "--abbrev-ref", "HEAD")
         if result.returncode == 0:
             ref = result.stdout.strip()
             if ref != "HEAD":  # Not in detached HEAD state
                 return ref
 
         # Try to get tag if in detached HEAD
-        result = subprocess.run(
-            ["git", "describe", "--tags", "--exact-match"],
-            cwd=local_path,
-            capture_output=True,
-            text=True
-        )
+        result = run_git(local_path, "describe", "--tags", "--exact-match")
         if result.returncode == 0:
             return result.stdout.strip()
     except (subprocess.SubprocessError, FileNotFoundError, OSError):

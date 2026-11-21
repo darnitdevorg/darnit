@@ -14,9 +14,10 @@ from __future__ import annotations
 
 import os
 import posixpath
-import subprocess
 from collections.abc import Iterable
 from pathlib import Path
+
+from darnit.core.git import run_git
 
 TRAILER_KEY = "Darnit-Remediation-Run"
 
@@ -36,14 +37,6 @@ class GitStateError(RuntimeError):
     """A git command needed to establish the repository's state failed."""
 
 
-def run_git(repo: str | Path, *args: str, stdin: str | None = None) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", "--no-optional-locks", *args],
-        cwd=repo,
-        capture_output=True,
-        text=True,
-        input=stdin,
-    )
 
 
 def _checked(repo: str | Path, *args: str) -> str:
