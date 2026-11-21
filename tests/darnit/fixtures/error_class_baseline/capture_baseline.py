@@ -96,11 +96,6 @@ def scrub(text: str, fixture: Path) -> str:
     Two classes of variance, neither related to this feature:
 
     * The fixture's tempdir path (machine-dependent).
-    * ``format_results_markdown``'s ``Generated At:`` wall-clock stamp
-      (run-dependent). This is a genuine Tier 1 determinism gap in the
-      markdown formatter -- audit reports can never be byte-for-byte
-      reproducible while it embeds a timestamp. Out of scope for feature
-      036; flagged as a follow-up on issue #418.
     * ``pass_history[].duration_ms`` (load-dependent). Reads 0 for these
       fast file-existence checks in practice, but nothing guarantees it,
       and a flaky baseline test is worse than no baseline test.
@@ -108,11 +103,6 @@ def scrub(text: str, fixture: Path) -> str:
     import re
 
     text = text.replace(str(fixture), "<FIXTURE>")
-    text = re.sub(
-        r"\*\*Generated At:\*\* \S+",
-        "**Generated At:** <SCRUBBED-TIMESTAMP>",
-        text,
-    )
     text = re.sub(
         r"(\*\*Framework:\*\* .*? v)\S+",
         r"\1<SCRUBBED-VERSION>",

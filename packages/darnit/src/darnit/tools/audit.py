@@ -1362,8 +1362,8 @@ def format_results_markdown(
         )
     if meta.get("spec_version"):
         header_lines.append(f"**Spec Version:** {meta['spec_version']}")
-    if meta.get("generated_at"):
-        header_lines.append(f"**Generated At:** {meta['generated_at']}")
+    # No wall-clock time in the report: the same results must render to the
+    # same bytes (#436). The JSON and SARIF metadata still carry generated_at.
     lines = [
         *header_lines,
         f"**Repository:** {owner}/{repo}",

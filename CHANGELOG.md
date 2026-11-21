@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Remediation templates state a test command or link a file only when the
   repository scan found it or the same run writes it; otherwise, they leave
   a marked TODO gap (fixes #751).
+- Markdown audit reports no longer include a `Generated At` timestamp, so the
+  same results produce the same report on every run. The JSON and SARIF
+  outputs still record `generated_at` in their metadata (fixes #436).
 - In the gittuf commit signature check (GT-02.01), when commits lack good
   signatures, the FAIL message states how many recent commits have a good
   signature and reports commits that could not be checked on the machine

@@ -84,8 +84,35 @@ class TestMarkdownHeaderIncludesMetadata:
 
         assert "**Framework:** OpenSSF Baseline" in out
         assert "**Spec Version:** OSPS v" in out
-        assert "**Generated At:**" in out
         assert "**Repository:** acme/widget" in out
+
+    def test_markdown_report_has_no_wall_clock_time(self):
+        """The same results render to the same report on every run (#436)."""
+        from datetime import UTC, datetime
+        from unittest.mock import patch
+
+        from darnit.tools.audit import format_results_markdown
+
+        def render(now: datetime) -> str:
+            with patch("datetime.datetime") as clock:
+                clock.now.return_value = now
+                return format_results_markdown(
+                    owner="acme",
+                    repo="widget",
+                    results=[],
+                    summary={"PASS": 0, "FAIL": 0, "WARN": 0, "PENDING": 0, "N/A": 0, "ERROR": 0, "total": 0},
+                    compliance={1: True, 2: True, 3: True},
+                    level=1,
+                    local_path="/tmp/notarealpath",
+                    framework_name="openssf-baseline",
+                )
+
+        first = render(datetime(2026, 1, 1, tzinfo=UTC))
+        second = render(datetime(2026, 6, 1, 12, 30, tzinfo=UTC))
+
+        assert first == second
+        assert "Generated At" not in first
+        assert "2026-01-01" not in first
 
 
 class TestJsonOutputIncludesMetadata:
