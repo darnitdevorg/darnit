@@ -8,11 +8,6 @@
           "title": "Attest",
           "type": "boolean"
         },
-        "auto_init_config": {
-          "default": true,
-          "title": "Auto Init Config",
-          "type": "boolean"
-        },
         "host": {
           "anyOf": [
             {
@@ -1395,11 +1390,6 @@
           "default": null,
           "title": "Control Ids"
         },
-        "level": {
-          "default": 3,
-          "title": "Level",
-          "type": "integer"
-        },
         "limit": {
           "default": 4,
           "title": "Limit",
@@ -1421,18 +1411,6 @@
           ],
           "default": null,
           "title": "Owner"
-        },
-        "profile": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Profile"
         },
         "repo": {
           "anyOf": [
