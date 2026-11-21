@@ -16,6 +16,7 @@ from darnit.core.llm_step import (
     LLMStep,
     MockLLMStep,
     PydanticAILLMStep,
+    api_key_env,
 )
 
 
@@ -82,6 +83,62 @@ class TestPydanticAILLMStep:
         assert judgment.model == "anthropic:claude-sonnet-5"
         assert judgment.model_version == "claude-sonnet-5-20260801"
         assert judgment.cited_evidence == ["quote"]
+
+
+class TestProviders:
+    """#764: the key the step needs follows the model's provider."""
+
+    @pytest.mark.parametrize(
+        ("model", "env_var"),
+        [
+            ("anthropic:claude-sonnet-5", "ANTHROPIC_API_KEY"),
+            ("openai:gpt-5", "OPENAI_API_KEY"),
+            ("gemini:gemini-3", None),
+            ("claude-sonnet-5", None),
+        ],
+    )
+    def test_api_key_env(self, model: str, env_var: str | None) -> None:
+        assert api_key_env(model) == env_var
+
+    def test_openai_needs_openai_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "not-the-right-key")
+        step = PydanticAILLMStep(model="openai:gpt-5")
+        with pytest.raises(RuntimeError, match="OPENAI_API_KEY") as excinfo:
+            _run(step.evaluate(ConsultationRequest(control_id="X", prompt="Q")))
+        assert "'openai'" in str(excinfo.value)
+
+    def test_openai_does_not_need_anthropic_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.setenv("OPENAI_API_KEY", "test-key-not-real")
+        agent = PydanticAILLMStep(model="openai:gpt-5")._build_agent()
+        assert agent is not None
+
+    def test_unsupported_provider_is_refused(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-real")
+        step = PydanticAILLMStep(model="gemini:gemini-3")
+        with pytest.raises(RuntimeError, match="does not support model 'gemini:gemini-3'"):
+            _run(step.evaluate(ConsultationRequest(control_id="X", prompt="Q")))
+
+    def test_openai_judgment_names_openai(self) -> None:
+        class _Response:
+            model_name = "gpt-5-2026-08-07"
+
+        class _Result:
+            output = LLMJudgment(outcome="no", confidence=0.4, reasoning="r", model="spoofed")
+            response = _Response()
+
+        class _Agent:
+            async def run(self, prompt: str) -> _Result:
+                return _Result()
+
+        step = PydanticAILLMStep(model="openai:gpt-5")
+        step._agent = _Agent()
+
+        judgment = _run(step.evaluate(ConsultationRequest(control_id="X", prompt="Q")))
+
+        assert judgment.model == "openai:gpt-5"
+        assert judgment.model_version == "gpt-5-2026-08-07"
 
 
 class TestLLMStepProtocol:

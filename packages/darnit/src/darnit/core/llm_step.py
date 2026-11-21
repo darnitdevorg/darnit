@@ -3,8 +3,8 @@
 RFC-0001 Stage 1. See specs/025-rfc0001-stage1/research.md section R6.
 
 The Protocol makes the LLM SDK swappable at code time; the default
-``PydanticAILLMStep`` implementation uses ``pydantic-ai-slim[anthropic]``
-(a required runtime dependency, per Q3 clarification). Tests inject
+``PydanticAILLMStep`` implementation uses ``pydantic-ai-slim[anthropic,openai]``
+(a required runtime dependency, per Q3 clarification; OpenAI added by #764). Tests inject
 ``MockLLMStep`` to avoid live API calls.
 
 Slice A: Protocol + Mock only. ``PydanticAILLMStep.evaluate`` raises
@@ -59,6 +59,24 @@ class LLMJudgment(BaseModel):
     model_version: str = ""
 
 
+# Providers the default step supports, and the environment variable that holds
+# each one's API key (#764). The model string is ``<provider>:<model name>``.
+PROVIDER_API_KEY_ENV: dict[str, str] = {
+    "anthropic": "ANTHROPIC_API_KEY",
+    "openai": "OPENAI_API_KEY",
+}
+
+
+def model_provider(model: str) -> str:
+    """The provider part of a ``<provider>:<model name>`` string."""
+    return model.partition(":")[0]
+
+
+def api_key_env(model: str) -> str | None:
+    """The environment variable holding the API key for ``model``, or None for an unsupported provider."""
+    return PROVIDER_API_KEY_ENV.get(model_provider(model))
+
+
 @runtime_checkable
 class LLMStep(Protocol):
     """Contract for invoking an LLM with structured output and validation.
@@ -73,12 +91,15 @@ class LLMStep(Protocol):
 
 
 class PydanticAILLMStep:
-    """Default ``LLMStep`` implementation using ``pydantic-ai-slim[anthropic]``.
+    """Default ``LLMStep`` implementation using ``pydantic-ai-slim``.
 
     Constructs a ``pydantic_ai.Agent`` on demand (first ``evaluate()`` call)
-    and caches it per-instance. Requires ``ANTHROPIC_API_KEY`` in the
-    environment at call time; construction does NOT require the key so
-    tests and CI can instantiate freely without credentials.
+    and caches it per-instance. ``model`` is ``<provider>:<model name>`` with
+    a provider from ``PROVIDER_API_KEY_ENV`` (``anthropic`` or ``openai``).
+    Requires that provider's API key variable (``ANTHROPIC_API_KEY`` or
+    ``OPENAI_API_KEY``) in the environment at call time; construction does
+    NOT require the key so tests and CI can instantiate freely without
+    credentials.
 
     Feature 025 T047. The Protocol makes this SDK swappable at code time
     (one file); this class is the shipping default, not a mandatory type.
@@ -93,11 +114,17 @@ class PydanticAILLMStep:
         the LLM SDK's env credentials are missing."""
         import os
 
-        if not os.environ.get("ANTHROPIC_API_KEY"):
+        env_var = api_key_env(self.model)
+        if env_var is None:
             raise RuntimeError(
-                "PydanticAILLMStep.evaluate requires ANTHROPIC_API_KEY in the "
-                "environment. Inject a MockLLMStep in tests, or set the env var "
-                "for interactive use."
+                f"PydanticAILLMStep does not support model {self.model!r}: the provider "
+                f"must be one of {', '.join(sorted(PROVIDER_API_KEY_ENV))}."
+            )
+        if not os.environ.get(env_var):
+            raise RuntimeError(
+                f"PydanticAILLMStep.evaluate requires {env_var} in the environment "
+                f"for provider {model_provider(self.model)!r}. Inject a MockLLMStep "
+                "in tests, or set the env var for interactive use."
             )
         from pydantic_ai import Agent
 
