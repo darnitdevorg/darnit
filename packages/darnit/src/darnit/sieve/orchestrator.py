@@ -838,6 +838,12 @@ class SieveOrchestrator:
             "llm_reasoning": llm_response.reasoning,
             "llm_evidence": llm_response.evidence_cited,
         }
+        # The model that answered, as <provider>:<model>, on every judgment
+        # result (framework-design.md 14.1); empty when the caller gave none.
+        if llm_response.model:
+            base_evidence["llm_model"] = llm_response.model
+        if llm_response.model_version:
+            base_evidence["llm_model_version"] = llm_response.model_version
         if consultation:
             base_evidence["llm_consultation"] = consultation
 

@@ -66,6 +66,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `darnit harness` can use OpenAI for model judgments: set `[llm]
+  provider = "openai"` and `model` in operator configuration and export
+  `OPENAI_API_KEY`. The credential check now looks for the configured
+  provider's key, every model judgment result records the model in its
+  evidence (`llm_model`), and `darnit-core` depends on
+  `pydantic-ai-slim[anthropic,openai]` (#764).
 - An OpenSSF Security Insights file (`security-insights.yml` at the root or
   in `.github/` / `.gitlab/`, schema 1.x or 2.x) proposes the project's
   security contact as an unconfirmed candidate in `get_pending_data`, with the

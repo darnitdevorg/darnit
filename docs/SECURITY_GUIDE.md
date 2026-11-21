@@ -189,7 +189,13 @@ confirmation_expiry_days = 180
 [remediation]
 platform = "prompt"      # prompt | manual | auto
 high_impact = "prompt"   # prompt | manual | auto
+
+[llm]
+provider = "openai"      # anthropic (default) | openai
+model = "gpt-5"          # required for openai; the key comes from OPENAI_API_KEY
 ```
+
+The harness reads the API key for the configured provider from the environment only: `ANTHROPIC_API_KEY` for `anthropic`, `OPENAI_API_KEY` for `openai`. A model's judgment is a PASS candidate that a person confirms whichever provider produced it.
 
 `darnit config show` prints the file in use, its SHA-256 digest, the permission-check result, and the effective settings with secrets redacted. Every audit report records the same source and digest, so reference secrets as `$VAR` rather than writing them into the file.
 

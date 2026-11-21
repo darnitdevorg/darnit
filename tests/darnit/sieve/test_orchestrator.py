@@ -1,5 +1,7 @@
 """Tests for the sieve orchestrator."""
 
+import pytest
+
 from darnit.config.framework_schema import HandlerInvocation
 from darnit.sieve.models import (
     CheckContext,
@@ -220,6 +222,39 @@ class TestVerifyWithLlmResponse:
         assert result.status == "FAIL"
         assert result.authority == "suggestive"
         assert result.concluded_by == "llm_judgment"
+
+    @pytest.mark.parametrize(
+        ("outcome", "status"),
+        [
+            (PassOutcome.FAIL, "FAIL"),
+            (PassOutcome.INCONCLUSIVE, "WARN"),
+            (PassOutcome.PASS, "WARN"),  # rejected: no verified citations
+            (PassOutcome.ERROR, "ERROR"),
+        ],
+    )
+    def test_every_judgment_result_records_the_model(self, outcome: PassOutcome, status: str) -> None:
+        """framework-design.md 14.1: each judgment's evidence names the model."""
+        spec = ControlSpec(
+            control_id="TEST-01",
+            level=1,
+            domain="TEST",
+            name="TestControl",
+            description="Test",
+            metadata={"handler_invocations": [HandlerInvocation(handler="llm_eval")]},
+        )
+        response = LLMConsultationResponse(
+            status=outcome,
+            confidence=0.5,
+            reasoning="r",
+            model="openai:gpt-5",
+            model_version="gpt-5-2026-08-07",
+        )
+
+        result = SieveOrchestrator(stop_on_llm=True).verify_with_llm_response(spec, _make_context(), response)
+
+        assert result.status == status
+        assert result.evidence["llm_model"] == "openai:gpt-5"
+        assert result.evidence["llm_model_version"] == "gpt-5-2026-08-07"
 
 
 class TestHandlerWhenClause:
