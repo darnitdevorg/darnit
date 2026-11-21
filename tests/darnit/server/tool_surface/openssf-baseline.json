@@ -615,6 +615,25 @@
           "default": null,
           "title": "Repo"
         },
+        "required_status_checks": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Which status checks should be required before merging?",
+          "title": "Required Status Checks"
+        },
         "security_contact": {
           "anyOf": [
             {

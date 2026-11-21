@@ -341,3 +341,67 @@ def test_changed_outcome_lists_files_kept_for_user_changes(repo: Path, monkeypat
     changes = {c["path"]: (c["action"], c["reason"]) for c in outcome["file_changes"]}
     assert changes == {"NEW.md": ("create", None), "SECURITY.md": ("none", "user_changes_present")}
     assert (repo / "SECURITY.md").read_text(encoding="utf-8") == "# Policy being edited\n"
+
+
+@pytest.mark.integration
+def test_invalid_platform_context_shows_error_in_preview_and_apply(
+    repo: Path, trusted_target: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Item 2 (#697): an empty/invalid context value fails preview under Errors, never Would Apply."""
+    from darnit.config import context_resolve
+    from darnit.config.context_schema import ContextDefinition, ContextType
+
+    owner, repo_name = trusted_target
+    platform_framework = FrameworkConfig(
+        metadata=FrameworkMetadata(name="openssf-baseline", display_name="Test", version="1.0"),
+        context={
+            "required_status_checks": ContextDefinition(type=ContextType.LIST, prompt="Status checks?"),
+        },
+        controls={
+            "T-QA": _control(
+                _present("NONEXISTENT.md"),
+                RemediationConfig(
+                    handlers=[
+                        HandlerInvocation(
+                            handler="platform_setting",
+                            target="branch_protection",
+                            require={"require_status_checks": ["${context.required_status_checks}"]},
+                        )
+                    ]
+                ),
+            ),
+        },
+    )
+    monkeypatch.setattr(orchestrator, "_get_framework_config", lambda: platform_framework)
+    monkeypatch.setattr(
+        audit_cache, "read_audit_cache", lambda *_a, **_k: {"results": [{"id": "T-QA", "status": "FAIL"}]}
+    )
+
+    # Simulate an empty list slipping past confirmation into usable context.
+    orig_resolve = context_resolve.resolve_context
+
+    def fake_resolve(*args, **kwargs):
+        res = orig_resolve(*args, **kwargs)
+        monkeypatch.setattr(res, "usable", lambda: {"required_status_checks": []})
+        monkeypatch.setattr(res, "unusable_keys", lambda: set())
+        return res
+
+    monkeypatch.setattr(context_resolve, "resolve_context", fake_resolve)
+
+    preview_output = orchestrator.remediate_audit_findings(
+        local_path=str(repo), owner=owner, repo=repo_name, dry_run=True
+    )
+    preview_run = _run_block(preview_output)
+    preview_md = preview_output.split("```json")[0]
+    assert preview_run["plan"] == []
+    assert "## Errors (1)" in preview_md
+    assert "## Would Apply (0 remediations)" in preview_md
+    assert "empty list" in preview_md
+
+    apply_output = orchestrator.remediate_audit_findings(
+        local_path=str(repo), owner=owner, repo=repo_name, dry_run=False
+    )
+    apply_run = _run_block(apply_output)
+    assert apply_run["summary"]["error"] == 1
+    assert apply_run["outcomes"][0]["kind"] == "error"
+    assert "empty list" in apply_run["outcomes"][0]["error"]["cause"]

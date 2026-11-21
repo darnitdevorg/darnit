@@ -59,6 +59,27 @@ class TestVocabulary:
         with pytest.raises(ValueError):
             coerce_value(ContextDefinition(type=ContextType.BOOLEAN, prompt="?"), "maybe")
 
+    @pytest.mark.parametrize(
+        ("answer", "expected"),
+        [
+            (["build", "test"], ["build", "test"]),
+            (["test (ubuntu-latest, 3.12)", "lint"], ["test (ubuntu-latest, 3.12)", "lint"]),
+            ("tests", ["tests"]),
+            ("test (ubuntu-latest, 3.12)", ["test (ubuntu-latest, 3.12)"]),
+            ("build, test", ["build, test"]),
+        ],
+    )
+    def test_list_answers_preserve_items(self, answer: list[str] | str, expected: list[str]) -> None:
+        definition = ContextDefinition(type=ContextType.LIST, prompt="?")
+        assert coerce_value(definition, answer) == expected
+
+    @pytest.mark.parametrize("bad_answer", ["", "   ", [], [""], ["  "], ["tests", ""], [123], 123])
+    def test_list_answers_reject_invalid_and_empty(self, bad_answer: object) -> None:
+        """Item 2 (#697): LIST context keys refuse empty strings, empty lists, and blank items."""
+        definition = ContextDefinition(type=ContextType.LIST, prompt="?")
+        with pytest.raises(ValueError):
+            coerce_value(definition, bad_answer)
+
 
 @pytest.mark.unit
 class TestValueDigest:
