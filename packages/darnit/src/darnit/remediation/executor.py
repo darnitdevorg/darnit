@@ -37,10 +37,10 @@ import os
 import stat
 import subprocess
 import tempfile
-from collections.abc import Collection, Iterator, Mapping
+from collections.abc import Collection, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -78,6 +78,11 @@ class ConfirmationRequired(Exception):
 
 class WriteRefused(Exception):
     """The executor did not write a planned change; nothing was written for it."""
+
+
+class _PreviewMismatch(NamedTuple):
+    message: str
+    refused: list[str]
 
 
 class GuardedContext(Mapping[str, Any]):
@@ -136,6 +141,7 @@ class RemediationResult:
     # ``approvals`` are the individual approvals the apply used.
     needs_approval: list[str] = field(default_factory=list)
     approvals: list[Approval] = field(default_factory=list)
+    refused: list[str] = field(default_factory=list)
 
 
 class RemediationExecutor:
@@ -182,6 +188,8 @@ class RemediationExecutor:
         approvals: Collection[str] = (),
         item_approver: ItemApprover | None = None,
         host: str | None = None,
+        previewed_digests: Collection[str] | Mapping[str, str] | None = None,
+        previewed_plan: Sequence[PlanItem] | None = None,
     ):
         """Initialize the executor.
 
@@ -245,6 +253,15 @@ class RemediationExecutor:
         self._item_approver = item_approver
         self._granted: dict[str, Approval] = {}
         self._in_git: bool | None = None
+        self._previewed_digests: frozenset[str] | Mapping[str, str] | None = (
+            frozenset(previewed_digests)
+            if isinstance(previewed_digests, (set, list, tuple, frozenset))
+            else previewed_digests
+        )
+        self._previewed_by_control: dict[str, dict[str, PlanItem]] = {}
+        if previewed_plan:
+            for item in previewed_plan:
+                self._previewed_by_control.setdefault(item.control_id, {})[item.step] = item
 
         # Auto-detect owner/repo if not provided
         if not owner or not repo:
@@ -451,6 +468,8 @@ class RemediationExecutor:
         control_id: str,
         config: RemediationConfig,
         dry_run: bool = True,
+        previewed_plan: Sequence[PlanItem] | None = None,
+        previewed_digests: Collection[str] | Mapping[str, str] | None = None,
     ) -> RemediationResult:
         """Preview (``dry_run=True``) or apply a remediation.
 
@@ -480,6 +499,10 @@ class RemediationExecutor:
 
         try:
             planned = self._run_steps(control_id, config, "plan")
+            if dry_run and config.project_update and config.project_update.set:
+                self._project_update(control_id, config.project_update, planned)
+            if dry_run:
+                self._previewed_by_control[control_id] = {item.step: item for item in planned.plan}
             if not dry_run and planned.details.get("missing_handlers"):
                 return RemediationResult(
                     success=False,
@@ -490,6 +513,20 @@ class RemediationExecutor:
                     details=planned.details,
                     plan=planned.plan,
                 )
+            if not dry_run:
+                mismatch = self._check_preview_match(control_id, planned.plan, previewed_plan, previewed_digests)
+                if mismatch is not None:
+                    return RemediationResult(
+                        success=False,
+                        message=mismatch.message,
+                        control_id=control_id,
+                        remediation_type="handler_pipeline",
+                        dry_run=False,
+                        changed=False,
+                        refused=mismatch.refused,
+                        details={"refused": mismatch.refused, "reason": "stale_preview"},
+                        plan=planned.plan,
+                    )
             if not dry_run and (unapproved := self._unapproved(planned.plan, config.safe)):
                 return RemediationResult(
                     success=False,
@@ -522,14 +559,177 @@ class RemediationExecutor:
             result.plan = planned.plan
             result.approvals = self._used_approvals(planned.plan)
 
-        if result.success and config.project_update and config.project_update.set:
+        if not dry_run and result.success and config.project_update and config.project_update.set:
             self._project_update(control_id, config.project_update, result)
-            if not dry_run:
-                from darnit.core.utils import clear_dir_entries_cache
-
-                clear_dir_entries_cache()
+            clear_dir_entries_cache()
 
         return result
+
+    def _check_preview_match(
+        self,
+        control_id: str,
+        fresh_plan: Sequence[PlanItem],
+        explicit_plan: Sequence[PlanItem] | None = None,
+        explicit_digests: Collection[str] | Mapping[str, str] | None = None,
+    ) -> _PreviewMismatch | None:
+        preview_items: dict[str, PlanItem] | None = None
+        if explicit_plan is not None:
+            preview_items = {item.step: item for item in explicit_plan if item.control_id == control_id}
+        elif control_id in self._previewed_by_control:
+            preview_items = self._previewed_by_control[control_id]
+
+        digests_filter = explicit_digests if explicit_digests is not None else self._previewed_digests
+
+        previewable_fresh = [item for item in fresh_plan if item.previewable and item.step != "project_update"]
+        if not previewable_fresh:
+            return None
+
+        if preview_items is not None:
+            for item in previewable_fresh:
+                prev_item = preview_items.get(item.step)
+                if prev_item is None:
+                    return _PreviewMismatch(
+                        message=f"Plan item for {control_id} ({item.step}) was not in previewed plan; re-run preview",
+                        refused=[item.digest],
+                    )
+                if item.digest != prev_item.digest and not self._item_matches_preview(prev_item, item):
+                    return _PreviewMismatch(
+                        message=(
+                            f"Previewed plan item for {control_id} ({item.step}) changed since preview "
+                            f"(digest {prev_item.digest} != {item.digest}); re-run preview"
+                        ),
+                        refused=[item.digest],
+                    )
+            previewable_prev = {
+                step: it for step, it in preview_items.items() if it.previewable and step != "project_update"
+            }
+            fresh_steps = {item.step for item in fresh_plan if item.step != "project_update"}
+            for step, prev_item in previewable_prev.items():
+                if step not in fresh_steps:
+                    return _PreviewMismatch(
+                        message=f"Previewed plan item for {control_id} ({step}) is missing from fresh plan; re-run preview",
+                        refused=[prev_item.digest],
+                    )
+            return None
+
+        if digests_filter is not None:
+            if isinstance(digests_filter, Mapping):
+                for item in previewable_fresh:
+                    expected = (
+                        digests_filter.get(item.step)
+                        or digests_filter.get(f"{control_id}:{item.step}")
+                        or digests_filter.get(item.digest)
+                    )
+                    if expected is not None and expected != item.digest:
+                        return _PreviewMismatch(
+                            message=(
+                                f"Previewed plan item for {control_id} ({item.step}) changed since preview "
+                                f"(digest {expected} != {item.digest}); re-run preview"
+                            ),
+                            refused=[item.digest],
+                        )
+            else:
+                for item in previewable_fresh:
+                    if item.digest not in digests_filter:
+                        return _PreviewMismatch(
+                            message=(
+                                f"Plan item for {control_id} ({item.step}) digest {item.digest} "
+                                "was not in previewed digests; re-run preview"
+                            ),
+                            refused=[item.digest],
+                        )
+            return None
+
+        return None
+
+    def _item_matches_preview(self, prev_item: PlanItem, fresh_item: PlanItem) -> bool:
+        """Check if fresh_item matches prev_item, tolerating run-internal updates to .project/.
+
+        In multi-control runs, earlier controls apply their changes and record references
+        or project_updates to .project/ files (e.g. .project/project.yaml). When a later
+        control re-plans at apply time, its .project/ entries reflect those earlier writes.
+        If the primary changes (commands, change_sets, non-.project files) match and all
+        differing .project/ files were written in the current run, the item is not stale.
+        """
+        if fresh_item.digest == prev_item.digest:
+            return True
+
+        if fresh_item.step != prev_item.step:
+            return False
+
+        if fresh_item.commands != prev_item.commands:
+            return False
+
+        if fresh_item.change_sets != prev_item.change_sets:
+            return False
+
+        prev_primary = [c for c in prev_item.file_changes if not c.path.replace("\\", "/").startswith(".project/")]
+        fresh_primary = [c for c in fresh_item.file_changes if not c.path.replace("\\", "/").startswith(".project/")]
+        if prev_primary != fresh_primary:
+            if fresh_item.step.startswith("generate_threat_model") and self._threat_model_matches_preview(
+                prev_primary, fresh_primary
+            ):
+                prev_primary = fresh_primary
+            else:
+                return False
+
+        fresh_project = [c for c in fresh_item.file_changes if c.path.replace("\\", "/").startswith(".project/")]
+        if not fresh_project:
+            return True
+
+        for c in fresh_project:
+            if not self._written_this_run(c.path):
+                return False
+
+        return True
+
+    def _threat_model_matches_preview(
+        self, prev_changes: list[FileChange], fresh_changes: list[FileChange]
+    ) -> bool:
+        """Compare threat model files, tolerating scan stat drift from files written this run."""
+        import json
+        import re
+
+        if len(prev_changes) != len(fresh_changes):
+            return False
+
+        for p_c, f_c in zip(prev_changes, fresh_changes, strict=True):
+            if p_c.path != f_c.path or p_c.action != f_c.action:
+                return False
+            if p_c.content == f_c.content:
+                continue
+            if not p_c.content or not f_c.content:
+                return False
+
+            if p_c.path.replace("\\", "/").endswith("raw-findings.json"):
+                try:
+                    p_json = json.loads(p_c.content)
+                    f_json = json.loads(f_c.content)
+                    if isinstance(p_json.get("metadata"), dict):
+                        p_json["metadata"]["languages"] = []
+                        p_json["metadata"]["files_scanned"] = 0
+                    if isinstance(f_json.get("metadata"), dict):
+                        f_json["metadata"]["languages"] = []
+                        f_json["metadata"]["files_scanned"] = 0
+                    p_json["file_scan_stats"] = None
+                    f_json["file_scan_stats"] = None
+                    if p_json != f_json:
+                        return False
+                except (ValueError, TypeError):
+                    return False
+            elif p_c.path.replace("\\", "/").endswith("SUMMARY.md"):
+                def _norm_summary(text: str) -> str:
+                    t = re.sub(r"\| Languages \| .* \|", "| Languages | NORM |", text)
+                    t = re.sub(r"- Scanned \*\*\d+\*\* in-scope files[^\n]*", "", t)
+                    t = re.sub(r"- Skipped \*\*\d+\*\* vendor/build directories and \*\*\d+\*\* files in unsupported languages\.", "", t)
+                    return t
+
+                if _norm_summary(p_c.content) != _norm_summary(f_c.content):
+                    return False
+            else:
+                return False
+
+        return True
 
     def _approved_digests(self) -> frozenset[str]:
         platform = self.platform.approvals if self.platform is not None else frozenset()

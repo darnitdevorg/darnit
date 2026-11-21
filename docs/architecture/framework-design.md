@@ -972,6 +972,11 @@ Templates and `when` clauses are evaluated in plan mode exactly as in apply mode
 - **THEN** its `PlanItem` MUST have `previewable = True`
 - **AND** the files the apply writes MUST equal the files the preview listed
 
+#### Scenario: Changed previewable plan is refused at apply
+- **WHEN** an apply follows a preview and a previewable item's fresh plan differs from the previewed one (or its digest is not among previewed digests)
+- **THEN** the executor MUST refuse the item and write nothing for that control
+- **AND** the control's outcome MUST be `unchanged` with reason `stale_preview`
+
 #### Scenario: Target file has uncommitted user changes
 - **WHEN** a planned `FileChange` targets a path with uncommitted user changes
 - **THEN** the executor MUST NOT write the path
@@ -2299,8 +2304,8 @@ A person approves by digest: an apply call carries the approved digests (`approv
 - Approvals are single-use and are recorded only in the run record: `Approval` = `digest`, `approved_by` (the operator identity, feature 040), `approved_at`. Approvals are not confirmations and are never stored in the confirmation store (sections 5.4, 7.5).
 
 #### Scenario: Stale preview
-- **WHEN** a person approved a change set's digest and the target's settings changed before the apply
-- **THEN** darnit MUST write nothing for that change set
+- **WHEN** a person approved a change set's digest and the target's settings changed before the apply, or when an apply follows a preview and a previewable item's fresh plan differs from the previewed plan
+- **THEN** darnit MUST write nothing for that item or control
 - **AND** the outcome MUST be `unchanged` with reason `stale_preview`
 
 #### Scenario: Approval of another control's item

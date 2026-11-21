@@ -10,7 +10,7 @@ iterates *controls*, not hardcoded categories.
 
 import json
 import os
-from collections.abc import Callable, Collection
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -318,6 +318,8 @@ def _apply_control_remediation(
     platform: Any | None = None,
     run_id: str | None = None,
     scheduled_paths: Collection[str] | None = None,
+    previewed_plan: Sequence[Any] | None = None,
+    previewed_digests: Collection[str] | None = None,
 ) -> dict[str, Any]:
     """Apply remediation for a single control, driven entirely by TOML.
 
@@ -411,6 +413,8 @@ def _apply_control_remediation(
             platform=platform,
             run_id=run_id,
             scheduled_paths=scheduled_paths,
+            previewed_plan=previewed_plan,
+            previewed_digests=previewed_digests,
         )
         # Tag unsafe remediations for review
         if not remediation_config.safe:
@@ -452,6 +456,8 @@ def _apply_declarative_remediation(
     platform: Any | None = None,
     run_id: str | None = None,
     scheduled_paths: Collection[str] | None = None,
+    previewed_plan: Sequence[Any] | None = None,
+    previewed_digests: Collection[str] | None = None,
 ) -> dict[str, Any]:
     """Apply a declarative remediation from TOML config.
 
@@ -551,10 +557,17 @@ def _apply_declarative_remediation(
         )
 
         # Execute the remediation
+        plan_items_to_pass = (
+            [PlanItem.model_validate(p) if isinstance(p, dict) else p for p in previewed_plan]
+            if previewed_plan is not None
+            else None
+        )
         result = executor.execute(
             control_id=control_id,
             config=remediation_config,
             dry_run=dry_run,
+            previewed_plan=plan_items_to_pass,
+            previewed_digests=previewed_digests,
         )
 
         if result.confirmation_required:
@@ -590,6 +603,20 @@ def _apply_declarative_remediation(
                 "declarative": True,
                 "plan": plan_items,
                 "references": _unrecorded_references(result.details),
+            }
+
+        if result.refused:
+            return {
+                "control_id": control_id,
+                "status": "unchanged",
+                "reason": "stale_preview",
+                "description": description,
+                "controls": [control_id],
+                "result": result.message,
+                "message": result.message,
+                "declarative": True,
+                "plan": plan_items,
+                "refused": list(result.refused),
             }
 
         if result.needs_approval:
@@ -1007,6 +1034,8 @@ def remediate_audit_findings(
     enhance_with_llm: bool = False,
     approve: list[str] | None = None,
     run_id: str | None = None,
+    previewed_digests: list[str] | None = None,
+    previewed_plan: Sequence[PlanItem | dict[str, Any]] | None = None,
 ) -> str:
     """Apply automated remediations for failed audit controls.
 
@@ -1052,6 +1081,8 @@ def remediate_audit_findings(
         approve=approve,
         run_id=run_id,
         target=target_from_owner_repo(owner, repo),
+        previewed_digests=previewed_digests,
+        previewed_plan=previewed_plan,
     ).markdown
 
 
@@ -1125,6 +1156,8 @@ def run_remediation(
     approve: list[str] | None = None,
     run_id: str | None = None,
     target: str | None = None,
+    previewed_digests: Collection[str] | None = None,
+    previewed_plan: Sequence[PlanItem | dict[str, Any]] | None = None,
 ) -> RemediationReport:
     """:func:`remediate_audit_findings`, returning the run record with the report.
 
@@ -1334,6 +1367,11 @@ def run_remediation(
     # ------------------------------------------------------------------
     # Apply remediations
     # ------------------------------------------------------------------
+    if not dry_run and previewed_plan is None and previewed_digests is None:
+        previewed_plan = manifest.load_preview(repository, run_id, checkout=local_path)
+        if previewed_plan is None:
+            previewed_plan = manifest.load_preview(repository, checkout=local_path)
+
     scheduled_paths = _scheduled_file_create_paths(framework, remediable_ids, skipped=honored_claims)
     results = []
     for control_id in remediable_ids:
@@ -1356,6 +1394,8 @@ def run_remediation(
             platform=session,
             run_id=None if dry_run else run_id,
             scheduled_paths=scheduled_paths,
+            previewed_plan=previewed_plan,
+            previewed_digests=previewed_digests,
         )
         results.append(result)
 
@@ -1394,6 +1434,11 @@ def run_remediation(
         run=run,
         target=target,
     )
+    if dry_run:
+        try:
+            manifest.save_preview(repository, run_id, run.plan, checkout=local_path)
+        except Exception as exc:
+            logger.debug(f"Failed to save preview: {exc}")
     return RemediationReport(markdown, run)
 
 
@@ -1533,6 +1578,8 @@ def _settled_outcome(r: dict[str, Any]) -> RemediationOutcome | None:
         for h in r.get("handlers", [])
         if h.get("status") != "pass"
     ]
+    if r.get("reason"):
+        reasons.append(r["reason"])
     return RemediationOutcome(
         control_id=control_id,
         kind="unchanged",
@@ -1820,6 +1867,8 @@ def _outcome_lines(run: RemediationRun, results: list[dict[str, Any]]) -> list[s
             md.append(f"- **Awaiting:** {_AWAITING[outcome.pending_kind]}")
         if outcome.reason and outcome.kind != "manual":
             md.append(f"- **Reason:** {outcome.reason}")
+        if r.get("refused") and r.get("message"):
+            md.append(f"- {r['message']}")
         for item in r.get("plan", []):
             if item["digest"] in r.get("enhancement_needs_approval", []):
                 md += _plan_item_lines(PlanItem.model_validate(item))

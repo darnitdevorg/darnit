@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- At apply time, verify that every previewable item's fresh plan matches its
+  previewed plan (or previewed digests), refusing any item whose plan diverged
+  with an `unchanged` outcome and reason `stale_preview`, preventing apply from
+  writing content that was not previewed or approved (fixes #699).
 - Threat-model findings use the rule id (darnit.entry.flask-route), not the
   Opengrep rules directory path, so generated file names and query_id values no
   longer carry the install location (fixes #776).

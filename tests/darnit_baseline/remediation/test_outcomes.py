@@ -237,7 +237,9 @@ def test_run_sieve_audit_without_cache_write(repo: Path) -> None:
     cache_file = audit_cache._get_cache_dir(str(repo)) / audit_cache.CACHE_FILENAME
     cache_file.unlink(missing_ok=True)
 
-    audit.run_sieve_audit(OWNER, REPO, str(repo), "main", controls=_specs(), framework_name="openssf-baseline", write_cache=False)
+    audit.run_sieve_audit(
+        OWNER, REPO, str(repo), "main", controls=_specs(), framework_name="openssf-baseline", write_cache=False
+    )
     assert not cache_file.exists()
 
     # cache_filtered=False: a caller that passes its own controls says whether
@@ -341,3 +343,77 @@ def test_changed_outcome_lists_files_kept_for_user_changes(repo: Path, monkeypat
     changes = {c["path"]: (c["action"], c["reason"]) for c in outcome["file_changes"]}
     assert changes == {"NEW.md": ("create", None), "SECURITY.md": ("none", "user_changes_present")}
     assert (repo / "SECURITY.md").read_text(encoding="utf-8") == "# Policy being edited\n"
+
+
+@pytest.mark.integration
+def test_changed_plan_since_preview_reports_unchanged_stale_preview(repo: Path) -> None:
+    from darnit.remediation.plan import PlanItem
+
+    preview_output = orchestrator.remediate_audit_findings(local_path=str(repo), owner=OWNER, repo=REPO, dry_run=True)
+    preview_run = _run_block(preview_output)
+    run_id = preview_run["run_id"]
+
+    modified_plan = [
+        PlanItem.model_validate(
+            {
+                **item,
+                "digest": "",
+                "file_changes": [{"path": "CONTRIBUTING.md", "action": "create", "content": "# Different\n"}],
+            }
+        )
+        if item["control_id"] == "T-CONTRIB"
+        else PlanItem.model_validate(item)
+        for item in preview_run["plan"]
+    ]
+
+    output = orchestrator.remediate_audit_findings(
+        local_path=str(repo),
+        owner=OWNER,
+        repo=REPO,
+        dry_run=False,
+        run_id=run_id,
+        previewed_plan=modified_plan,
+    )
+    run = _run_block(output)
+    contrib = next(o for o in run["outcomes"] if o["control_id"] == "T-CONTRIB")
+    assert contrib["kind"] == "unchanged"
+    assert contrib["reason"] == "stale_preview"
+    assert not (repo / "CONTRIBUTING.md").exists()
+
+
+@pytest.mark.integration
+def test_saved_preview_refuses_when_plan_changes_at_apply(repo: Path) -> None:
+    from darnit.remediation import manifest
+    from darnit.remediation.plan import PlanItem
+
+    preview_output = orchestrator.remediate_audit_findings(local_path=str(repo), owner=OWNER, repo=REPO, dry_run=True)
+    preview_run = _run_block(preview_output)
+    run_id = preview_run["run_id"]
+    repo_identity = manifest.repository_identity(str(repo), OWNER, REPO)
+
+    stale_items = [
+        PlanItem.model_validate(
+            {
+                **item,
+                "digest": "",
+                "file_changes": [{"path": "CONTRIBUTING.md", "action": "create", "content": "# Old Content\n"}],
+            }
+        )
+        if item["control_id"] == "T-CONTRIB"
+        else PlanItem.model_validate(item)
+        for item in preview_run["plan"]
+    ]
+    manifest.save_preview(repo_identity, run_id, stale_items, checkout=str(repo))
+
+    output = orchestrator.remediate_audit_findings(
+        local_path=str(repo),
+        owner=OWNER,
+        repo=REPO,
+        dry_run=False,
+        run_id=run_id,
+    )
+    run = _run_block(output)
+    contrib = next(o for o in run["outcomes"] if o["control_id"] == "T-CONTRIB")
+    assert contrib["kind"] == "unchanged"
+    assert contrib["reason"] == "stale_preview"
+    assert not (repo / "CONTRIBUTING.md").exists()

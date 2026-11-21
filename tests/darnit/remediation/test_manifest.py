@@ -198,3 +198,46 @@ class TestRepositoryIdentity:
         assert first != manifest.repository_identity(tmp_path / "other")
         assert first.startswith(f"{manifest.LOCAL_HOST}/checkout/")
         assert manifest.runs_dir(first).name == first.rsplit("/", 1)[1]
+
+
+@pytest.mark.unit
+class TestPreviewPersistence:
+    def test_save_and_load_preview(self, data_root: Path, checkout: Path) -> None:
+        from darnit.remediation.plan import PlanItem
+
+        run_id = manifest.new_run_id()
+        items = [
+            PlanItem(
+                control_id="C-1",
+                step="file_create[0]",
+                previewable=True,
+                requires_individual_approval=False,
+            )
+        ]
+        path = manifest.save_preview(REPO, run_id, items, checkout=checkout)
+        assert path.is_file()
+        assert path.name == f"{run_id}.preview.json"
+
+        # load_run ignores preview files
+        assert manifest.load_run(REPO, run_id, checkout=checkout) is None
+        assert manifest.load_run(REPO, checkout=checkout) is None
+
+        # load_preview loads it by run_id
+        loaded = manifest.load_preview(REPO, run_id, checkout=checkout)
+        assert loaded is not None
+        assert len(loaded) == 1
+        assert loaded[0].control_id == "C-1"
+        assert loaded[0].digest == items[0].digest
+
+        # load_preview without run_id loads latest preview
+        loaded_latest = manifest.load_preview(REPO, checkout=checkout)
+        assert loaded_latest is not None
+        assert loaded_latest[0].digest == items[0].digest
+
+    def test_preview_inside_checkout_is_refused(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        checkout = tmp_path / "checkout"
+        root = checkout / ".darnit-data"
+        monkeypatch.setattr(manifest, "user_data_root", lambda: root)
+
+        with pytest.raises(ValueError, match="inside the audited repository"):
+            manifest.save_preview(REPO, manifest.new_run_id(), [], checkout=checkout)
