@@ -383,3 +383,33 @@ def test_threat_model_apply_later_the_same_day_equals_its_preview(repo: Path, mo
 
     assert result.needs_approval == []
     assert _file_changes(result.file_changes) == planned
+
+
+@pytest.mark.unit
+def test_threat_model_apply_after_midnight_is_refused(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from darnit_baseline.threat_model.renderers import raw_json, summary
+
+    path = next(p for p, c in REMEDIATIONS if c == "OSPS-SA-03.02")
+
+    def at(moment: datetime) -> None:
+        for module in (raw_json, summary):
+            monkeypatch.setattr(module, "datetime", _clock(moment))
+
+    at(datetime(2026, 10, 23, 23, 59, 59, tzinfo=UTC))
+    with recorded_gh(_platform()):
+        framework, preview = _preview(repo, path, "OSPS-SA-03.02")
+    [item] = [item for item in preview.plan if item.step.startswith("generate_threat_model")]
+    assert item.previewable is True
+    assert item.requires_individual_approval is False
+
+    at(datetime(2026, 10, 24, 0, 0, 1, tzinfo=UTC))
+    remediation = framework.controls["OSPS-SA-03.02"].remediation
+    assert remediation is not None
+    with _installed(SimulatedGitHub(_platform())):
+        result = _executor(repo, path, framework).execute(
+            "OSPS-SA-03.02", remediation, dry_run=False, previewed_plan=preview.plan
+        )
+
+    assert result.success is False
+    assert result.refused == [result.plan[0].digest]
+    assert "changed since preview" in result.message

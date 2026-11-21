@@ -92,9 +92,7 @@ class TestPlanMode:
     def test_file_create_plan_carries_the_content(self, repo: Path, data_root: Path) -> None:
         result = _executor(repo).execute("C-1", _config(FILE_CREATE), dry_run=True)
 
-        assert result.plan[0].file_changes == [
-            FileChange(path="SECURITY.md", action="create", content="# Security\n")
-        ]
+        assert result.plan[0].file_changes == [FileChange(path="SECURITY.md", action="create", content="# Security\n")]
 
     def test_yaml_inject_honors_preview(self, repo: Path, data_root: Path) -> None:
         result = _executor(repo).execute("C-1", _config(YAML_INJECT), dry_run=True)
@@ -356,7 +354,9 @@ _DIRTY_TARGETS = {
         PROJECT,
     ),
     "config_project_update": (
-        _config(FILE_CREATE, project_update=ProjectUpdateRemediationConfig(set={"security.policy.path": "SECURITY.md"})),
+        _config(
+            FILE_CREATE, project_update=ProjectUpdateRemediationConfig(set={"security.policy.path": "SECURITY.md"})
+        ),
         PROJECT,
     ),
 }
@@ -466,3 +466,59 @@ class TestApproveItem:
 
         assert asked == [["it cannot be previewed exactly"]]
         assert (approval is not None) is answer
+
+
+@pytest.mark.unit
+class TestRefuseChangedPreview:
+    """Apply refuses previewable items whose fresh plan differs from the previewed one."""
+
+    def test_same_executor_refuses_when_plan_changes_after_preview(self, repo: Path) -> None:
+        executor = _executor(repo)
+        cfg1 = _config(HandlerInvocation(handler="file_create", path="TEST.md", content="v1\n"))
+        cfg2 = _config(HandlerInvocation(handler="file_create", path="TEST.md", content="v2\n"))
+
+        preview = executor.execute("C-1", cfg1, dry_run=True)
+        assert preview.success
+
+        applied = executor.execute("C-1", cfg2, dry_run=False)
+        assert applied.success is False
+        assert applied.refused == [applied.plan[0].digest]
+        assert "changed since preview" in applied.message
+        assert not (repo / "TEST.md").exists()
+
+    def test_executor_with_previewed_plan_refuses_mismatch(self, repo: Path) -> None:
+        cfg1 = _config(HandlerInvocation(handler="file_create", path="TEST.md", content="v1\n"))
+        cfg2 = _config(HandlerInvocation(handler="file_create", path="TEST.md", content="v2\n"))
+
+        preview = _executor(repo).execute("C-1", cfg1, dry_run=True)
+
+        executor = _executor(repo)
+        applied = executor.execute("C-1", cfg2, dry_run=False, previewed_plan=preview.plan)
+        assert applied.success is False
+        assert applied.refused == [applied.plan[0].digest]
+        assert "changed since preview" in applied.message
+        assert not (repo / "TEST.md").exists()
+
+    def test_executor_with_matching_previewed_plan_succeeds(self, repo: Path) -> None:
+        cfg = _config(HandlerInvocation(handler="file_create", path="TEST.md", content="v1\n"))
+        preview = _executor(repo).execute("C-1", cfg, dry_run=True)
+
+        executor = _executor(repo)
+        applied = executor.execute("C-1", cfg, dry_run=False, previewed_plan=preview.plan)
+        assert applied.success is True
+        assert applied.refused == []
+        assert (repo / "TEST.md").read_text(encoding="utf-8") == "v1\n"
+
+    def test_executor_with_previewed_digests_refuses_unknown_digest(self, repo: Path) -> None:
+        cfg = _config(HandlerInvocation(handler="file_create", path="TEST.md", content="v2\n"))
+        executor = _executor(repo)
+        applied = executor.execute(
+            "C-1",
+            cfg,
+            dry_run=False,
+            previewed_digests=["sha256:0000000000000000000000000000000000000000000000000000000000000000"],
+        )
+        assert applied.success is False
+        assert applied.refused == [applied.plan[0].digest]
+        assert "was not in previewed digests" in applied.message
+        assert not (repo / "TEST.md").exists()

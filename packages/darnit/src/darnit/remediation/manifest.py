@@ -18,14 +18,15 @@ import secrets
 import tempfile
 import threading
 import time
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from darnit.core.logging import get_logger
-from darnit.remediation.plan import normalize_repo_path
+from darnit.remediation.plan import PlanItem, normalize_repo_path
 from darnit.stores.defaults.platform_paths import user_data_root
 from darnit.trust.identity import canonical_identity
 
@@ -275,17 +276,81 @@ def load_run(
     return None
 
 
+def preview_path(repository: str, run_id: str) -> Path:
+    return runs_dir(repository) / f"{_check_run_id(run_id)}.preview.json"
+
+
+def save_preview(
+    repository: str,
+    run_id: str,
+    plan: Sequence[Any],
+    *,
+    checkout: str | Path | None = None,
+) -> Path:
+    """Save previewed plan items operator-side for subsequent apply checks."""
+    path = preview_path(repository, run_id)
+    if _inside(path, checkout):
+        raise ValueError(f"refusing to store a preview at {path}: it is inside the audited repository")
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    items = [item.model_dump(mode="json") if hasattr(item, "model_dump") else item for item in plan]
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".preview-", suffix=".json")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump({"run_id": run_id, "repository": repository, "plan": items}, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+    return path
+
+
+def load_preview(
+    repository: str,
+    run_id: str | None = None,
+    *,
+    checkout: str | Path | None = None,
+) -> list[PlanItem] | None:
+    """Load previewed plan items for ``run_id``, or the latest preview for ``repository``."""
+    if run_id is not None:
+        path = preview_path(repository, run_id)
+        if _inside(path, checkout) or not path.is_file():
+            return None
+        return _read_preview(path)
+    directory = runs_dir(repository)
+    if _inside(directory, checkout) or not directory.is_dir():
+        return None
+    for candidate in sorted(directory.glob("*.preview.json"), reverse=True):
+        items = _read_preview(candidate)
+        if items is not None:
+            return items
+    return None
+
+
+def _read_preview(path: Path) -> list[PlanItem] | None:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return [PlanItem.model_validate(item) for item in data.get("plan", [])]
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        logger.warning("Ignoring unreadable preview %s: %s", path, exc)
+        return None
+
+
 __all__ = [
     "LOCAL_HOST",
     "ManifestFile",
     "RunManifest",
+    "load_preview",
     "load_run",
     "manifest_path",
     "new_run_id",
+    "preview_path",
     "record_change_set",
     "record_file",
     "repository_identity",
     "runs_dir",
+    "save_preview",
     "forget_file",
     "set_branch",
     "set_commit",
