@@ -19,3 +19,4 @@ is_library = false
 has_compiled_assets = false
 has_subprojects = false
 license_type = "apache-2.0"
+required_status_checks = ["DCO", "Kusari Inspector", "build", "dependency-review"]

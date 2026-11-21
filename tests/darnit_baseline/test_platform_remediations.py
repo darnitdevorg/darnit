@@ -11,6 +11,10 @@ from darnit_baseline.remediation.orchestrator import _get_framework_config
 PLATFORM_FIXES = {
     "OSPS-AC-03.01": ("branch_protection", {"require_pull_request": True}),
     "OSPS-AC-03.02": ("branch_protection", {"prevent_deletion": True}),
+    "OSPS-QA-03.01": (
+        "branch_protection",
+        {"require_status_checks": ["${context.required_status_checks}"]},
+    ),
     "OSPS-QA-07.01": ("branch_protection", {"require_approvals": 1}),
     "OSPS-QA-01.01": ("repository", {"visibility": "public"}),
     "OSPS-VM-03.01": ("vulnerability_reporting", {"enabled": True}),

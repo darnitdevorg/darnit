@@ -617,7 +617,8 @@ class TestTomlDefinitionOrder:
         assert "platform" in order
         assert "license_type" in order, "feature 043 T055c: a LICENSE is created only for a confirmed license"
         assert "github_owner_type" in order
-        assert len(order) == len(set(order)) == 11
+        assert "required_status_checks" in order
+        assert len(order) == len(set(order)) == 12
 
 
 class TestGetPendingDataProcedure:
