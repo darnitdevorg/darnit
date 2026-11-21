@@ -37,16 +37,19 @@ class TestRemediationE2EFlow:
         from darnit.server.tools.project_data import confirm_project_data_impl
         from darnit_baseline.remediation.orchestrator import remediate_audit_findings
 
-        # Step 1: Run remediation without confirmation - should prompt
+        # Step 1: Run remediation without confirmation
         result1 = remediate_audit_findings(
             local_path=temp_git_repo,
             categories=["governance"],
             dry_run=False,
         )
 
-        assert "BLOCKED: Remediation Cannot Proceed" in result1 or "Needs Confirmation" in result1
-        assert "confirm_project_data" in result1
+        run1 = json.loads(re.findall(r"```json\n(.*?)\n```", result1, re.DOTALL)[-1])
+        outcomes1 = {o["control_id"]: o for o in run1["outcomes"]}
+        assert outcomes1["OSPS-GV-01.01"]["kind"] == "needs_confirmation"
+        assert outcomes1["OSPS-GV-04.01"]["kind"] == "needs_confirmation"
         assert not (Path(temp_git_repo) / "GOVERNANCE.md").exists()
+        assert not (Path(temp_git_repo) / ".github" / "CODEOWNERS").exists()
 
         # Step 2: Confirm maintainers for the named, trusted repository
         # (feature 042, FR-011: a confirmation names its repository).
@@ -140,6 +143,26 @@ class TestRemediationE2EFlow:
         assert result["status"] == "applied"
         assert [(c["path"], c["action"]) for c in result["file_changes"]] == [("docs/VEX-POLICY.md", "create")]
         assert (Path(temp_git_repo) / "docs" / "VEX-POLICY.md").exists()
+
+    @pytest.mark.integration
+    def test_remediate_audit_findings_tool_partitions_controls(self, temp_git_repo):
+        """Through tools.remediate_audit_findings, controls without context needs proceed
+        while unconfirmed ones report needs_confirmation (#767).
+        """
+        from darnit_baseline.tools import remediate_audit_findings
+
+        result = remediate_audit_findings(
+            local_path=temp_git_repo,
+            categories=["governance", "vulnerability_management"],
+            dry_run=True,
+        )
+
+        assert "Cannot remediate yet" not in result
+        assert "BLOCKED: Remediation Cannot Proceed" not in result
+        assert "## Would Apply" in result
+        assert "SECURITY.md" in result
+        assert "## Needs Confirmation" in result
+        assert "OSPS-GV-01.01" in result
 
 
 class TestControlDefinitionConsistency:

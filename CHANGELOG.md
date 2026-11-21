@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `remediate_audit_findings` and the preflight context check no longer block the entire run when a context key is unconfirmed; controls with confirmed or no context proceed through preview and remediation, while controls requiring unconfirmed context report `needs_confirmation` (fixes #767). The run blocks only when every failing control lacks context.
+
 ### Fixed
 
 - Threat-model findings use the rule id (darnit.entry.flask-route), not the

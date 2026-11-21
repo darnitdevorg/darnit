@@ -863,8 +863,9 @@ def _preflight_context_check(
     """
     framework = _get_framework_config()
 
-    # Aggregate context requirements across all controls (deduplicate by key)
-    all_requirements: dict[str, tuple[str, Any]] = {}  # key -> (control_id, requirement)
+    # Aggregate context requirements across all controls
+    unique_requirements: dict[str, Any] = {}  # key -> requirement
+    key_to_controls: dict[str, list[str]] = {}  # key -> list of control_ids
 
     for control_id in control_ids:
         if not framework:
@@ -875,14 +876,18 @@ def _preflight_context_check(
             continue
 
         for req in control.remediation.requires_context:
-            if req.key not in all_requirements:
-                all_requirements[req.key] = (control_id, req)
+            if req.key not in unique_requirements:
+                unique_requirements[req.key] = req
+            if req.key not in key_to_controls:
+                key_to_controls[req.key] = []
+            if control_id not in key_to_controls[req.key]:
+                key_to_controls[req.key].append(control_id)
 
-    if not all_requirements:
-        return True, {"missing_context": [], "auto_detected": {}, "candidates": {}, "prompts": []}
+    if not unique_requirements:
+        return True, {"missing_context": [], "auto_detected": {}, "candidates": {}, "prompts": [], "key_to_controls": {}}
 
     # Check all requirements at once
-    requirements_list = [req for _, req in all_requirements.values()]
+    requirements_list = list(unique_requirements.values())
     check_result = check_context_requirements(
         requirements=requirements_list,
         local_path=local_path,
@@ -891,13 +896,6 @@ def _preflight_context_check(
         repo=repo,
         target=target,
     )
-
-    # Build control mapping for context keys
-    key_to_controls: dict[str, list[str]] = {}
-    for key, (control_id, _) in all_requirements.items():
-        if key not in key_to_controls:
-            key_to_controls[key] = []
-        key_to_controls[key].append(control_id)
 
     return check_result.ready, {
         "missing_context": check_result.missing_context,
@@ -1287,16 +1285,27 @@ def run_remediation(
     # ------------------------------------------------------------------
     # Pre-flight context check (prompt for ALL missing context upfront)
     # ------------------------------------------------------------------
+    active_remediable_ids = [c for c in remediable_ids if c not in honored_claims]
     context_ready, context_info = _preflight_context_check(
-        control_ids=remediable_ids,
+        control_ids=active_remediable_ids,
         local_path=local_path,
         owner=owner,
         repo=repo,
         target=target,
     )
 
+    ready_control_ids = active_remediable_ids
     if not context_ready:
-        return RemediationReport(_format_preflight_prompt(context_info, local_path))
+        missing_keys = set(context_info.get("missing_context", []))
+        key_to_controls = context_info.get("key_to_controls", {})
+        blocked_control_ids = {
+            cid
+            for key in missing_keys
+            for cid in key_to_controls.get(key, [])
+        }
+        ready_control_ids = [c for c in active_remediable_ids if c not in blocked_control_ids]
+        if not ready_control_ids:
+            return RemediationReport(_format_preflight_prompt(context_info, local_path))
 
     # ------------------------------------------------------------------
     # Platform session: one policy, one set of approvals, and every
@@ -1317,7 +1326,7 @@ def run_remediation(
     )
     session = PlatformSession(
         repository,
-        platform_requests(framework, [c for c in remediable_ids if c not in honored_claims]),
+        platform_requests(framework, [c for c in ready_control_ids if c not in honored_claims]),
         policy=policy,
         approvals=approve or [],
     )
