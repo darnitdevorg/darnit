@@ -70,6 +70,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   files that were read.
   community-spec CSL-06.01 also reads `README.txt`, `README.adoc`, and
   `README` (#702).
+- OSPS-QA-02.01 no longer fails shell-script-only repositories, which have no
+  package manager. The control is skipped (N/A) only when a complete scan finds
+  shell scripts and otherwise only non-code files; if the scan is cut short
+  (entry or depth limit) or meets an unrecognized file, the check runs as
+  before (fixes #308).
 
 ### Added
 
