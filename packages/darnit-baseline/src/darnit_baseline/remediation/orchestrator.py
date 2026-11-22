@@ -1888,6 +1888,17 @@ def _consultation_lines(results: list[dict[str, Any]]) -> list[str]:
     return md
 
 
+def _strip_file_contents(data: dict[str, Any]) -> dict[str, Any]:
+    """Strip full file contents from plan items and outcomes to keep fenced JSON compact (fixes #725)."""
+    for item in data.get("plan", []):
+        for fc in item.get("file_changes", []):
+            fc.pop("content", None)
+    for outcome in data.get("outcomes", []):
+        for fc in outcome.get("file_changes", []):
+            fc.pop("content", None)
+    return data
+
+
 def _format_remediation_output(
     results: list[dict[str, Any]],
     local_path: str,
@@ -1910,7 +1921,8 @@ def _format_remediation_output(
     if not dry_run:
         md += _consultation_lines(results)
         md += _next_steps_lines(run, local_path, target)
-    md += ["```json", json.dumps(run.model_dump(mode="json"), indent=2), "```", ""]
+    fenced_data = _strip_file_contents(run.model_dump(mode="json"))
+    md += ["```json", json.dumps(fenced_data, indent=2), "```", ""]
     return "\n".join(md)
 
 

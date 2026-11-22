@@ -556,3 +556,79 @@ def test_scheduled_file_create_paths_are_conservative():
 
     honored_alone = _scheduled_file_create_paths(framework, ["OSPS-HONOR"])
     assert honored_alone == {"HONORED.md"}
+
+
+@patch("darnit_baseline.remediation.orchestrator._get_framework_config")
+@patch("darnit_baseline.remediation.orchestrator.RemediationExecutor")
+@patch("darnit.core.audit_cache.read_audit_cache")
+@patch("darnit_baseline.remediation.orchestrator._preflight_context_check")
+def test_fenced_json_omits_file_contents(
+    mock_preflight,
+    mock_read_cache,
+    mock_executor_class,
+    mock_get_framework,
+    mock_framework,
+    temp_git_repo,
+):
+    """Fenced JSON strips content from file_changes to fit within client limits (fixes #725)."""
+    mock_get_framework.return_value = mock_framework
+    mock_read_cache.return_value = {
+        "results": [{"id": "OSPS-GV-01.01", "status": "FAIL"}]
+    }
+    mock_preflight.return_value = (True, [])
+
+    fc = FileChange(path="GOVERNANCE.md", action="create", content="# Governance\nLarge content body here\n")
+    item = PlanItem(control_id="OSPS-GV-01.01", step="file_create[0]", file_changes=[fc], previewable=True)
+    mock_executor = mock_executor_class.return_value
+    mock_executor.execute.return_value = RemediationResult(
+        success=True,
+        control_id="OSPS-GV-01.01",
+        remediation_type="declarative",
+        message="Created GOVERNANCE.md",
+        dry_run=False,
+        file_changes=[fc],
+        plan=[item],
+        details={"handlers": [{"handler": "file_create", "status": "pass"}]},
+    )
+
+    result_markdown = remediate_audit_findings(
+        local_path=str(temp_git_repo),
+        owner="test-owner",
+        repo="test-repo",
+        dry_run=False,
+        enhance_with_llm=False,
+    )
+
+    blocks = re.findall(r"```json\n(.*?)\n```", result_markdown, re.DOTALL)
+    assert blocks, "Expected fenced JSON block in output"
+    raw_json = json.loads(blocks[-1])
+
+    # In outcomes, file_changes must not contain 'content'
+    outcomes = raw_json.get("outcomes", [])
+    assert len(outcomes) == 1
+    file_changes = outcomes[0].get("file_changes", [])
+    assert len(file_changes) == 1
+    assert "content" not in file_changes[0]
+    assert file_changes[0]["path"] == "GOVERNANCE.md"
+    assert file_changes[0]["action"] == "create"
+    assert file_changes[0]["after_digest"] == fc.after_digest
+
+    # Also test preview mode (dry_run=True)
+    preview_markdown = remediate_audit_findings(
+        local_path=str(temp_git_repo),
+        owner="test-owner",
+        repo="test-repo",
+        dry_run=True,
+        enhance_with_llm=False,
+    )
+    prev_blocks = re.findall(r"```json\n(.*?)\n```", preview_markdown, re.DOTALL)
+    assert prev_blocks, "Expected fenced JSON block in preview output"
+    prev_json = json.loads(prev_blocks[-1])
+    plans = prev_json.get("plan", [])
+    assert len(plans) == 1
+    plan_fc = plans[0].get("file_changes", [])
+    assert len(plan_fc) == 1
+    assert "content" not in plan_fc[0]
+    assert plan_fc[0]["path"] == "GOVERNANCE.md"
+    assert plan_fc[0]["action"] == "create"
+    assert plan_fc[0]["after_digest"] == fc.after_digest

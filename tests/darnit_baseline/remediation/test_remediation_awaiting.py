@@ -22,7 +22,13 @@ from darnit.config.framework_schema import (
     RemediationConfig,
 )
 from darnit.core import audit_cache
-from darnit.remediation.plan import RemediationRun
+from darnit.remediation.plan import (
+    ErrorInfo,
+    FileChange,
+    PlanItem,
+    RemediationOutcome,
+    RemediationRun,
+)
 from darnit_baseline.remediation import orchestrator
 
 OWNER, REPO = "example-org", "example"
@@ -80,7 +86,18 @@ def _apply(repo: Path) -> tuple[str, RemediationRun]:
     output = orchestrator.remediate_audit_findings(local_path=str(repo), owner=OWNER, repo=REPO, dry_run=False)
     blocks = re.findall(r"```json\n(.*?)\n```", output, re.DOTALL)
     assert blocks, output
-    return output, RemediationRun.model_validate(json.loads(blocks[-1]))
+    raw = json.loads(blocks[-1])
+    outcomes = []
+    for o in raw.get("outcomes", []):
+        fcs = [FileChange.model_construct(**fc) for fc in o.get("file_changes", [])]
+        err = ErrorInfo.model_validate(o["error"]) if o.get("error") is not None else None
+        outcomes.append(RemediationOutcome.model_construct(**{**o, "file_changes": fcs, "error": err}))
+    plan = []
+    for p in raw.get("plan", []):
+        fcs = [FileChange.model_construct(**fc) for fc in p.get("file_changes", [])]
+        plan.append(PlanItem.model_construct(**{**p, "file_changes": fcs}))
+    run = RemediationRun.model_construct(**{**raw, "outcomes": outcomes, "plan": plan})
+    return output, run
 
 
 def _section(output: str, heading: str) -> str:
