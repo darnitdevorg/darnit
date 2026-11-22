@@ -1072,7 +1072,8 @@ def cmd_run(args: argparse.Namespace) -> int:
 def cmd_harness(args: argparse.Namespace) -> int:
     """Run the harness: end-to-end audit with in-band LLM dispatch.
 
-    Feature 026. Non-interactive by default; consumes ANTHROPIC_API_KEY
+    Feature 026. Non-interactive by default; consumes the configured
+    provider's API key (ANTHROPIC_API_KEY, or OPENAI_API_KEY; #764)
     from env; dispatches LLM steps via PydanticAILLMStep; produces a
     Markdown or JSON report; exits with a documented code.
     """
@@ -1754,7 +1755,8 @@ def create_parser() -> argparse.ArgumentParser:
         help="Run end-to-end audit with in-band LLM dispatch (fleet-operator driver).",
         description=(
             "End-to-end audit driver with in-band LLM dispatch. Reads "
-            "ANTHROPIC_API_KEY from env; dispatches LLM steps itself so "
+            'ANTHROPIC_API_KEY (or OPENAI_API_KEY with [llm] provider = "openai" '
+            "in operator configuration) from env; dispatches LLM steps itself so "
             "no control ends up awaiting a model judgment in the report. Non-interactive; "
             "batch answers via --answers or auto-discovered .project/project.yaml."
         ),

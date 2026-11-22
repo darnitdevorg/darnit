@@ -716,3 +716,20 @@ class TestSecretRedaction:
             assert secret not in record.getMessage(), (
                 f"secret leaked into log record: {record.getMessage()!r}"
             )
+
+
+class TestModelOnErrorResponses:
+    """framework-design.md 14.1: a failed model call still names the configured model."""
+
+    def test_failed_call_records_the_configured_model(self, tmp_path: Path) -> None:
+        class FailingLLMStep:
+            async def evaluate(self, request: ConsultationRequest) -> LLMJudgment:
+                raise RuntimeError("HTTP 500")
+
+        run = HarnessRun(local_path=str(tmp_path), llm_step=FailingLLMStep())
+        run.llm_provider = "openai:gpt-5"
+
+        response = _run(run._dispatch_llm_step({"control_id": "X", "prompt": "Q"}))
+
+        assert response.error_class == "unavailable"
+        assert response.model == "openai:gpt-5"
