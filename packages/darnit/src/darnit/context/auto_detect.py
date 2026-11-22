@@ -239,6 +239,142 @@ def detect_license_type(local_path: str) -> str | None:
     return None
 
 
+# Package-manager support (OSPS-QA-02.01 applicability)
+#
+# The control only applies "when the package management system supports it",
+# so a project written only in a language with no package manager (shell
+# scripts) has nothing to list.  The detection below is deliberately
+# conservative: it concludes "unsupported" only when the scan was complete and
+# every file it saw is a shell script or a known non-code file (documentation,
+# licenses, CI and editor configuration, images).  Anything else, including an
+# empty repository, a file in a language nobody listed, or a scan that hit
+# either of its limits (entry count or directory depth), is left undetected so
+# the control runs and can FAIL.
+
+# Manifests whose presence means a package manager is in use.
+_PACKAGE_MANIFEST_NAMES: frozenset[str] = frozenset(
+    {
+        "package.json",
+        "requirements.txt",
+        "pyproject.toml",
+        "setup.py",
+        "setup.cfg",
+        "Pipfile",
+        "Cargo.toml",
+        "go.mod",
+        "pom.xml",
+        "build.gradle",
+        "build.gradle.kts",
+        "Gemfile",
+        "composer.json",
+        "mix.exs",
+        "pubspec.yaml",
+        "Package.swift",
+    }
+)
+
+# Source files in languages that have a package manager.
+_PACKAGE_MANAGED_EXTENSIONS: frozenset[str] = frozenset(
+    {
+        ".py", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".go", ".rs",
+        ".java", ".kt", ".kts", ".scala", ".rb", ".php", ".cs", ".csproj",
+        ".swift", ".dart", ".ex", ".exs",
+    }
+)  # fmt: skip
+
+# Files that are not source code in any language.  A script-only conclusion
+# requires every file to be a shell script or one of these; any other file
+# might be code in a language with a package manager, so it leaves darnit
+# uncertain.
+_NON_CODE_EXTENSIONS: frozenset[str] = frozenset(
+    {
+        # documentation
+        ".md", ".markdown", ".rst", ".txt", ".adoc", ".asciidoc",
+        # images
+        ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".webp", ".bmp",
+        # CI, editor and tool configuration, shell completion definitions
+        ".yml", ".yaml", ".json", ".toml", ".ini", ".cfg", ".conf", ".completion",
+    }
+)  # fmt: skip
+
+# Whole file names (lower-cased) that carry no extension of their own.
+_NON_CODE_NAMES: frozenset[str] = frozenset(
+    {
+        "license", "licence", "copying", "notice", "authors", "contributors",
+        "maintainers", "codeowners", "changelog", "readme", "dockerfile",
+        "makefile", ".gitignore", ".gitattributes", ".editorconfig",
+        ".dockerignore", "allowed_signers",
+    }
+)  # fmt: skip
+
+# Shell scripts: the evidence that a project is script-only.
+_SCRIPT_EXTENSIONS: frozenset[str] = frozenset({".sh", ".bash", ".zsh", ".bats"})
+
+_SKIPPED_DIRS: frozenset[str] = frozenset(
+    {
+        ".git", ".hg", ".svn", "node_modules", "vendor", "venv", ".venv",
+        "__pycache__", ".tox", "site-packages", "dist", "build", "target",
+    }
+)  # fmt: skip
+
+_PACKAGE_SCAN_MAX_DEPTH = 4
+_PACKAGE_SCAN_MAX_ENTRIES = 5000
+
+
+def _is_non_code_file(name: str, suffix: str) -> bool:
+    """True for documentation, licenses, configuration and images."""
+    return suffix in _NON_CODE_EXTENSIONS or name.lower() in _NON_CODE_NAMES
+
+
+def detect_package_manager_support(local_path: str) -> str | None:
+    """Detect whether the project is written in something a package manager covers.
+
+    Returns:
+        ``"supported"`` if a package manifest or package-managed source file is
+        present; ``"unsupported"`` if the scan was complete and every file is a
+        shell script or a known non-code file (and at least one is a script);
+        ``None`` if uncertain (no scripts, a file nobody classified, or a scan
+        that stopped at its entry or depth limit).  Only ``"unsupported"`` can
+        make a control not applicable.
+    """
+    root = Path(local_path)
+    if not root.is_dir():
+        return None
+
+    seen_script = False
+    seen_unclassified = False
+    depth_limited = False
+    entries = 0
+
+    for current, dirnames, filenames in os.walk(root):
+        depth = len(Path(current).relative_to(root).parts)
+        # Sorted so the scan, and a scan that hits the limit, is deterministic.
+        descend = sorted(d for d in dirnames if d not in _SKIPPED_DIRS and not d.startswith("."))
+        if descend and depth >= _PACKAGE_SCAN_MAX_DEPTH:
+            # Directories below the depth limit are never read, so the scan is
+            # incomplete: a manifest could be down there.
+            depth_limited = True
+            descend = []
+        dirnames[:] = descend
+        for name in sorted(filenames):
+            entries += 1
+            if entries > _PACKAGE_SCAN_MAX_ENTRIES:
+                return None
+            if name in _PACKAGE_MANIFEST_NAMES:
+                return "supported"
+            suffix = Path(name).suffix.lower()
+            if suffix in _PACKAGE_MANAGED_EXTENSIONS:
+                return "supported"
+            if suffix in _SCRIPT_EXTENSIONS:
+                seen_script = True
+            elif not _is_non_code_file(name, suffix):
+                seen_unclassified = True
+
+    if seen_script and not seen_unclassified and not depth_limited:
+        return "unsupported"
+    return None
+
+
 # Map primary_language to ecosystem names used in TOML when clauses
 _LANGUAGE_TO_ECOSYSTEM: dict[str, str] = {
     "python": "python",
@@ -302,6 +438,12 @@ def collect_auto_context(
         ecosystem = _LANGUAGE_TO_ECOSYSTEM.get(primary_language)
         if ecosystem:
             detected["detected_ecosystem"] = ecosystem
+
+    # Absent when uncertain: a missing key leaves controls that depend on it
+    # running, so only a positive "unsupported" can mark one not applicable.
+    package_manager_support = detect_package_manager_support(local_path)
+    if package_manager_support:
+        detected["package_manager_support"] = package_manager_support
 
     # Always include languages (even empty list) so when clauses can evaluate
     detected["languages"] = detect_languages(local_path)
