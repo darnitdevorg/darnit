@@ -20,6 +20,7 @@ from darnit.config.operator.loader import set_launch_options
 from darnit.harness.driver import HarnessRun, LLMConsultationResponse
 from darnit.sieve.models import CheckContext, ControlSpec, PassOutcome, SieveResult
 from darnit.sieve.orchestrator import SieveOrchestrator
+from tests.darnit.harness.verify_report import verify_control_llm_judgment
 
 
 class FakeModelServerHandler(BaseHTTPRequestHandler):
@@ -506,10 +507,68 @@ class TestFakeEndpointProviders:
             file_contents={"README.md": "content"},
         )
 
-        # Invariants from Issue #780:
+        # Invariants from Issue #780 / #781:
         # Malformed response body -> ERROR, class evaluation (or unavailable)
         assert llm_resp.status == PassOutcome.ERROR
         assert llm_resp.error_class in ("evaluation", "unavailable")
         assert sieve_res.status == "ERROR"
         assert sieve_res.error_class in ("evaluation", "unavailable")
         assert sieve_res.evidence["llm_model"] == f"{provider}:{model}"
+
+        # Shared control judgment verification
+        violations = verify_control_llm_judgment(
+            {"id": "SEC-01", "status": sieve_res.status, "evidence": sieve_res.evidence},
+            expected_provider=provider,
+            expected_model=model,
+        )
+        assert not violations
+
+
+@pytest.mark.unit
+class TestSharedReportInvariants:
+    """Verify shared report and control invariant contracts (#781, #780)."""
+
+    def test_shared_report_invariants_valid(self) -> None:
+        """Verify that valid control judgment satisfies safety and attribution invariants."""
+        ctrl = {
+            "id": "OSPS-BR-07.02",
+            "status": "FAIL",
+            "evidence": {
+                "llm_model": "openai:qwen2.5-coder:1.5b",
+                "llm_reasoning": "Missing branch protection",
+            },
+        }
+        violations = verify_control_llm_judgment(
+            ctrl,
+            expected_provider="openai",
+            expected_model="qwen2.5-coder:1.5b",
+        )
+        assert not violations
+
+    def test_shared_report_invariants_safety_rejection(self) -> None:
+        """Verify that unilateral PASS from model is strictly rejected."""
+        invalid_pass = {
+            "id": "OSPS-BR-07.02",
+            "status": "PASS",
+            "evidence": {"llm_model": "openai:qwen2.5-coder:1.5b"},
+        }
+        violations = verify_control_llm_judgment(
+            invalid_pass,
+            expected_provider="openai",
+            expected_model="qwen2.5-coder:1.5b",
+        )
+        assert any("[Safety]" in v for v in violations)
+
+    def test_shared_report_invariants_attribution_mismatch(self) -> None:
+        """Verify that provider/model attribution mismatch is detected."""
+        mismatch_ctrl = {
+            "id": "OSPS-BR-07.02",
+            "status": "PENDING",
+            "evidence": {"llm_model": "anthropic:claude-3-5-sonnet"},
+        }
+        violations = verify_control_llm_judgment(
+            mismatch_ctrl,
+            expected_provider="openai",
+            expected_model="qwen2.5-coder:1.5b",
+        )
+        assert any("[Attribution]" in v for v in violations)

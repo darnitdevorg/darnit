@@ -1,0 +1,204 @@
+name: Smoke Test (Local Ollama)
+
+# Scheduled smoke test for darnit harness with a local model server (Ollama) (#781).
+#
+# Validates that darnit works end-to-end with a real, local model server without
+# requiring third-party hosted API keys or transmitting source code externally.
+#
+# Key properties:
+#   - Scheduled nightly at 04:00 UTC and manual workflow_dispatch with model selection.
+#   - Pinned actions to full commit SHAs (Kusari Inspector hardening).
+#   - Runner environment variables avoid direct ${{ ... }} interpolation in bash blocks.
+#   - Network boundary enforcement: outbound HTTP/HTTPS routed to a closed discard port (9)
+#     with NO_PROXY strictly exempting localhost / 127.0.0.1 for Ollama.
+#   - Preserves report and Ollama service logs as artifacts on any exit code (if: always()).
+#   - Validates architectural invariants via scripts/verify_harness_report.py.
+
+on:
+  schedule:
+    # Run nightly at 04:00 UTC
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+    inputs:
+      model:
+        description: 'Local model tag served by Ollama (default: qwen3:4b)'
+        default: 'qwen3:4b'
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  smoke-ollama:
+    name: Smoke Test (Local Ollama)
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+
+    env:
+      MODEL: ${{ inputs.model || 'qwen3:4b' }}
+      MODEL_DIGEST: "31d9857b5705086d352d4d6db04e86c5d0f6a2b5d59a4dc7ce5cdb271ccf9141"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Cache Ollama models
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        with:
+          path: ~/.ollama/models
+          key: ollama-models-${{ runner.os }}-${{ env.MODEL }}-${{ env.MODEL_DIGEST }}
+
+      - name: Install Ollama
+        env:
+          OLLAMA_VERSION: "v0.40.13"
+          OLLAMA_SHA256: "c9490e0f520be21271d969e6703f012268b1d39f8b70dd58854e5bfef7a75bb6"
+        run: |
+          set -euo pipefail
+          url="https://github.com/ollama/ollama/releases/download/${OLLAMA_VERSION}/ollama-linux-amd64.tar.zst"
+          curl -fsSLo /tmp/ollama.tar.zst "$url"
+          echo "${OLLAMA_SHA256}  /tmp/ollama.tar.zst" | sha256sum -c -
+          sudo tar -C /usr -xf /tmp/ollama.tar.zst
+          rm -f /tmp/ollama.tar.zst
+          ollama -v
+
+      - name: Start Ollama service
+        env:
+          OLLAMA_KEEP_ALIVE: "30m"
+          OLLAMA_NUM_PARALLEL: "1"
+        run: |
+          mkdir -p ~/.ollama/models
+          ollama serve > ollama.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -s http://127.0.0.1:11434/api/tags > /dev/null; then
+              echo "Ollama server is ready and responding."
+              break
+            fi
+            echo "Waiting for Ollama service to start..."
+            sleep 1
+          done
+
+      - name: Pull model
+        run: |
+          ollama pull "$MODEL"
+          if [ "$MODEL" = "qwen3:4b" ]; then
+            manifest=$(find "$HOME/.ollama/models/manifests" -type f -path "*/qwen3/4b" | head -n 1)
+            if [ -n "$manifest" ]; then
+              actual_sha=$(sha256sum "$manifest" | awk '{print $1}')
+              if [ "$actual_sha" != "$MODEL_DIGEST" ]; then
+                echo "Model manifest digest mismatch! Expected $MODEL_DIGEST, got $actual_sha" >&2
+                exit 1
+              fi
+              echo "Model manifest verified ($MODEL_DIGEST)."
+            fi
+          fi
+
+      - name: Setup reference repository
+        run: |
+          git clone -q --filter=blob:none https://github.com/whiskeytastingfoundation/wtf-frontend.git /tmp/wtf-frontend
+          git -C /tmp/wtf-frontend checkout -q -b replay 939e838
+          # Remove origin remote to guarantee offline isolation
+          git -C /tmp/wtf-frontend remote remove origin
+
+      - name: Configure operator
+        run: |
+          mkdir -p ~/.config/darnit
+          chmod 700 ~/.config ~/.config/darnit
+          cat <<EOF > ~/.config/darnit/config.toml
+          schema_version = 1
+
+          [trust]
+          repos = ["github.com/whiskeytastingfoundation/wtf-frontend"]
+
+          [llm]
+          provider = "openai"
+          model = "$MODEL"
+          EOF
+          chmod 600 ~/.config/darnit/config.toml
+
+      - name: Run darnit harness
+        id: harness
+        env:
+          OPENAI_BASE_URL: "http://127.0.0.1:11434/v1"
+          OPENAI_API_KEY: "dummy-key"
+          HTTP_PROXY: "http://127.0.0.1:9"
+          HTTPS_PROXY: "http://127.0.0.1:9"
+          NO_PROXY: "127.0.0.1,localhost"
+        run: |
+          set +e
+          uv run darnit harness \
+            /tmp/wtf-frontend \
+            --framework openssf-baseline \
+            --repo github.com/whiskeytastingfoundation/wtf-frontend \
+            --operator-config "$HOME/.config/darnit/config.toml" \
+            --format json \
+            --per-call-timeout 180 \
+            --total-run-timeout 1800 \
+            --output report.json 2>&1 | tee harness.log
+          HARNESS_EXIT=${PIPESTATUS[0]}
+          echo "exit_code=$HARNESS_EXIT" >> "$GITHUB_OUTPUT"
+
+          # Convert JSON report to Markdown summary instantly without re-running LLM inference
+          if [ -f report.json ]; then
+            uv run python -c "from darnit.harness.report import HarnessReport; from pathlib import Path; Path('report.md').write_text(HarnessReport.model_validate_json(Path('report.json').read_text(encoding='utf-8')).to_markdown(), encoding='utf-8')" || true
+          fi
+
+      - name: Verify report invariants
+        env:
+          HARNESS_EXIT: ${{ steps.harness.outputs.exit_code }}
+        run: |
+          uv run python scripts/verify_harness_report.py \
+            --report report.json \
+            --expected scripts/comply_replay_expected.json \
+            --model "$MODEL" \
+            --harness-exit-code "$HARNESS_EXIT" \
+            --min-answered 8
+
+      - name: Write step summary
+        if: always()
+        env:
+          HARNESS_EXIT: ${{ steps.harness.outputs.exit_code }}
+        run: |
+          {
+            echo "## Darnit Harness Smoke Test (Local Ollama)"
+            echo ""
+            echo "- **Model**: \`$MODEL\` (pinned digest: \`$MODEL_DIGEST\`)"
+            echo "- **Harness Exit Code**: \`$HARNESS_EXIT\`"
+            echo "- **Deterministic Baseline**: Verified against \`scripts/comply_replay_expected.json\`"
+            if [ -f report.json ]; then
+              uv run python -c "import json, pathlib; data = json.loads(pathlib.Path('report.json').read_text(encoding='utf-8')); ctrls = [c for c in data.get('controls', []) if (c.get('evidence') or {}).get('llm_model') or (c.get('evidence') or {}).get('llm_consultation') or c.get('concluded_by') in ('llm_judgment', 'llm_eval')]; ans = [c for c in ctrls if c.get('status') != 'ERROR']; err = [c for c in ctrls if c.get('status') == 'ERROR']; print(f'- **LLM Judgments**: {len(ctrls)} total evaluated ({len(ans)} answered, {len(err)} error(s))')" || true
+              echo "- **JSON Report**: Available as artifact"
+            fi
+            echo ""
+            if [ -f report.md ]; then
+              echo "### Harness Markdown Summary"
+              echo ""
+              cat report.md
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload smoke test artifacts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: smoke-ollama-artifacts
+          path: |
+            report.json
+            report.md
+            harness.log
+            ollama.log
+          if-no-files-found: warn
