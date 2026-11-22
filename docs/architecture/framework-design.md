@@ -1,8 +1,8 @@
 # Darnit Framework Design Specification
 
-> **Version**: 1.0.0-alpha.27
+> **Version**: 1.0.0-alpha.28
 > **Status**: Authoritative
-> **Last Updated**: 2026-11-20
+> **Last Updated**: 2026-11-22
 
 This specification defines the authoritative design of the Darnit framework, including the sieve orchestrator, TOML schema, built-in pass types, remediation actions, and plugin protocol.
 
@@ -2391,7 +2391,7 @@ plan -> [confirmation missing]            -> needs_confirmation
 | `summary` | Counts per outcome kind, derived from `outcomes` |
 | `awaiting` | `{"llm_judgment": [...], "confirmation": [...]}`: control ids of outcomes by `pending_kind`, sorted, derived from `outcomes`; a key with no ids is omitted, and a preview has `{}` |
 
-**Reports** (Markdown and JSON) show, per control: the outcome `kind`, the files changed, platform fields `before -> after`, the re-check status, and the reason and error; per run: the policy, the operator configuration digest, the approvals (digest, by, at), the run id, and the summary counts. A preview of a high-impact change lists its impact notes. `remediate_audit_findings` returns the Markdown report followed by a fenced JSON block holding the `RemediationRun` (a preview carries `plan` with every digest, `previewable`, and `requires_individual_approval`; an apply carries `outcomes`, `summary`, and `awaiting`). An outcome with `pending_kind` adds an "Awaiting" line (a model judgment, or the operator's confirmation of a PASS candidate). When `awaiting` is not empty, the Markdown report ends with a "Next steps" section that names those control ids and the tools to call (section 15.9); its text comes from `darnit.server.procedures` and holds no evidence.
+**Reports** (Markdown and JSON) show, per control: the outcome `kind`, the files changed, platform fields `before -> after`, the re-check status, and the reason and error; per run: the policy, the operator configuration digest, the approvals (digest, by, at), the run id, and the summary counts. A preview of a high-impact change lists its impact notes. `remediate_audit_findings` returns the Markdown report followed by a fenced JSON block holding the `RemediationRun` (a preview carries `plan` with every digest, `previewable`, and `requires_individual_approval`; an apply carries `outcomes`, `summary`, and `awaiting`). To keep the output within MCP client limits, file contents in `file_changes` are omitted from the fenced JSON block (keeping `path`, `action`, `reason`, `ignored`, `before_digest`, and `after_digest`). An outcome with `pending_kind` adds an "Awaiting" line (a model judgment, or the operator's confirmation of a PASS candidate). When `awaiting` is not empty, the Markdown report ends with a "Next steps" section that names those control ids and the tools to call (section 15.9); its text comes from `darnit.server.procedures` and holds no evidence.
 
 #### Scenario: File already exists
 - **WHEN** the only step of a control's remediation is a `file_create` whose file already exists
@@ -2686,6 +2686,7 @@ The following requirements have been superseded: by the handler dispatch archite
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.0.0-alpha.28 | 2026-11-22 | Fenced JSON block returned by `remediate_audit_findings` omits file contents in `file_changes` in the plan and outcomes (keeping `path`, `action`, `reason`, `ignored`, `before_digest`, and `after_digest`) to keep report output within client limits (Section 15.4; #725) |
 | 1.0.0-alpha.27 | 2026-11-20 | Operator `[llm] provider = "openai"` selects OpenAI for the harness's model judgments: `model` is required for it, the key is read from `OPENAI_API_KEY`, the credential check runs after `[llm]` is applied, and every model judgment result records the model as `<provider>:<model>` in `llm_model` (Section 14.1; #764) |
 | 1.0.0-alpha.26 | 2026-11-20 | Preflight context check and tool guard allow ready remediations to proceed: ready controls preview and apply with platform requests planned for them, while controls requiring unconfirmed context report `needs_confirmation`; the run blocks only when every failing control lacks context (Sections 7.10, 15.4; #767) |
 | 1.0.0-alpha.25 | 2026-11-19 | OpenSSF Security Insights (schema 1.x and 2.x) proposes `security_contact` as a sieve-hint candidate with the file's repository-relative path as its origin; it never writes the loaded configuration, never replaces a stored value, and its policy link is not imported (Section 7.12; #497) |
