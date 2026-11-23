@@ -1,8 +1,8 @@
 # Darnit Framework Design Specification
 
-> **Version**: 1.0.0-alpha.31
+> **Version**: 1.0.0-alpha.32
 > **Status**: Authoritative
-> **Last Updated**: 2026-11-24
+> **Last Updated**: 2026-11-27
 
 This specification defines the authoritative design of the Darnit framework, including the sieve orchestrator, TOML schema, built-in pass types, remediation actions, and plugin protocol.
 
@@ -624,10 +624,15 @@ confidence_threshold = 0.8
 | Field | Type | Description |
 |-------|------|-------------|
 | `handler` | `str` | MUST be `"llm_eval"` |
-| `prompt` | `str` | Inline prompt template |
+| `prompt` | `str` | Inline prompt template (default / automated generator prompt) |
+| `generated_marker` | `str` | Optional marker string; when present in any included file, `prompt` is used instead of `handwritten_prompt` (#651) |
+| `handwritten_prompt` | `str` | Optional alternative prompt used when `generated_marker` is not found in included file contents (#651) |
 | `files_to_include` | `list[str]` | Files to include in LLM context. Supports `$FOUND_FILE` to reference the file discovered by a preceding `file_exists` handler. |
 | `analysis_hints` | `list[str]` | Hints to guide analysis |
+| `handwritten_analysis_hints` | `list[str]` | Optional hints paired with `handwritten_prompt` (#651) |
 | `confidence_threshold` | `float` | Passed to the model with the consultation. Since feature 041 a judgment's confidence is recorded with it but is never a decision input: a judgment never concludes a control. |
+
+**Prompt variant selection**: When `handwritten_prompt` is defined, the handler selects `prompt` if `generated_marker` is defined and occurs in any included file's content; otherwise it selects `handwritten_prompt` (and `handwritten_analysis_hints` if defined). The selected variant is recorded in evidence under `llm_prompt_variant` (`default` or `handwritten`).
 
 **`files_to_include` resolution**: The handler MUST resolve `$FOUND_FILE` entries by looking up `found_file` in `context.gathered_evidence`. Each resolved file path MUST be read (up to 10KB per file, max 5 files) and included as `file_contents` in the `consultation_request`. File paths that are not absolute MUST be resolved relative to `context.local_path`. Files that cannot be read MUST be silently skipped. A file that resolves outside the repository MUST NOT be read and is recorded in the result's `skipped_outside_repository` (section 3.0.4). Files to include are resolved case-exactly on every filesystem, and duplicate paths resolving to the same physical file are deduplicated before reading. Similarly, `llm_extract` resolves candidate files case-exactly on every filesystem and deduplicates physical files before gathering content.
 
@@ -2673,6 +2678,7 @@ The following requirements have been superseded: by the handler dispatch archite
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.0.0-alpha.32 | 2026-11-27 | `llm_eval` step settings `generated_marker`, `handwritten_prompt`, and `handwritten_analysis_hints`: selects `prompt` when an included file contains `generated_marker`, and `handwritten_prompt` otherwise, recording `llm_prompt_variant` (Section 3.5; #651) |
 | 1.0.0-alpha.31 | 2026-11-24 | `gh_api` step setting `auth_fields`: when an HTTP 2xx response omits any declared field, reports ERROR with error class `auth` naming the elevated permission requirement (Section 3.8; #753) |
 | 1.0.0-alpha.30 | 2026-11-24 | An `exec` remediation step previewed in a scratch copy marks files that have uncommitted user changes in the checkout with `action = "none"` and `reason = "user_changes_present"`, reports that the command will not run, and omits files the command will not touch, matching what the apply does (Section 4.4; #543) |
 | 1.0.0-alpha.29 | 2026-11-22 | `project_reference` is accepted on any step whose handler declares it in its settings, not only `file_create`; on a handler other than `file_create` it records only the file at the step's `path`. OSPS-SA-03.02 records `security.threat_model` through `project_reference` on `generate_threat_model` instead of an unconditional `project_update` (Sections 4.3, 7.9; #545) |

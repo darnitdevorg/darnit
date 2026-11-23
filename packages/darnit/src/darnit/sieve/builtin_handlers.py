@@ -1163,9 +1163,12 @@ def llm_eval_handler(config: dict[str, Any], context: HandlerContext) -> Handler
     """Request LLM evaluation with confidence threshold.
 
     Config fields:
-        prompt: str - Prompt for LLM evaluation
+        prompt: str - Prompt for LLM evaluation (or default prompt when generated_marker is present)
+        handwritten_prompt: str - Optional alternative prompt when generated_marker is absent (#651)
+        generated_marker: str - Optional marker string in included files indicating generated content (#651)
         confidence_threshold: float - Minimum confidence to accept (default: 0.8)
         analysis_hints: list[str] - Hints for the LLM
+        handwritten_analysis_hints: list[str] - Optional hints for handwritten_prompt (#651)
         files_to_include: list[str] - Files whose contents to bundle with
             the consultation. Supports:
             - literal paths (relative to repo root or absolute)
@@ -1188,7 +1191,8 @@ def llm_eval_handler(config: dict[str, Any], context: HandlerContext) -> Handler
     since actual LLM invocation happens at the MCP server level.
     """
     prompt = config.get("prompt", "")
-    if not prompt:
+    handwritten_prompt = config.get("handwritten_prompt", "")
+    if not prompt and not handwritten_prompt:
         return HandlerResult(
             status=HandlerResultStatus.INCONCLUSIVE,
             message="No prompt specified for LLM evaluation",
@@ -1242,16 +1246,38 @@ def llm_eval_handler(config: dict[str, Any], context: HandlerContext) -> Handler
         for candidate in context.gathered_evidence.get("resolved_files", []) or []:
             _read(candidate)
 
+    analysis_hints = config.get("analysis_hints", [])
+    handwritten_hints = config.get("handwritten_analysis_hints")
+    evidence: dict[str, Any] = {"skipped_outside_repository": skipped} if skipped else {}
+
+    # Issue #651: when handwritten_prompt is configured, select between prompt
+    # and handwritten_prompt based on generated_marker. If any included file
+    # contains generated_marker, use prompt; otherwise use handwritten_prompt.
+    if handwritten_prompt:
+        generated_marker = config.get("generated_marker")
+        is_generated = bool(
+            generated_marker
+            and file_contents
+            and any(generated_marker in content for content in file_contents.values())
+        )
+        if not is_generated:
+            prompt = handwritten_prompt
+            if handwritten_hints is not None:
+                analysis_hints = handwritten_hints
+            evidence["llm_prompt_variant"] = "handwritten"
+        else:
+            evidence["llm_prompt_variant"] = "default"
+
     return HandlerResult(
         status=HandlerResultStatus.INCONCLUSIVE,
         message="LLM consultation requested",
-        evidence={"skipped_outside_repository": skipped} if skipped else {},
+        evidence=evidence,
         details={
             "consultation_request": {
                 "prompt": prompt,
                 "control_id": context.control_id,
                 "confidence_threshold": config.get("confidence_threshold", 0.8),
-                "analysis_hints": config.get("analysis_hints", []),
+                "analysis_hints": analysis_hints,
                 "gathered_evidence": context.gathered_evidence,
                 "file_contents": file_contents,
             },
@@ -2042,7 +2068,15 @@ def register_builtin_handlers() -> None:
         phase="llm",
         handler_fn=llm_eval_handler,
         description="AI evaluation with confidence threshold",
-        settings={"prompt", "confidence_threshold", "analysis_hints", "files_to_include"},
+        settings={
+            "prompt",
+            "handwritten_prompt",
+            "generated_marker",
+            "confidence_threshold",
+            "analysis_hints",
+            "handwritten_analysis_hints",
+            "files_to_include",
+        },
     )
     # RFC-0001 Stage 1 (feature 025 T045): llm_extract for value extraction.
     # Like llm_eval, it never concludes a control.
