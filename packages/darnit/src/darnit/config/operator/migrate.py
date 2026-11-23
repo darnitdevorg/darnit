@@ -14,10 +14,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import yaml
 from pydantic import ValidationError
 
-from darnit.config.loader import _write_yaml_file, get_default_extension
+from darnit.config.loader import load_project_config_checked, update_extension_file
 from darnit.config.merger import BASELINE_TOML
 from darnit.config.schema import BaselineExtension, ControlOverride
 
@@ -160,18 +159,34 @@ def _unsupported_names(unsupported: dict[str, Any]) -> list[str]:
     return names
 
 
-def _read_project_file(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-    try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
-        raise MigrationError(f"cannot read {PROJECT_FILE}: {exc}") from exc
-    if data is None:
-        return {}
-    if not isinstance(data, dict) or not isinstance(data.get("controls", {}), dict):
-        raise MigrationError(f"{PROJECT_FILE} does not have the expected shape; fix it and re-run")
-    return data
+def _read_project_file(repo: Path) -> dict[str, Any]:
+    """The current ``.project/darnit.yaml`` content, refusing when a ``.project/`` file is invalid.
+
+    Like every other ``.project/`` writer, migration does not write over a
+    present but unreadable or invalid ``.project/project.yaml`` or
+    ``.project/darnit.yaml``; it reports the validation errors instead
+    (framework-design.md 7.9, FR-019/FR-020).
+    """
+    files = load_project_config_checked(str(repo))
+    if files.invalid:
+        raise MigrationError(
+            "a .project/ file is present but invalid; fix it and re-run. Nothing was written: "
+            + "; ".join(files.errors)
+        )
+    return dict(files.extension.data or {})
+
+
+def _set_claims(claims: dict[str, dict[str, Any]]):
+    """Round-trip mutation that sets only the migrated claims under ``controls:``."""
+
+    def mutate(data: Any) -> None:
+        controls = data.get("controls")
+        if not isinstance(controls, dict):
+            controls = data["controls"] = {}
+        for control_id, claim in claims.items():
+            controls[control_id] = claim
+
+    return mutate
 
 
 def migrate_baseline_toml(repo: Path, *, force: bool = False) -> MigrationResult:
@@ -203,7 +218,7 @@ def migrate_baseline_toml(repo: Path, *, force: bool = False) -> MigrationResult
         not_migrated=[*_unsupported_names(unsupported), *invalid],
     )
 
-    existing = _read_project_file(result.project_file)
+    existing = _read_project_file(repo)
     controls = dict(existing.get("controls") or {})
     for control_id, claim in claims.items():
         current = controls.get(control_id)
@@ -221,7 +236,7 @@ def migrate_baseline_toml(repo: Path, *, force: bool = False) -> MigrationResult
             BaselineExtension.model_validate(updated)
         except ValidationError as exc:
             raise MigrationError(f"{PROJECT_FILE} would not conform to its schema: {exc}") from exc
-        result.project_file.parent.mkdir(exist_ok=True)
-        extension = get_default_extension()
-        _write_yaml_file(str(result.project_file), updated, extension.header if extension else [])
+        # Round-trip write: comments, key order, and formatting already in
+        # .project/darnit.yaml are kept; only the migrated claims change (#524).
+        update_extension_file(str(repo), _set_claims({cid: controls[cid] for cid in result.written}))
     return result

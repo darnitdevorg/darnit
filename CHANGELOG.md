@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   could never select the org notice. `remediate_community_spec` now rejects a
   `coc_policy` or `governance_mode` outside the key's values, and
   `csl_onboard.py` reads its choices from the framework TOML (fixes #522).
+- `darnit config migrate` writes `.project/darnit.yaml` through the same
+  comment-preserving round trip as the other `.project/` writers, so comments,
+  key order, and formatting already in the file are kept; only the migrated
+  claims change. It also refuses, with the validation errors and without
+  writing, when `.project/project.yaml` or `.project/darnit.yaml` is present
+  but invalid (fixes #524).
 - Remediation templates state a test command or link a file only when the
   repository scan found it or the same run writes it; otherwise, they leave
   a marked TODO gap (fixes #751).
