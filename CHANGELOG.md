@@ -50,6 +50,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `github.head_ref` concern it checked is covered by OSPS-BR-01.01's zizmor
   `template-injection` audit. A test now fails if any control upstream marks
   retired is defined (fixes #495).
+- Correct OpenSSF Baseline control `docs_url` metadata in the TOML to use
+  OSPS Baseline v2026.02.19 and the site's `#osps-ac-0101`-style anchors,
+  matching the existing SARIF `helpUri` values. A test keeps these TOML
+  values in step with `[metadata] spec_version` and the SARIF helpers
+  (part of #494).
 - Remediation templates state a test command or link a file only when the
   repository scan found it or the same run writes it; otherwise, they leave
   a marked TODO gap (fixes #751).
