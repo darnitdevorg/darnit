@@ -40,7 +40,10 @@ governance), `CSL-06.01` (README discoverability).
    defines the reporting procedure. The remediate tool refuses individual
    contacts when the repo itself already ships a CoC file. Only when no such
    CoC exists, supply two named individuals with an email or handle each —
-   never a mailing list.
+   never a mailing list. `coc_policy` is one of `csl` (ship the CSL Code of
+   Conduct), `umbrella` (cite an umbrella CoC such as CNCF's and still list
+   contacts), or `org`; the same three values can be confirmed with
+   `confirm_project_data` as `csl_coc_policy`.
 3. **Source-code license** for sample/reference code (e.g. `Apache-2.0`, `MIT`).
 4. **Governance mode**: `csl` (ship the full CSL policy) or `umbrella`
    (reference existing governance, e.g. a CNCF project charter).

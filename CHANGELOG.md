@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Threat-model findings use the rule id (darnit.entry.flask-route), not the
   Opengrep rules directory path, so generated file names and query_id values no
   longer carry the install location (fixes #776).
+- Community Specification: `org` is now one of the `csl_coc_policy` values,
+  alongside `csl` and `umbrella`. The tool description, the notices template,
+  and `scripts/csl_onboard.py` already used it, but `confirm_project_data`
+  refused it and `get_pending_data` did not offer it, so a confirmed value
+  could never select the org notice. `remediate_community_spec` now rejects a
+  `coc_policy` or `governance_mode` outside the key's values, and
+  `csl_onboard.py` reads its choices from the framework TOML (fixes #522).
 - Remediation templates state a test command or link a file only when the
   repository scan found it or the same run writes it; otherwise, they leave
   a marked TODO gap (fixes #751).
