@@ -30,10 +30,6 @@
         "before": "FAIL",
         "outcome": "fixed"
       },
-      "OSPS-BR-01.02": {
-        "after": "WARN",
-        "before": "WARN"
-      },
       "OSPS-BR-01.03": {
         "after": "WARN",
         "before": "WARN"

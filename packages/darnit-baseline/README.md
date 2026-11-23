@@ -1,6 +1,6 @@
 # darnit-baseline
 
-OpenSSF Baseline (OSPS v2026.02.19) compliance implementation for the [darnit](../darnit) framework — **62 controls** across **8 domains** and **3 maturity levels** (25 L1, 17 L2, 20 L3).
+OpenSSF Baseline (OSPS v2026.02.19) compliance implementation for the [darnit](../darnit) framework — **64 controls** across **8 domains** and **3 maturity levels** (24 L1, 19 L2, 21 L3).
 
 ## How Controls Are Verified
 
@@ -42,7 +42,6 @@ Controls gated by `platform = "github"` require the GitHub CLI (`gh`). Additiona
 | Control | Lvl | What It Checks | How | Auto-Remediation |
 |---------|-----|----------------|-----|------------------|
 | BR-01.01 | 1 | Workflows handle untrusted inputs safely *(GitHub Actions)* | `exec` zizmor / `pattern` | `exec` zizmor --fix |
-| BR-01.02 | 1 | Branch names handled safely in workflows *(GitHub Actions)* | `pattern` workflows | Manual |
 | BR-02.01 | 2 | Unique version IDs per release *(if has_releases)* | `exec` gh release list | Manual |
 | BR-02.02 | 3 | Assets clearly linked to release IDs | `exec` gh release list | Manual |
 | BR-03.01 | 1 | Repository URL uses HTTPS | `exec` gh api | — |
@@ -143,7 +142,7 @@ Confirm context with the `confirm_project_data` MCP tool, which records who conf
 | `has_releases` | boolean | Yes | BR-02.01, BR-04.01, BR-06.01, LE-03.02, SA-03.01 | When-clause: controls only run if `true` |
 | `is_library` | boolean | No | DO-04.01, BR-01.01 | Audit hints for accuracy |
 | `has_compiled_assets` | boolean | No | QA-02.02 | When-clause: control only runs if `true` |
-| `ci_provider` | enum | Yes | BR-01.01, BR-01.02, AC-04.01, AC-04.02 | When-clause: controls only run if `"github"` |
+| `ci_provider` | enum | Yes | BR-01.01, AC-04.01, AC-04.02 | When-clause: controls only run if `"github"` |
 | `license_type` | enum (`mit`, `apache-2.0`, `bsd-3-clause`, `other`) | No | LE-02.01, LE-03.01 | Selects the LICENSE template when no license file exists; `other` gives manual steps. darnit never picks a license |
 
 **Auto-detected without prompting:** `detected_ecosystem` (from manifest files: pyproject.toml → python, package.json → node, Cargo.toml → rust, go.mod → go) is detected automatically by `collect_auto_context()` and injected into both audit and remediation paths. It never appears in `get_pending_data` questions.
@@ -237,12 +236,11 @@ Each is a `platform_setting` requirement handled by the platform engine, not a p
 
 OSPS-AC-01.01 (organization two-factor enforcement) has no API and is manual under every policy.
 
-### Exec (2 actions)
+### Exec (1 action)
 
 | Control | Command | Notes |
 |---------|---------|-------|
 | BR-01.01 | `zizmor --fix=all --offline` | Requires external `zizmor` tool. Applies all fixes including unsafe. GitHub Actions only |
-| BR-01.02 | `zizmor --fix=all --offline` | Same command, targets branch name injection patterns |
 
 ### Manual-Only (19 controls)
 

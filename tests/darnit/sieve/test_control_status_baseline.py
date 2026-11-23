@@ -29,12 +29,10 @@ from .baseline_capture import PARITY_FIXTURES, capture, capture_details
 # the controls run on to zizmor and grep instead: ERROR where the tool is not
 # installed; PASS for the zizmor controls where the suite's zizmor stand-in
 # (tests/conftest.py), which answers "no findings" whatever it is given, is on
-# PATH; else the same WARN, which is no drift. BR-01.02's grep step concludes
-# nothing, so it never PASSes. Those statuses before the WARN are the only
-# drift tolerated.
+# PATH; else the same WARN, which is no drift. Those statuses before the WARN
+# are the only drift tolerated.
 WARN_BY_DESIGN = {
     "OSPS-BR-01.01": {"ERROR", "PASS"},
-    "OSPS-BR-01.02": {"ERROR"},
     "OSPS-AC-04.02": {"ERROR", "PASS"},
 }
 
@@ -70,7 +68,7 @@ NO_WORKFLOWS_WARN = {
 
 @pytest.mark.parametrize(
     ("control_id", "before"),
-    [("OSPS-BR-01.01", "ERROR"), ("OSPS-BR-01.01", "PASS"), ("OSPS-AC-04.02", "PASS"), ("OSPS-BR-01.02", "ERROR")],
+    [("OSPS-BR-01.01", "ERROR"), ("OSPS-BR-01.01", "PASS"), ("OSPS-AC-04.02", "PASS"), ("OSPS-AC-04.02", "ERROR")],
 )
 def test_tolerated_drift(control_id: str, before: str) -> None:
     assert _warn_by_design("openssf-baseline::empty_repo", control_id, before, NO_WORKFLOWS_WARN)
@@ -79,7 +77,6 @@ def test_tolerated_drift(control_id: str, before: str) -> None:
 @pytest.mark.parametrize(
     ("pair", "control_id", "before", "after"),
     [
-        ("openssf-baseline::empty_repo", "OSPS-BR-01.02", "PASS", NO_WORKFLOWS_WARN),
         ("openssf-baseline::empty_repo", "OSPS-BR-01.01", "FAIL", NO_WORKFLOWS_WARN),
         ("openssf-baseline::empty_repo", "OSPS-BR-01.01", "WARN", NO_WORKFLOWS_WARN),
         ("openssf-baseline::empty_repo", "OSPS-BR-01.01", None, NO_WORKFLOWS_WARN),

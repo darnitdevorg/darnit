@@ -312,7 +312,7 @@ class TestNotPreviewableSteps:
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("control_id", ["OSPS-BR-01.01", "OSPS-BR-01.02"])
+@pytest.mark.parametrize("control_id", ["OSPS-BR-01.01"])
 def test_zizmor_fix_is_previewed(repo: Path, control_id: str) -> None:
     path = next(p for p, c in REMEDIATIONS if c == control_id)
     before = snapshot(repo)

@@ -1,10 +1,10 @@
 """The ``github_workflows_present`` sieve handler (#584).
 
 The first step of the controls that audit GitHub Actions workflow files
-(``OSPS-BR-01.01``, ``OSPS-BR-01.02``, ``OSPS-AC-04.02``). Without workflow
-files their commands have nothing to read: zizmor exits 3 and ``grep``
-exits 2, which an ``exec`` step reports as ``unexpected_exit``. This step
-says what happened instead, before either runs.
+(``OSPS-BR-01.01``, ``OSPS-AC-04.02``). Without workflow files their
+commands have nothing to read: zizmor exits 3, which an ``exec`` step
+reports as ``unexpected_exit``. This step says what happened instead,
+before zizmor runs.
 
 * WARN when ``.github/workflows/`` holds no ``.yml`` or ``.yaml`` file inside
   the repository. The step type's ceiling is ``{fail}``, so the WARN

@@ -139,11 +139,11 @@ audit_openssf_baseline(
 | 🔴 | ERROR | Check couldn't run |
 
 ### Maturity Levels
-- **Level 1** (25 controls) - Basic security hygiene (includes 1 upstream-retired control retained for backward compatibility)
+- **Level 1** (24 controls) - Basic security hygiene
 - **Level 2** (19 controls) - Enhanced security practices
 - **Level 3** (21 controls) - Advanced security maturity
 
-Upstream OSPS Baseline v2026.02.19 defines 64 controls (24 / 19 / 21). Darnit ships one additional Level 1 control (`OSPS-BR-01.02`) that upstream retired in [ossf/security-baseline#443](https://github.com/ossf/security-baseline/pull/443); it is retained because the underlying "sanitize `github.head_ref`" concern is still valid, and it is included in Level 1 audits.
+These match upstream OSPS Baseline v2026.02.19, which defines 64 controls (24 / 19 / 21). Controls upstream retires are not assessed: `OSPS-BR-01.02`, retired in [ossf/security-baseline#443](https://github.com/ossf/security-baseline/pull/443), is no longer evaluated; its `github.head_ref` concern is covered by `OSPS-BR-01.01`, whose zizmor `template-injection` audit flags untrusted branch names.
 
 ---
 

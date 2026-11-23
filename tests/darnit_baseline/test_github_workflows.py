@@ -28,7 +28,7 @@ from darnit_baseline.github_workflows import (
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BASELINE_TOML = REPO_ROOT / "packages/darnit-baseline/src/darnit_baseline/openssf-baseline.toml"
-WORKFLOW_CONTROLS = ("OSPS-BR-01.01", "OSPS-BR-01.02", "OSPS-AC-04.02")
+WORKFLOW_CONTROLS = ("OSPS-BR-01.01", "OSPS-AC-04.02")
 ACTIONS = {"actions": True}
 
 
@@ -264,11 +264,11 @@ class TestShippedSteps:
 
     @pytest.mark.parametrize(
         ("control_id", "settings"),
-        [("OSPS-BR-01.01", ACTIONS), ("OSPS-BR-01.02", {}), ("OSPS-AC-04.02", {})],
+        [("OSPS-BR-01.01", ACTIONS), ("OSPS-AC-04.02", {})],
     )
     def test_only_br_01_01_counts_action_definitions(self, controls, control_id: str, settings: dict) -> None:
         """BR-01.01's zizmor audit (template-injection) reads actions; AC-04.02's (excessive-permissions)
-        and BR-01.02's grep of .github/workflows/ do not."""
+        does not."""
         step = controls[control_id].passes[0]
 
         assert step.model_extra == settings
@@ -282,12 +282,3 @@ class TestShippedSteps:
         )
 
         assert using == sorted(WORKFLOW_CONTROLS)
-
-    def test_br_01_02_grep_step_keeps_the_merged_exit_codes(self, controls) -> None:
-        """#656: a match (exit 0) is a declared failure, and concludes = [] keeps it from concluding."""
-        (grep,) = [s for s in controls["OSPS-BR-01.02"].passes if s.handler == "exec"]
-
-        assert grep.model_extra["command"] == ["grep", "-rln", "github.head_ref", ".github/workflows/"]
-        assert grep.model_extra["pass_exit_codes"] == [1]
-        assert grep.model_extra["fail_exit_codes"] == [0]
-        assert grep.concludes == []

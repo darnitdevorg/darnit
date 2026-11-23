@@ -44,6 +44,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on `/orgs/<owner>` for non-owners) are reported as ERROR with error class `auth`
   naming the field, via `auth_fields`, rather than raising a raw CEL KeyError
   evaluation error (fixes #753).
+- OpenSSF Baseline audits no longer assess OSPS-BR-01.02, which upstream
+  retired in ossf/security-baseline#443. It counted as a Level 1 control, so
+  audits reported 25 Level 1 controls against upstream's 24; the
+  `github.head_ref` concern it checked is covered by OSPS-BR-01.01's zizmor
+  `template-injection` audit. A test now fails if any control upstream marks
+  retired is defined (fixes #495).
 - Remediation templates state a test command or link a file only when the
   repository scan found it or the same run writes it; otherwise, they leave
   a marked TODO gap (fixes #751).

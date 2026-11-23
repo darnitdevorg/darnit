@@ -1,7 +1,7 @@
 # OpenSSF Baseline Framework Definition
 # Declarative configuration for OSPS v2026.02.19 compliance controls
 #
-# This file defines all 65 controls across 3 maturity levels.
+# This file defines every OSPS Baseline control across its 3 maturity levels.
 # Operators can override passes and add controls in operator configuration.
 
 [metadata]
@@ -738,83 +738,6 @@ steps = [
     "Use actions/github-script for complex event data handling",
 ]
 docs_url = "https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#understanding-the-risk-of-script-injections"
-
-# OSPS-BR-01.02 was retired upstream in ossf/security-baseline#443. Darnit
-# retains this check because the underlying "sanitize `github.head_ref`"
-# concern is still valid, but it is no longer part of the OSPS Baseline at
-# any maturity level. The `deprecated` tag excludes it from per-level
-# regression comparisons against upstream.
-[controls."OSPS-BR-01.02"]
-name = "SecureBranchNames"
-description = "Branch names are handled safely in workflows"
-tags = { level = 1, domain = "BR", build = true, security = true, deprecated = true }
-when = { ci_provider = "github" }
-
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-BR-01.02"
-location_hint = ".github/workflows"
-help_md = """Sanitize branch names before use in CI/CD pipelines.
-
-**Remediation:**
-1. Avoid using `github.head_ref` directly in shell commands
-2. Use intermediate environment variables
-3. Validate branch names match expected patterns
-
-**Example:**
-```yaml
-env:
-  BRANCH: ${{ github.head_ref }}
-run: |
-  # Branch name is now safely quoted
-  echo "Building branch: $BRANCH"
-```
-"""
-
-# No workflow file means nothing to audit (#584): WARN with that reason, and
-# grep (exit 2, unexpected_exit) never runs. With workflow files present it
-# is evidence only.
-[[controls."OSPS-BR-01.02".passes]]
-handler = "github_workflows_present"
-
-# Keyword absence, evidence only (feature 041): not finding github.head_ref
-# does not show branch names are handled safely (github.ref_name and event
-# payload fields carry them too).
-[[controls."OSPS-BR-01.02".passes]]
-handler = "exec"
-command = ["grep", "-rln", "github.head_ref", ".github/workflows/"]
-pass_exit_codes = [1]
-fail_exit_codes = [0]
-timeout = 10
-concludes = []
-
-[[controls."OSPS-BR-01.02".passes]]
-handler = "manual"
-steps = [
-    "Review CI/CD workflows for branch name handling",
-    "Verify branch names are not used in shell commands without sanitization",
-    "Check for proper quoting and escaping of branch name variables",
-]
-
-[controls."OSPS-BR-01.02".remediation]
-safe = false
-
-# Primary: zizmor auto-fix moves ${{ github.head_ref }} into env: variables
-[[controls."OSPS-BR-01.02".remediation.handlers]]
-handler = "exec"
-command = ["zizmor", "--fix=all", "--offline", "$PATH"]
-pass_exit_codes = [0, 11, 12, 13, 14]
-timeout = 60
-effects = "working_tree"
-offline = true
-
-# Fallback: manual remediation steps
-[[controls."OSPS-BR-01.02".remediation.handlers]]
-handler = "manual"
-steps = [
-    "Review CI/CD workflows for direct use of ${{ github.head_ref }} in run: blocks",
-    "Replace direct interpolation with environment variables: env: HEAD_REF: ${{ github.head_ref }}",
-    "Consider using actions/checkout with ref parameter instead of manual branch handling",
-]
-docs_url = "https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions"
 
 # Added in OSPS Baseline v2026.02.19. Applies at L1, L2, L3. Requires
 # reasoning about workflow triggers (pull_request vs pull_request_target),
