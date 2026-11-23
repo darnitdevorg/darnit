@@ -34,7 +34,6 @@ packages/
 │       ├── config/          # Project context configuration
 │       ├── formatters/      # Output formatting (Markdown, JSON, SARIF)
 │       ├── remediation/     # Remediation orchestration
-│       ├── rules/           # SARIF rule definitions (from TOML)
 │       └── threat_model/    # Threat model generation
 │
 └── darnit-testchecks/       # Test implementation (for testing)
@@ -243,7 +242,7 @@ The framework design is governed by the authoritative specification at:
 3. **CI Enforces Sync**: PRs are blocked if:
    - TOML configs don't validate against framework schema
    - Handler names in code don't match those documented in `docs/architecture/framework-design.md`
-   - The SARIF formatter references the catalog (it should read from TOML only)
+   - The SARIF formatter does not read control metadata from the framework TOML (there is no Python rules catalog)
 
 ### Validation Commands
 
@@ -254,9 +253,10 @@ uv run python scripts/validate_sync.py --verbose
 
 ### TOML-First Architecture
 
-All controls are defined in `openssf-baseline.toml`. The `rules/catalog.py` file
-is a deprecated fallback that remains for backward compatibility but is not
-actively used. All new controls must be defined entirely in TOML.
+All controls are defined in `openssf-baseline.toml`, including the metadata
+SARIF output uses (descriptions, severity, help text, `docs_url`). There is no
+Python rules catalog: `rules/catalog.py` was removed. All new controls must be
+defined entirely in TOML.
 
 ## TOML Schema Features
 
