@@ -109,16 +109,15 @@ baseline-mcp/
 │   │       └── formatters/          # Output formatting (markdown, SARIF)
 │   │
 │   ├── darnit-baseline/             # OpenSSF Baseline implementation
-│   │   ├── openssf-baseline.toml    # 62 control definitions (source of truth)
 │   │   └── src/darnit_baseline/
+│   │       ├── openssf-baseline.toml # Control definitions and SARIF metadata (source of truth)
 │   │       ├── implementation.py    # ComplianceImplementation class
 │   │       ├── tools.py             # Custom MCP tool handlers
-│   │       ├── controls/            # (mostly empty — controls moved to TOML)
 │   │       ├── remediation/         # Remediation orchestrator + legacy helpers
-│   │       ├── rules/               # SARIF rule catalog
+│   │       ├── templates/           # Remediation file templates
 │   │       ├── attestation/         # In-toto + Sigstore signing
 │   │       ├── threat_model/        # STRIDE analysis engine
-│   │       └── formatters/          # SARIF output generation
+│   │       └── formatters/          # SARIF output generation, badges
 │   │
 │   └── darnit-testchecks/           # Test-only plugin (not a template; see darnit-hello)
 │
@@ -510,11 +509,10 @@ For detailed mermaid diagrams of audit internals, remediation flow, context life
 
 | File | Purpose |
 |------|---------|
-| `openssf-baseline.toml` | All 62 control definitions, templates, context prompts |
-| `src/darnit_baseline/implementation.py` | `OpenSSFBaselineImplementation` class |
+| `src/darnit_baseline/openssf-baseline.toml` | All control definitions, SARIF metadata, templates, context prompts |
+| `src/darnit_baseline/implementation.py` | `OSPSBaselineImplementation` class |
 | `src/darnit_baseline/tools.py` | Custom MCP tool handlers (threat model, attestation, etc.) |
 | `src/darnit_baseline/remediation/orchestrator.py` | Legacy remediation orchestration |
-| `src/darnit_baseline/rules/catalog.py` | SARIF rule metadata (fallback for unmigrated controls) |
 | `src/darnit_baseline/attestation/` | In-toto attestation generation + Sigstore signing |
 | `src/darnit_baseline/threat_model/` | STRIDE threat analysis engine |
 

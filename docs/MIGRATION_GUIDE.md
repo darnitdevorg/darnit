@@ -113,8 +113,8 @@ Values stored by an earlier darnit version have no confirmation record and are t
 
 ## Deprecation Notices
 
-### rules/catalog.py (Deprecated)
-SARIF metadata should be defined in TOML:
+### rules/catalog.py (Removed)
+The Python rules catalog was removed; SARIF metadata comes only from TOML:
 
 ```toml
 [controls."OSPS-XX-01.01"]

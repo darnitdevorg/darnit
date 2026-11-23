@@ -1957,30 +1957,12 @@ require = { require_pull_request = true }
 
 ---
 
-## Appendix B: Migration from Rules Catalog
+## Appendix B: Rules Catalog (removed)
 
-The `rules/catalog.py` file is deprecated. Migrate metadata to TOML:
-
-```python
-# OLD: rules/catalog.py
-OSPS_RULES = {
-    "OSPS-AC-01.01": {
-        "name": "MFARequired",
-        "short": "MFA required",
-        "help_md": "...",
-        "security_severity": 9.0,
-    }
-}
-```
-
-```toml
-# NEW: openssf-baseline.toml
-[controls."OSPS-AC-01.01"]
-name = "MFARequired"
-description = "MFA required for repository access"
-security_severity = 9.0
-help_md = "..."
-```
+The Python rules catalog (`rules/catalog.py`) that once held SARIF rule
+metadata was removed. Control metadata (`name`, `description`,
+`security_severity`, `help_md`, `docs_url`) is defined only in the framework
+TOML, and the SARIF formatter reads it from there (Section 8.1).
 
 ---
 
