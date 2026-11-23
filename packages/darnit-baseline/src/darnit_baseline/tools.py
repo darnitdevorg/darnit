@@ -714,8 +714,21 @@ def confirm_project_data(
     """
     from darnit.server.procedures import data_next_step
     from darnit.server.tools.project_data import confirm_project_data_impl
+    from darnit.trust.decision import target_from_owner_repo
+    from darnit_baseline.pending_data import checkout_digest, question_audit, retain_question_audit
 
-    return confirm_project_data_impl(
+    target = target_from_owner_repo(owner, repo, host)
+    cached = None
+    before_digest = None
+    if target and not confirm_not_applicable and not confirm_pass_candidate:
+        try:
+            cached = question_audit(local_path, target)
+            if cached is not None:
+                before_digest = checkout_digest(local_path)
+        except Exception:
+            cached = None
+
+    result = confirm_project_data_impl(
         local_path=local_path,
         accept_candidates=accept_candidates,
         confirm_stored=confirm_stored,
@@ -730,6 +743,19 @@ def confirm_project_data(
         next_step=data_next_step(owner, repo, str(Path(local_path).resolve())),
         **values,
     )
+
+    if cached is not None and before_digest is not None and target is not None:
+        try:
+            if checkout_digest(local_path) == before_digest:
+                changed_keys = (
+                    set(values) | set(accept_candidates or {}) | set(confirm_stored or [])
+                    | set(reject_stored or []) | set(expires_at or {})
+                )
+                retain_question_audit(local_path, target, cached, changed_keys)
+        except Exception:
+            # A failed snapshot never makes a question disappear.
+            pass
+    return result
 
 
 def confirm_project_data_tool():
@@ -829,10 +855,10 @@ def get_pending_data(
 
         # Reuse only a fresh full audit with the same repository trust target.
         # Failed and unresolved controls may still need answers for remediation.
-        from darnit.tools.audit import read_full_audit_cache
+        from darnit_baseline.pending_data import question_audit
 
         try:
-            cached = read_full_audit_cache(str(repo_path), "openssf-baseline", level=3, target=target)
+            cached = question_audit(str(repo_path), target)
         except Exception:
             cached = None
         skipped_questions = []
