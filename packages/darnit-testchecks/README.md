@@ -1,6 +1,6 @@
 # darnit-testchecks
 
-The test-only plugin for [darnit](https://github.com/kusari-oss/darnit). The test suite uses it; it is not published and is not a template. To write a plugin, start from [`darnit-hello`](../darnit-hello/).
+The test-only plugin for [darnit](https://github.com/darnitdevorg/darnit). The test suite uses it; it is not published and is not a template. To write a plugin, start from [`darnit-hello`](../darnit-hello/).
 
 It provides two frameworks, both defined in TOML inside `src/darnit_testchecks/`:
 

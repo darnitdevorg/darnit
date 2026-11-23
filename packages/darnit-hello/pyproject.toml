@@ -24,10 +24,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/kusari-oss/darnit"
-Repository = "https://github.com/kusari-oss/darnit"
-Issues = "https://github.com/kusari-oss/darnit/issues"
-Documentation = "https://github.com/kusari-oss/darnit/blob/main/docs/packaging-plugins.md"
+Homepage = "https://github.com/darnitdevorg/darnit"
+Repository = "https://github.com/darnitdevorg/darnit"
+Issues = "https://github.com/darnitdevorg/darnit/issues"
+Documentation = "https://github.com/darnitdevorg/darnit/blob/main/docs/packaging-plugins.md"
 
 # This is the ONE line that makes the plugin discoverable. The group name
 # `darnit.implementations` is fixed by the framework; the key on the left

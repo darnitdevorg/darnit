@@ -1075,7 +1075,7 @@ def _scan_existing_docs(local_path: str) -> dict[str, DocInfo]:
         for link_match in link_pattern.finditer(content):
             url = link_match.group(0).rstrip(".,;:")
             # Skip common noisy links
-            if "github.com/kusari-oss/darnit" not in url:
+            if "github.com/darnitdevorg/darnit" not in url and "github.com/kusari-oss/darnit" not in url:
                 info.links.append(url)
 
         # Extract governance mentions

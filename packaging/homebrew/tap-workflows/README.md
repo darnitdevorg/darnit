@@ -17,7 +17,7 @@ cp ../darnit/packaging/homebrew/tap-workflows/bump-formula.yml .github/workflows
 cp ../darnit/packaging/homebrew/tap-workflows/ci.yml          .github/workflows/
 
 git add .github/workflows/
-git commit -m "Initial CI + formula-bump workflows from kusari-oss/darnit"
+git commit -m "Initial CI + formula-bump workflows from darnitdevorg/darnit"
 git push
 ```
 
@@ -31,9 +31,9 @@ For any change to these files, the PR must include an "After-merge maintainer ac
 
 | File | Tap-repo destination | Purpose |
 |---|---|---|
-| `bump-formula.yml` | `.github/workflows/bump-formula.yml` | Triggered by `repository_dispatch` from `kusari-oss/darnit::release.yml::homebrew_dispatch`. Fetches the formula template from this repo at the release's tagged commit, substitutes payload values, runs `brew style` + `brew install --build-from-source`, opens an auto-merging PR. |
+| `bump-formula.yml` | `.github/workflows/bump-formula.yml` | Triggered by `repository_dispatch` from `darnitdevorg/darnit::release.yml::homebrew_dispatch`. Fetches the formula template from this repo at the release's tagged commit, substitutes payload values, runs `brew style` + `brew install --build-from-source`, opens an auto-merging PR. |
 | `ci.yml` | `.github/workflows/ci.yml` | Lint + install test on every PR touching `Formula/`. This is what gates the auto-merge that `bump-formula.yml` requests. |
 
 ## Secrets required in the tap repo
 
-None on the tap-repo side. The dispatching workflow (in `kusari-oss/darnit`) holds the credentials. The tap repo uses its built-in `GITHUB_TOKEN` for the in-repo PR + auto-merge.
+None on the tap-repo side. The dispatching workflow (in `darnitdevorg/darnit`) holds the credentials. The tap repo uses its built-in `GITHUB_TOKEN` for the in-repo PR + auto-merge.

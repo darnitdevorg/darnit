@@ -97,7 +97,7 @@ steps = [
 # grep alone returns INCONCLUSIVE — grep absence is not proof of hermeticity.
 # Witness / in-toto runtime-trace attestations are a separate step that runs
 # first and can only FAIL (#553).  Roadmap:
-# https://github.com/kusari-oss/darnit/issues/227
+# https://github.com/darnitdevorg/darnit/issues/227
 [controls."RE-02.01"]
 name = "HermeticBuild"
 description = "Build does not fetch dependencies at build time"

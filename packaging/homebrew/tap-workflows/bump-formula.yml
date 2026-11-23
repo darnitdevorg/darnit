@@ -4,7 +4,7 @@
 # template it consumes.
 #
 # Triggers on a repository_dispatch event sent from
-# kusari-oss/darnit's release.yml::homebrew_dispatch job. Renders
+# darnitdevorg/darnit's release.yml::homebrew_dispatch job. Renders
 # `Formula/darnit.rb` from the template, validates with `brew style` +
 # `brew install`, and opens an auto-merging PR.
 
@@ -112,14 +112,14 @@ jobs:
           git add Formula/darnit.rb
           git commit -m "darnit ${VERSION}
 
-          Bumped by repository_dispatch from kusari-oss/darnit
+          Bumped by repository_dispatch from darnitdevorg/darnit
           release ${VERSION}.
 
           Source: ${{ github.event.client_payload.release_url }}"
           git push -u origin "$branch"
           gh pr create \
             --title "darnit ${VERSION}" \
-            --body "Automated formula bump triggered by [kusari-oss/darnit ${VERSION}](${{ github.event.client_payload.release_url }}). CI ran \`brew style\` and \`brew install --build-from-source\` against the rendered formula." \
+            --body "Automated formula bump triggered by [darnitdevorg/darnit ${VERSION}](${{ github.event.client_payload.release_url }}). CI ran \`brew style\` and \`brew install --build-from-source\` against the rendered formula." \
             --base main \
             --head "$branch"
           gh pr merge --auto --squash --delete-branch

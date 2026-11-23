@@ -2,7 +2,7 @@
 
 A **minimal worked example** of a third-party darnit compliance implementation. Not a real compliance framework — this package exists purely as a copy-paste starter for teams who want to build their own darnit plugins.
 
-For the step-by-step packaging guide, see [`docs/packaging-plugins.md`](https://github.com/kusari-oss/darnit/blob/main/docs/packaging-plugins.md) in the darnit repo.
+For the step-by-step packaging guide, see [`docs/packaging-plugins.md`](https://github.com/darnitdevorg/darnit/blob/main/docs/packaging-plugins.md) in the darnit repo.
 
 ## What it contains
 
@@ -37,7 +37,7 @@ darnit audit --implementation hello
 
 1. Copy `packages/darnit-hello/` to your own repo (or fork darnit and rename).
 2. Rename `darnit_hello` → `<your_package>` throughout (the package directory, `__init__.py`, `implementation.py`, and `pyproject.toml`'s `name` + entry-point keys).
-3. Replace `hello.toml` with your own framework + controls. The TOML schema is documented in [`docs/packaging-plugins.md`](https://github.com/kusari-oss/darnit/blob/main/docs/packaging-plugins.md).
+3. Replace `hello.toml` with your own framework + controls. The TOML schema is documented in [`docs/packaging-plugins.md`](https://github.com/darnitdevorg/darnit/blob/main/docs/packaging-plugins.md).
 4. Publish to PyPI (or a private index), and darnit will discover it on any host where both are installed.
 
 ## Where to go next

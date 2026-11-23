@@ -19,7 +19,7 @@ git clone https://github.com/YOUR-USERNAME/darnit.git
 cd darnit
 
 # 2. Add upstream remote
-git remote add upstream https://github.com/kusari-oss/darnit.git
+git remote add upstream https://github.com/darnitdevorg/darnit.git
 
 # 3. Install all dependencies
 uv sync
