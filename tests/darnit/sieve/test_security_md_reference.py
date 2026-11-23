@@ -9,6 +9,9 @@ through both the direct sieve path and the MCP surface, verifying:
   is about a security contact, so presence is evidence only (feature 041).
 - CLI and MCP paths produce equal per-control status + authority (SC-004).
 
+The control is defined in ``fixtures/stage1_reference.toml``, a test-only
+framework; it is not part of the OpenSSF Baseline (#466).
+
 Uses a mocked LLM step to avoid live API calls.
 """
 
@@ -24,13 +27,18 @@ from darnit.sieve.handler_registry import (
 from darnit.sieve.models import CheckContext, ControlSpec
 from darnit.sieve.orchestrator import SieveOrchestrator
 
+_REFERENCE_FRAMEWORK = Path(__file__).parent / "fixtures" / "stage1_reference.toml"
+
 
 def _load_stage1_ref_control() -> ControlSpec:
-    """Read STAGE1-REF-SECURITY-01 out of the baseline framework config."""
-    from darnit.config.control_loader import control_from_framework
-    from darnit.config.merger import load_framework_by_name
+    """Read STAGE1-REF-SECURITY-01 out of the test-only reference framework.
 
-    config = load_framework_by_name("openssf-baseline")
+    The control is not part of any shipped framework (#466).
+    """
+    from darnit.config.control_loader import control_from_framework
+    from darnit.config.merger import load_framework_config
+
+    config = load_framework_config(_REFERENCE_FRAMEWORK)
     control_config = config.controls["STAGE1-REF-SECURITY-01"]
     return control_from_framework("STAGE1-REF-SECURITY-01", control_config)
 
@@ -61,8 +69,8 @@ class TestSecurityMdReferenceControl:
         # the LLM. This test verifies the FAIL side of that ordering; the
         # suggestive llm_extract step no longer runs because file_exists
         # short-circuits at the first pass. Losing the "propose contact
-        # even when SECURITY.md is absent" property is documented as a
-        # follow-up in openssf-baseline.toml.
+        # even when SECURITY.md is absent" property is a known limitation
+        # of this ordering.
         orch = SieveOrchestrator(stop_on_llm=False)
         result = orch.verify(control, _make_ctx(tmp_path))
 
