@@ -1,16 +1,15 @@
-# OpenSSF Baseline MCP Server
-## Usage Guide & Presentation
+# darnit: OpenSSF Baseline Usage Guide
 
 ---
 
 ## What is This?
 
-**OpenSSF Baseline MCP Server** is an AI-powered compliance audit tool that checks repositories against the [OpenSSF Baseline](https://baseline.openssf.org) security standard (OSPS v2026.02.19).
+**darnit** is an AI-powered compliance audit tool. Its OpenSSF Baseline implementation (`darnit-baseline`) checks repositories against the [OpenSSF Baseline](https://baseline.openssf.org) security standard (OSPS v2026.02.19), from the command line or as an MCP server.
 
 ### Key Features
-- 🔍 **65 security controls** across 3 maturity levels
+- 🔍 **Every OSPS Baseline control** across 3 maturity levels (see [Maturity Levels](#maturity-levels))
 - 🤖 **MCP integration** - works with Claude, Cursor, and other AI tools
-- 🔧 **Auto-remediation** - fix common issues automatically
+- 🔧 **Remediation** - previews every fix, applies only what you approve
 - 📊 **Multiple output formats** - Markdown, JSON, SARIF
 - 🔏 **Attestation support** - cryptographic proof via Sigstore
 
@@ -19,17 +18,20 @@
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    MCP Server (main.py)                  │
-├─────────────────────────────────────────────────────────┤
-│  darnit (Framework)        │  darnit-baseline (OSPS)    │
-│  ├── core/                 │  ├── checks/               │
-│  ├── sieve/                │  ├── controls/             │
-│  ├── attestation/          │  ├── rules/                │
-│  ├── threat_model/         │  ├── formatters/           │
-│  └── remediation/          │  └── remediation/          │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│     MCP server: darnit serve --framework openssf-baseline   │
+├─────────────────────────────────────────────────────────────┤
+│  darnit (framework)          │  darnit-baseline (OSPS)      │
+│  ├── core/   plugin system   │  ├── openssf-baseline.toml   │
+│  ├── sieve/  verification    │  ├── attestation/            │
+│  ├── config/ configuration   │  ├── formatters/             │
+│  ├── remediation/            │  ├── remediation/            │
+│  ├── tools/                  │  ├── templates/              │
+│  └── server/                 │  └── threat_model/           │
+└─────────────────────────────────────────────────────────────┘
 ```
+
+Controls, their checks, and their remediations are defined in `openssf-baseline.toml`; the framework loads it through the plugin system. See [ARCHITECTURE.md](../ARCHITECTURE.md) for the full picture.
 
 ---
 
@@ -42,35 +44,36 @@
 
 ### Setup
 ```bash
-# Clone the repository
-git clone https://github.com/yourorg/baseline-mcp
-cd baseline-mcp
+# Install the darnit command and every workspace plugin
+uv tool install --python 3.12 git+https://github.com/darnitdevorg/darnit
 
-# Install dependencies
-uv sync
+# Check the OpenSSF Baseline framework is available
+darnit list
 
 # Authenticate with GitHub (required for some checks)
 gh auth login
 ```
 
+PyPI, container, Homebrew, binary, and Claude Code plugin installs are covered in [docs/install](install/README.md).
+
 ---
 
 ## Running the MCP Server
 
-### Option 1: Direct Python
+### Option 1: From the command line
 ```bash
-uv run python main.py
+darnit serve --framework openssf-baseline
 ```
 
 ### Option 2: With Claude Desktop
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (the package is `darnit-mcp`, the command is `darnit`):
 
 ```json
 {
   "mcpServers": {
     "openssf-baseline": {
-      "command": "uv",
-      "args": ["run", "--directory", "/path/to/baseline-mcp", "python", "main.py"]
+      "command": "uvx",
+      "args": ["--from", "darnit-mcp", "darnit", "serve", "--framework", "openssf-baseline"]
     }
   }
 }
@@ -86,9 +89,11 @@ Add to your MCP settings with the same configuration.
 | Tool | Purpose |
 |------|---------|
 | `audit_openssf_baseline` | Run compliance audit |
-| `list_available_checks` | Show all 65 controls |
-| `get_project_config` | View project.toml config |
-| `init_project_config` | Create project.toml |
+| `list_available_checks` | List the controls by level |
+| `get_pending_data` | List project values that need a person's answer (writes nothing) |
+| `confirm_project_data` | Record a person's confirmation of project values |
+| `get_project_config` | View the project's `.project/` configuration |
+| `init_project_config` | Create an empty `.project/darnit.yaml` |
 | `generate_threat_model` | STRIDE threat analysis |
 | `generate_attestation` | Create signed attestation |
 | `create_security_policy` | Generate SECURITY.md |
@@ -246,35 +251,49 @@ The git tools take `run_id` (default: the repository's latest run). They follow 
 
 ---
 
-## Project Configuration (project.toml)
+## Project Configuration (`.project/`)
+
+Project data lives in the audited repository's `.project/` directory:
+
+- `.project/project.yaml` holds project facts such as file locations and maintainers.
+- `.project/darnit.yaml` holds darnit's claims about controls and the records of values a person confirmed.
 
 ### Initialize Config
 ```
-init_project_config(
+init_project_config(local_path="/path/to/repo")
+```
+
+This creates an empty `.project/darnit.yaml` when the repository has no `.project/` directory. It detects and pre-fills nothing, and an existing `.project/` is reported, never overwritten.
+
+### Example `.project/project.yaml`
+```yaml
+name: my-project
+security:
+  policy:
+    type: SECURITY.md
+governance:
+  maintainers:
+    - "@alice"
+    - "@bob"
+```
+
+### Confirming Project Values
+Values such as maintainers or the security contact need a person's judgment. darnit may detect a candidate, but a candidate is never used as the value until a person confirms it:
+
+```
+# 1. Questions, with any detected candidate labelled UNCONFIRMED. Writes nothing.
+get_pending_data(local_path="/path/to/repo")
+
+# 2. Record only what the person answered, one keyword per context key
+confirm_project_data(
   local_path="/path/to/repo",
-  project_name="my-project",
-  project_type="software"
+  owner="myorg",
+  repo="myrepo",
+  security_contact="<the contact the person gave>"
 )
 ```
 
-### Example project.toml
-```toml
-schema_version = "0.1"
-
-[project]
-name = "my-project"
-type = "software"
-
-[security]
-policy = { path = "SECURITY.md" }
-
-[governance]
-contributing = { path = "CONTRIBUTING.md" }
-codeowners = { path = ".github/CODEOWNERS" }
-
-[legal]
-license = { path = "LICENSE" }
-```
+Until a value is confirmed, the controls that need it are not compliant.
 
 ---
 
@@ -349,13 +368,13 @@ generate_attestation(
 - Start with Level 1 compliance
 - Preview remediation (the default) and approve only the changes you reviewed
 - Review auto-generated files before committing
-- Keep project.toml updated
+- Confirm project values with `confirm_project_data` only when a person has checked them
 
 ### Don't ❌
 - Run `gh` or `git` commands directly (use MCP tools)
 - Skip manual verification items
 - Ignore "Needs Verification" warnings
-- Write audit results to project.toml
+- Hand-edit confirmed values in `.project/darnit.yaml` (an edited value no longer matches its confirmation record, so it reads as an unconfirmed candidate again)
 
 ---
 
@@ -390,7 +409,7 @@ gh auth status
 ## Resources
 
 - **OpenSSF Baseline Spec**: https://baseline.openssf.org
-- **OSPS Controls Reference**: https://baseline.openssf.org/versions/2025-10-10
+- **OSPS Controls Reference**: https://baseline.openssf.org/versions/2026-02-19
 - **MCP Protocol**: https://modelcontextprotocol.io
 - **Sigstore**: https://sigstore.dev
 
@@ -407,6 +426,7 @@ gh auth status
 │ Fix issues:   remediate_audit_findings()  (preview)    │
 │ Threat model: generate_threat_model()                  │
 │ Attestation:  generate_attestation(sign=true)          │
+│ Questions:    get_pending_data()                       │
 │ Init config:  init_project_config()                    │
 │ View config:  get_project_config()                     │
 └────────────────────────────────────────────────────────┘
@@ -417,10 +437,9 @@ gh auth status
 ## Questions?
 
 For issues or feedback:
-- GitHub Issues: https://github.com/yourorg/baseline-mcp/issues
+- GitHub Issues: https://github.com/darnitdevorg/darnit/issues
 - OpenSSF Community: https://openssf.org/community/
 
 ---
 
-*Generated for darnit-baseline v0.1.1*
 *OSPS Specification: v2026.02.19*

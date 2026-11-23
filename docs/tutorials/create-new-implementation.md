@@ -14,7 +14,7 @@ We'll create `darnit-hygiene`, a simple "code hygiene" compliance framework with
 ## Step 1: Create the Package Directory
 
 ```bash
-cd /path/to/baseline-mcp
+cd /path/to/darnit
 mkdir -p packages/darnit-hygiene/src/darnit_hygiene
 ```
 
@@ -230,7 +230,7 @@ Expected output:
 ```
 Resolved X packages in Xms
 Installed 1 package in Xms
- + darnit-hygiene==0.1.0 (from file:///path/to/baseline-mcp/packages/darnit-hygiene)
+ + darnit-hygiene==0.1.0 (from file:///path/to/darnit/packages/darnit-hygiene)
 ```
 
 ## Step 8: Verify Plugin Discovery
@@ -262,7 +262,7 @@ Test against a repository:
 mkdir -p /tmp/test-hygiene && cd /tmp/test-hygiene && git init
 
 # Audit with the hygiene framework
-cd /path/to/baseline-mcp
+cd /path/to/darnit
 uv run darnit audit /tmp/test-hygiene --framework hygiene
 ```
 
@@ -292,7 +292,7 @@ Or configure in Claude Code settings:
   "mcpServers": {
     "hygiene": {
       "command": "uv",
-      "args": ["run", "--directory", "/path/to/baseline-mcp", "darnit", "serve", "--framework", "hygiene"]
+      "args": ["run", "--directory", "/path/to/darnit", "darnit", "serve", "--framework", "hygiene"]
     }
   }
 }

@@ -352,7 +352,7 @@ Add the darnit MCP server to your Claude Code settings:
   "mcpServers": {
     "openssf-baseline": {
       "command": "uv",
-      "args": ["run", "--directory", "/path/to/baseline-mcp", "darnit", "serve", "--framework", "openssf-baseline"]
+      "args": ["run", "--directory", "/path/to/darnit", "darnit", "serve", "--framework", "openssf-baseline"]
     }
   }
 }
@@ -365,7 +365,7 @@ Add the darnit MCP server to your Claude Code settings:
   "mcpServers": {
     "openssf-baseline": {
       "command": "uv",
-      "args": ["run", "--directory", "/path/to/baseline-mcp", "darnit", "serve", "--framework", "openssf-baseline"]
+      "args": ["run", "--directory", "/path/to/darnit", "darnit", "serve", "--framework", "openssf-baseline"]
     }
   }
 }
