@@ -125,7 +125,7 @@ Test the new control by running an audit against a repository that lacks a Code 
 mkdir -p /tmp/test-repo && cd /tmp/test-repo && git init
 
 # Run the audit
-cd /path/to/baseline-mcp
+cd /path/to/darnit
 uv run darnit audit /tmp/test-repo --level 1
 ```
 
