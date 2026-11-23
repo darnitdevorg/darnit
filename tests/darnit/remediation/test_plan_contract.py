@@ -222,7 +222,8 @@ def test_the_fixture_exercises_files_and_platform_settings(repo: Path) -> None:
             if _planned_operations(preview.plan):
                 with_operations.add(control_id)
 
-    assert len(with_files) >= 40
+    # Retiring OSPS-BR-01.02 removed one file-writing zizmor remediation (40 -> 39).
+    assert len(with_files) >= 39
     assert {"OSPS-AC-03.01", "OSPS-AC-03.02", "OSPS-QA-07.01", "OSPS-QA-01.01", "OSPS-VM-03.01"} <= with_operations
 
 
