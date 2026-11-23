@@ -40,7 +40,12 @@ need to adopt the CSL versions wholesale:
   **references** the existing governance (it is not superseded) and documents the
   Community Specification roles and decision-making on top of it.
 - `csl_coc_policy = "umbrella"` makes `03-notices.md` cite an existing Code of
-  Conduct (e.g. the CNCF CoC) instead of shipping the CSL one.
+  Conduct (e.g. the CNCF CoC) instead of shipping the CSL one, and still list
+  named contacts.
+- `csl_coc_policy = "org"`, for a project that already has its own Code of
+  Conduct, makes `03-notices.md` link it (`csl_coc_reference`, one markdown
+  sentence) and name no individuals; the linked CoC defines the reporting
+  procedure.
 
 The defaults adopt the full CSL governance and ship CSL contacts; the umbrella
 modes are opt-in.

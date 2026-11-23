@@ -198,6 +198,17 @@ async def remediate_community_spec(
     if coc_policy is not None:
         coc_policy = coc_policy.strip().lower()
 
+    # A decision for an enum key must be one of the key's values, the same
+    # vocabulary confirm_project_data accepts and get_pending_data offers (#522).
+    for key, value in (("csl_coc_policy", coc_policy), ("csl_governance_mode", governance_mode)):
+        allowed = fw.context.definitions[key].values or []
+        if value is not None and value not in allowed:
+            return (
+                f"Error: {_PARAMETERS[key]} must be one of "
+                f"{', '.join(repr(v) for v in allowed)}; got {value!r}. "
+                "Nothing was written."
+            )
+
     # Org-first: a project that already has a Code of Conduct (its own file,
     # an org community repo, or a foundation CoC such as CNCF / LF / JDF)
     # must point at it rather than naming individuals.
