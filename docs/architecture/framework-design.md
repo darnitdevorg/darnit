@@ -1,8 +1,8 @@
 # Darnit Framework Design Specification
 
-> **Version**: 1.0.0-alpha.29
+> **Version**: 1.0.0-alpha.30
 > **Status**: Authoritative
-> **Last Updated**: 2026-11-22
+> **Last Updated**: 2026-11-24
 
 This specification defines the authoritative design of the Darnit framework, including the sieve orchestrator, TOML schema, built-in pass types, remediation actions, and plugin protocol.
 
@@ -1064,7 +1064,7 @@ offline = true
 
 A step is not run in a scratch copy when any file it would see is a symbolic link whose target is absolute, or is or passes through a symbolic link and resolves outside the repository. Each path is resolved as the operating system resolves it (`realpath`), so a chain of links is followed (for example `sub/inner/d -> ../..` and `a -> sub/inner/d/../x`, which reads as inside the repository but is not): a command writing through such a link would change files outside the scratch copy. Because a relative link can resolve inside the checkout yet outside the copy (for example `../<checkout folder>/SECURITY.md` when the copy is made beside the checkout), the same check is repeated on the scratch copy after copying and before the command runs. The preview is then an error, the step is `previewable = False`, and it requires individual approval (15.3). A relative link that stays inside the repository is copied as a link.
 
-A file the command creates that the checkout's ignore rules exclude is not part of the preview (and is not recorded at apply). A preview whose run does not succeed (an exit code outside `pass_exit_codes`, a missing binary, a timeout), or whose difference a `FileChange` cannot express (a deleted file, a non-text file), is an error, and the step is `previewable = False`.
+A file the command creates that the checkout's ignore rules exclude is not part of the preview (and is not recorded at apply). A preview whose run does not succeed (an exit code outside `pass_exit_codes`, a missing binary, a timeout), or whose difference a `FileChange` cannot express (a deleted file, a non-text file), is an error, and the step is `previewable = False`. If a file the command would change has uncommitted user changes in the checkout, the preview marks the conflict with `action = "none"` and `reason = "user_changes_present"`, reports that the command will not run, and omits files the command will not touch, matching what the apply does (FR-021).
 
 **Apply.** The command runs in the checkout. The executor compares what the command created or modified with the preview, and records those files in the run manifest only when the step succeeded cleanly: the exit code is in `pass_exit_codes`, the result equals the preview (for a previewable step), no changed file had uncommitted user changes, and the command deleted no file and wrote no non-text file. Otherwise the step is an error, nothing it changed is recorded (so the git tools never commit it), the files stay in the working tree as the command left them, and the outcome (`error`) lists every file the step changed, as written but not recorded, for a person to review by hand; the audit cache is invalidated as for any write. A file the step changed that an earlier step of the same run recorded no longer holds what remediation wrote: it is removed from the run manifest and the outcome says so, so the commit tool commits the run's other files and leaves that one in the working tree. A previewed path that has uncommitted user changes is a conflict: the command is not run and the outcome names the path. A file the command changed that had uncommitted user changes before the step is reported as a conflict. An exit code outside `pass_exit_codes` is an error; a missing binary is ERROR, class `missing_tool`; a timeout is ERROR, class `timeout`.
 
@@ -2668,6 +2668,7 @@ The following requirements have been superseded: by the handler dispatch archite
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.0.0-alpha.30 | 2026-11-24 | An `exec` remediation step previewed in a scratch copy marks files that have uncommitted user changes in the checkout with `action = "none"` and `reason = "user_changes_present"`, reports that the command will not run, and omits files the command will not touch, matching what the apply does (Section 4.4; #543) |
 | 1.0.0-alpha.29 | 2026-11-22 | `project_reference` is accepted on any step whose handler declares it in its settings, not only `file_create`; on a handler other than `file_create` it records only the file at the step's `path`. OSPS-SA-03.02 records `security.threat_model` through `project_reference` on `generate_threat_model` instead of an unconditional `project_update` (Sections 4.3, 7.9; #545) |
 | 1.0.0-alpha.28 | 2026-11-22 | Fenced JSON block returned by `remediate_audit_findings` omits file contents in `file_changes` in the plan and outcomes (keeping `path`, `action`, `reason`, `ignored`, `before_digest`, and `after_digest`) to keep report output within client limits (Section 15.4; #725) |
 | 1.0.0-alpha.27 | 2026-11-20 | Operator `[llm] provider = "openai"` selects OpenAI for the harness's model judgments: `model` is required for it, the key is read from `OPENAI_API_KEY`, the credential check runs after `[llm]` is applied, and every model judgment result records the model as `<provider>:<model>` in `llm_model` (Section 14.1; #764) |

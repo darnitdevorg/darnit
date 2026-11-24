@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- In previewable exec remediations, preview files with uncommitted user changes
+  as action `none` with reason `user_changes_present`, and omit files the command
+  will not touch when refused, matching what apply does (fixes #543).
 - Threat-model findings use the rule id (darnit.entry.flask-route), not the
   Opengrep rules directory path, so generated file names and query_id values no
   longer carry the install location (fixes #776).
