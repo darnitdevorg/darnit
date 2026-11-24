@@ -140,6 +140,67 @@ class TestProviders:
         assert judgment.model == "openai:gpt-5"
         assert judgment.model_version == "gpt-5-2026-08-07"
 
+    def test_openai_with_base_url_does_not_need_api_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        step = PydanticAILLMStep(model="openai:qwen2.5-coder:1.5b", base_url="http://127.0.0.1:11434/v1")
+        agent = step._build_agent()
+        assert agent is not None
+
+    def test_openai_judgment_records_endpoint(self) -> None:
+        class _Response:
+            model_name = "qwen2.5-coder:1.5b"
+
+        class _Result:
+            output = LLMJudgment(outcome="no", confidence=0.4, reasoning="r")
+            response = _Response()
+
+        class _Agent:
+            async def run(self, prompt: str) -> _Result:
+                return _Result()
+
+        step = PydanticAILLMStep(model="openai:qwen2.5-coder:1.5b", base_url="http://127.0.0.1:11434/v1")
+        step._agent = _Agent()
+
+        judgment = _run(step.evaluate(ConsultationRequest(control_id="X", prompt="Q")))
+
+        assert judgment.model == "openai:qwen2.5-coder:1.5b"
+        assert judgment.endpoint == "http://127.0.0.1:11434/v1"
+
+    def test_endpoint_kind_classification(self) -> None:
+        from darnit.core.llm_step import endpoint_kind
+
+        assert endpoint_kind("http://127.0.0.1:11434/v1") == "local"
+        assert endpoint_kind("http://localhost:11434") == "local"
+        assert endpoint_kind("http://192.168.1.10:8000") == "local"
+        assert endpoint_kind("http://10.0.0.5:11434") == "local"
+        assert endpoint_kind("https://api.openai.com/v1") == "hosted"
+        assert endpoint_kind("api.anthropic.com") == "hosted"
+        assert endpoint_kind("") == "hosted"
+
+    def test_base_url_with_credentials_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="base_url must not contain credentials"):
+            PydanticAILLMStep(base_url="http://user:pass@127.0.0.1:11434")
+
+    def test_explicit_provider_ignores_ambient_env_base_url(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+        monkeypatch.setenv("OPENAI_BASE_URL", "http://127.0.0.1:18799/v1")
+        step = PydanticAILLMStep(model="openai:gpt-5")
+        agent = step._build_agent()
+        provider = agent.model.provider
+        client = provider.client
+        assert str(client.base_url).rstrip("/") == "https://api.openai.com/v1"
+        assert step.effective_endpoint == "https://api.openai.com/v1"
+
+    def test_effective_endpoint_defaults_to_hosted(self) -> None:
+        step_anthropic = PydanticAILLMStep(model="anthropic:claude-sonnet-5")
+        assert step_anthropic.effective_endpoint == "https://api.anthropic.com"
+
+        step_openai = PydanticAILLMStep(model="openai:gpt-5")
+        assert step_openai.effective_endpoint == "https://api.openai.com/v1"
+
 
 class TestLLMStepProtocol:
     def test_mock_satisfies_protocol(self) -> None:

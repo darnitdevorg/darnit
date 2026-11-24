@@ -844,6 +844,27 @@ class SieveOrchestrator:
             base_evidence["llm_model"] = llm_response.model
         if llm_response.model_version:
             base_evidence["llm_model_version"] = llm_response.model_version
+        if llm_response.endpoint:
+            from urllib.parse import urlsplit
+
+            from darnit.core.llm_step import endpoint_kind
+
+            parsed = urlsplit(llm_response.endpoint if "://" in llm_response.endpoint else f"http://{llm_response.endpoint}")
+            host = parsed.hostname or ""
+            port_str = f":{parsed.port}" if parsed.port is not None else ""
+            endpoint_host = f"{host}{port_str}" if host else llm_response.endpoint
+            base_evidence["llm_endpoint"] = endpoint_host
+            base_evidence["llm_endpoint_kind"] = endpoint_kind(endpoint_host)
+        elif llm_response.model:
+            from darnit.core.llm_step import model_provider
+
+            provider = model_provider(llm_response.model)
+            if provider == "openai":
+                base_evidence["llm_endpoint"] = "api.openai.com"
+                base_evidence["llm_endpoint_kind"] = "hosted"
+            elif provider == "anthropic":
+                base_evidence["llm_endpoint"] = "api.anthropic.com"
+                base_evidence["llm_endpoint_kind"] = "hosted"
         if consultation:
             base_evidence["llm_consultation"] = consultation
 
@@ -872,6 +893,7 @@ class SieveOrchestrator:
             model=llm_response.model,
             model_version=llm_response.model_version,
             confidence=llm_response.confidence,
+            endpoint=llm_response.endpoint,
         )
         assessment = assess_judgment(judgment, consultation, source=source)
 

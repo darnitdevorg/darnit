@@ -193,9 +193,10 @@ high_impact = "prompt"   # prompt | manual | auto
 [llm]
 provider = "openai"      # anthropic (default) | openai
 model = "gpt-5"          # required for openai; the key comes from OPENAI_API_KEY
+base_url = "http://127.0.0.1:11434/v1" # optional: directs calls to local or custom OpenAI-compatible server
 ```
 
-The harness reads the API key for the configured provider from the environment only: `ANTHROPIC_API_KEY` for `anthropic`, `OPENAI_API_KEY` for `openai`. A model's judgment is a PASS candidate that a person confirms whichever provider produced it.
+The harness reads the API key for the configured provider from the environment only (`ANTHROPIC_API_KEY` for `anthropic`, `OPENAI_API_KEY` for `openai`). When `base_url` is configured, the API key is optional and preflight verifies endpoint reachability. Every judgment records the model and endpoint host in its evidence. A model's judgment is a PASS candidate that a person confirms whichever provider or endpoint produced it.
 
 `darnit config show` prints the file in use, its SHA-256 digest, the permission-check result, and the effective settings with secrets redacted. Every audit report records the same source and digest, so reference secrets as `$VAR` rather than writing them into the file.
 

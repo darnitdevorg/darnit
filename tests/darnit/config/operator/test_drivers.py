@@ -240,3 +240,49 @@ class TestHarnessLlmSettings:
 
         with pytest.raises(HarnessSetupError, match="OPENAI_API_KEY"):
             asyncio.new_event_loop().run_until_complete(run.run())
+
+    @pytest.mark.unit
+    def test_openai_base_url_from_operator_config(self, tmp_path: Path) -> None:
+        run = self._run(
+            tmp_path,
+            'provider = "openai"\nmodel = "qwen2.5-coder:1.5b"\nbase_url = "http://127.0.0.1:11434/v1"',
+        )
+        run._apply_operator_llm_settings()
+
+        assert run.llm_base_url == "http://127.0.0.1:11434/v1"
+        assert getattr(run.llm_step, "base_url", None) == "http://127.0.0.1:11434/v1"
+
+    @pytest.mark.unit
+    def test_invalid_base_url_is_a_setup_error(self, tmp_path: Path) -> None:
+        from darnit.harness.driver import HarnessSetupError
+
+        run = self._run(
+            tmp_path,
+            'provider = "openai"\nmodel = "qwen2.5-coder:1.5b"\nbase_url = "invalid-url"',
+        )
+        with pytest.raises(HarnessSetupError, match="must start with http:// or https://"):
+            run._apply_operator_llm_settings()
+
+    @pytest.mark.unit
+    def test_base_url_skips_api_key_check(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        run = self._run(
+            tmp_path,
+            'provider = "openai"\nmodel = "qwen2.5-coder:1.5b"\nbase_url = "http://127.0.0.1:11434/v1"',
+        )
+        monkeypatch.setattr(run, "_check_endpoint_reachable", lambda url: None)
+        run._apply_operator_llm_settings()
+
+        assert run._check_credentials() is None
+
+    @pytest.mark.unit
+    def test_base_url_with_credentials_is_rejected(self, tmp_path: Path) -> None:
+        from darnit.config.operator.loader import OperatorConfigError
+        from darnit.harness.driver import HarnessSetupError
+
+        with pytest.raises((HarnessSetupError, OperatorConfigError, ValueError), match="must not contain credentials"):
+            self._run(
+                tmp_path,
+                'provider = "openai"\nmodel = "qwen2.5-coder:1.5b"\nbase_url = "http://user:s3cret@127.0.0.1:18799/v1"',
+            )

@@ -255,6 +255,58 @@ class TestVerifyWithLlmResponse:
         assert result.status == status
         assert result.evidence["llm_model"] == "openai:gpt-5"
         assert result.evidence["llm_model_version"] == "gpt-5-2026-08-07"
+        assert result.evidence["llm_endpoint"] == "api.openai.com"
+        assert result.evidence["llm_endpoint_kind"] == "hosted"
+
+    def test_judgment_result_records_local_endpoint(self) -> None:
+        spec = ControlSpec(
+            control_id="TEST-01",
+            level=1,
+            domain="TEST",
+            name="TestControl",
+            description="Test",
+            metadata={"handler_invocations": [HandlerInvocation(handler="llm_eval")]},
+        )
+        response = LLMConsultationResponse(
+            status=PassOutcome.PASS,
+            confidence=0.8,
+            reasoning="verified",
+            evidence_cited=["ex"],
+            model="openai:qwen2.5-coder:1.5b",
+            model_version="qwen2.5-coder:1.5b",
+            endpoint="http://127.0.0.1:11434/v1",
+        )
+
+        result = SieveOrchestrator(stop_on_llm=True).verify_with_llm_response(spec, _make_context(), response)
+
+        assert result.evidence["llm_model"] == "openai:qwen2.5-coder:1.5b"
+        assert result.evidence["llm_endpoint"] == "127.0.0.1:11434"
+        assert result.evidence["llm_endpoint_kind"] == "local"
+
+    def test_judgment_result_endpoint_strips_credentials(self) -> None:
+        spec = ControlSpec(
+            control_id="TEST-01",
+            level=1,
+            domain="TEST",
+            name="TestControl",
+            description="Test",
+            metadata={"handler_invocations": [HandlerInvocation(handler="llm_eval")]},
+        )
+        response = LLMConsultationResponse(
+            status=PassOutcome.PASS,
+            confidence=0.8,
+            reasoning="verified",
+            evidence_cited=["ex"],
+            model="openai:qwen2.5-coder:1.5b",
+            model_version="qwen2.5-coder:1.5b",
+            endpoint="http://user:s3cret@127.0.0.1:18799/v1",
+        )
+
+        result = SieveOrchestrator(stop_on_llm=True).verify_with_llm_response(spec, _make_context(), response)
+
+        assert result.evidence["llm_endpoint"] == "127.0.0.1:18799"
+        assert result.evidence["llm_endpoint_kind"] == "local"
+        assert "s3cret" not in result.evidence["llm_endpoint"]
 
 
 class TestHandlerWhenClause:
