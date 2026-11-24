@@ -164,6 +164,89 @@ class TestClaims:
         assert (repo / ".project" / "darnit.yaml").read_text(encoding="utf-8") == bad
 
 
+COMMENTED_EXTENSION = """\
+# darnit claims for this repository; reviewed by the maintainers.
+
+context:
+  has_releases: false  # no tagged release yet
+
+# Controls we answer for ourselves.
+controls:
+  OSPS-QA-01.01:
+    status: n/a
+    reason: kept  # see GOVERNANCE.md
+"""
+
+
+@pytest.mark.unit
+class TestRoundTrip:
+    """#524: migration keeps what a person wrote in .project/darnit.yaml."""
+
+    def test_comments_and_formatting_survive(self, repo: Path) -> None:
+        (repo / ".project").mkdir()
+        (repo / ".project" / "darnit.yaml").write_text(COMMENTED_EXTENSION, encoding="utf-8")
+
+        result = migrate_baseline_toml(repo)
+
+        text = (repo / ".project" / "darnit.yaml").read_text(encoding="utf-8")
+        assert sorted(result.written) == ["OSPS-BR-02.01", "OSPS-VM-02.01"]
+        # Everything the person wrote is still there, in order, byte for byte.
+        assert text.startswith(COMMENTED_EXTENSION)
+        data = _extension(repo)
+        assert data["controls"]["OSPS-BR-02.01"] == {"status": "n/a", "reason": "Pre-1.0 project with no releases yet"}
+        assert data["controls"]["OSPS-QA-01.01"] == {"status": "n/a", "reason": "kept"}
+
+    def test_forced_claim_keeps_the_comments_around_it(self, repo: Path) -> None:
+        (repo / ".project").mkdir()
+        (repo / ".project" / "darnit.yaml").write_text(
+            "# header\ncontrols:\n  # the person's own claim\n  OSPS-BR-02.01:\n    status: n/a\n    reason: old\n",
+            encoding="utf-8",
+        )
+
+        migrate_baseline_toml(repo, force=True)
+
+        text = (repo / ".project" / "darnit.yaml").read_text(encoding="utf-8")
+        assert text.startswith("# header\n")
+        assert "# the person's own claim" in text
+        assert _extension(repo)["controls"]["OSPS-BR-02.01"]["reason"] == "Pre-1.0 project with no releases yet"
+
+    def test_nothing_to_migrate_leaves_the_file_byte_identical(self, repo: Path) -> None:
+        migrate_baseline_toml(repo)
+        path = repo / ".project" / "darnit.yaml"
+        path.write_text("# kept as is\n" + path.read_text(encoding="utf-8"), encoding="utf-8")
+        before = path.read_bytes()
+
+        again = migrate_baseline_toml(repo)
+
+        assert again.written == []
+        assert path.read_bytes() == before
+
+
+@pytest.mark.unit
+class TestInvalidProjectFiles:
+    """#524: like the other .project/ writers, migration refuses over an invalid file."""
+
+    def test_schema_invalid_extension_is_refused_with_its_errors(self, repo: Path) -> None:
+        (repo / ".project").mkdir()
+        bad = "controls:\n  OSPS-QA-01.01:\n    status: maybe\n"
+        (repo / ".project" / "darnit.yaml").write_text(bad, encoding="utf-8")
+
+        with pytest.raises(MigrationError, match="present but invalid") as error:
+            migrate_baseline_toml(repo)
+
+        assert "OSPS-QA-01.01" in str(error.value)
+        assert (repo / ".project" / "darnit.yaml").read_text(encoding="utf-8") == bad
+
+    def test_invalid_project_yaml_is_refused_and_nothing_is_written(self, repo: Path) -> None:
+        (repo / ".project").mkdir()
+        (repo / ".project" / "project.yaml").write_text("- not\n- a mapping\n", encoding="utf-8")
+
+        with pytest.raises(MigrationError, match="project.yaml"):
+            migrate_baseline_toml(repo)
+
+        assert not (repo / ".project" / "darnit.yaml").exists()
+
+
 @pytest.mark.unit
 class TestOperatorFragment:
     def test_fragment_holds_the_tool_settings(self, repo: Path) -> None:
