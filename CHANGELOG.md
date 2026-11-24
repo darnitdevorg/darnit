@@ -33,6 +33,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   claims change. It also refuses, with the validation errors and without
   writing, when `.project/project.yaml` or `.project/darnit.yaml` is present
   but invalid (fixes #524).
+- OpenSSF Baseline audits no longer include `STAGE1-REF-SECURITY-01`, the
+  RFC-0001 Stage 1 test control. It ran as a Level 1 control in every audit,
+  counting a missing SECURITY.md twice (with OSPS-VM-02.01) and reporting 66
+  controls against the catalog's 65 OSPS ones. It now lives in a test-only
+  fixture framework, and a test fails if any non-OSPS control is added to the
+  Baseline framework (fixes #466).
 - Remediation templates state a test command or link a file only when the
   repository scan found it or the same run writes it; otherwise, they leave
   a marked TODO gap (fixes #751).

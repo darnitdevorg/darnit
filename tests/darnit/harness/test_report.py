@@ -39,7 +39,7 @@ def sample_report() -> HarnessReport:
                 "evidence": {},
             },
             {
-                "id": "STAGE1-REF-SECURITY-01",
+                "id": "OSPS-VM-02.01",
                 "status": "WARN",
                 "authority": "suggestive",
                 "level": 1,
@@ -49,7 +49,7 @@ def sample_report() -> HarnessReport:
         ],
         pending_feedback=[
             PendingFeedbackEntry(
-                control_id="STAGE1-REF-SECURITY-01",
+                control_id="OSPS-VM-02.01",
                 context_key="security_contact",
                 question="Who is the security contact?",
             ),
@@ -130,7 +130,7 @@ class TestMarkdownReport:
         md = sample_report.to_markdown()
         assert "OSPS-AC-01.01 PASS (dispositive)" in md
         assert "OSPS-BR-06.01 FAIL (dispositive)" in md
-        assert "STAGE1-REF-SECURITY-01 WARN (suggestive)" in md
+        assert "OSPS-VM-02.01 WARN (suggestive)" in md
 
     def test_markdown_empty_section_renders_none(self) -> None:
         """RF-7: empty section renders as heading + 'None.'"""

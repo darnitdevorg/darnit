@@ -274,10 +274,6 @@
       "OSPS-VM-06.02": {
         "after": "WARN",
         "before": "WARN"
-      },
-      "STAGE1-REF-SECURITY-01": {
-        "after": "PENDING",
-        "before": "FAIL"
       }
     },
     "files": [
