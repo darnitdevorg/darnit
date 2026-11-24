@@ -852,6 +852,11 @@ class RemediationExecutor:
         from darnit.sieve.handler_registry import HandlerResultStatus
 
         entry: dict[str, Any] = {"handler": handler_config["handler"]}
+        planned_conflicts = (
+            [c.path for c in planned.file_changes if c.reason == "user_changes_present"]
+            if planned and planned.previewable
+            else []
+        )
         previewed = [c for c in planned.file_changes if c.changes] if planned and planned.previewable else []
 
         def failed(message: str, changes: list[FileChange] | None = None) -> _ExecOutcome:
@@ -866,7 +871,7 @@ class RemediationExecutor:
                 for p in working_tree.user_changed(self.local_path)
                 if p not in recorded or before.get(p) != recorded[p]
             }
-            conflicts = sorted(c.path for c in previewed if c.path in dirty)
+            conflicts = sorted({c.path for c in previewed if c.path in dirty} | set(planned_conflicts))
             if conflicts:
                 return failed(
                     f"Not run: uncommitted user changes in previewed path(s) {conflicts}",
@@ -1157,6 +1162,16 @@ class RemediationExecutor:
                 try:
                     if not _is_exec(handler_info):
                         changes = [self._planned_write(c) for c in changes]
+                    else:
+                        planned_changes = [self._planned_write(c) for c in changes]
+                        conflicts = sorted(c.path for c in planned_changes if c.reason == "user_changes_present")
+                        if conflicts:
+                            result_entry["status"] = "error"
+                            result_entry["message"] = (
+                                f"Not run: uncommitted user changes in previewed path(s) {conflicts}"
+                            )
+                            all_success = False
+                            changes = [c for c in planned_changes if c.reason == "user_changes_present"]
                     changes = changes + self._planned_references(changes, result_entry)
                 except WriteRefused as e:
                     result_entry["status"] = "error"
