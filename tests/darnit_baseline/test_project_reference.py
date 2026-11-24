@@ -279,7 +279,7 @@ def test_no_control_to_field_table_remains() -> None:
     sources = Path(darnit_baseline.__file__).parent.rglob("*.py")
     assert not [p for p in sources if "CONTROL_REFERENCE_MAPPING" in p.read_text(encoding="utf-8")]
     assert not hasattr(orchestrator, "CONTROL_REFERENCE_MAPPING")
-    for control_id in ("OSPS-DO-01.01", "OSPS-LE-02.01", "OSPS-LE-03.01"):
+    for control_id in ("OSPS-DO-01.01", "OSPS-LE-02.01", "OSPS-LE-03.01", "OSPS-SA-03.02"):
         assert "project_update" not in BASELINE["controls"][control_id]["remediation"], (
             f"{control_id} records its reference through project_reference, not an unconditional project_update"
         )

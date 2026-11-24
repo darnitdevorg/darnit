@@ -30,6 +30,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Markdown audit reports no longer include a `Generated At` timestamp, so the
   same results produce the same report on every run. The JSON and SARIF
   outputs still record `generated_at` in their metadata (fixes #436).
+- The OSPS-SA-03.02 remediation records `security.threat_model` in `.project/`
+  only when it creates the threat model in that run, and only when the field is
+  empty or already names the same file. Before, it set the field after every
+  successful run, even when an existing threat model was kept, and replaced a
+  path the project had already set. `project_reference` is now accepted on
+  plugin handlers that declare it, not only on `file_create`; it records only
+  the file at the step's `path` (fixes #545).
 - In the gittuf commit signature check (GT-02.01), when commits lack good
   signatures, the FAIL message states how many recent commits have a good
   signature and reports commits that could not be checked on the machine

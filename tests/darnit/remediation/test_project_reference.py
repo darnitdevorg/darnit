@@ -1,4 +1,4 @@
-"""``file_create.project_reference``: schema, plan, and apply in the executor (feature 043, T040, framework-design 4.3)."""
+"""``project_reference``: schema, plan, and apply in the executor (feature 043, T040, framework-design 4.3)."""
 
 from __future__ import annotations
 
@@ -11,6 +11,8 @@ from pydantic import ValidationError
 from darnit.config.framework_schema import HandlerInvocation, RemediationConfig
 from darnit.config.resolver import render_reference_update
 from darnit.remediation.executor import RemediationExecutor
+from darnit.remediation.plan import FileChange
+from darnit.sieve.handler_registry import HandlerResult, HandlerResultStatus, get_sieve_handler_registry
 from tests.conftest_helpers import snapshot
 
 OWNER, REPO = "example-org", "example"
@@ -57,6 +59,53 @@ def test_schema_rejects_a_reference_that_is_no_project_path_field(reference) -> 
 @pytest.mark.parametrize("reference", ["security.policy", "governance.maintainers", "legal.license"])
 def test_schema_accepts_project_path_fields(reference: str) -> None:
     RemediationConfig(handlers=[HandlerInvocation(handler="file_create", path="X.md", project_reference=reference)])
+
+
+@pytest.mark.unit
+def test_schema_checks_the_reference_on_any_handler() -> None:
+    with pytest.raises(ValidationError, match="_two_files project_reference 'security.nope'"):
+        RemediationConfig(
+            handlers=[HandlerInvocation(handler="_two_files", path="X.md", project_reference="security.nope")]
+        )
+
+
+@pytest.mark.integration
+def test_only_the_file_at_the_steps_path_is_referenced(repo: Path) -> None:
+    registry = get_sieve_handler_registry()
+
+    def _two_files(config, ctx):
+        changes = [
+            FileChange(path="docs/model/SUMMARY.md", action="create", content="# Summary\n"),
+            FileChange(path="docs/model/extra.md", action="create", content="# Extra\n"),
+        ]
+        return HandlerResult(
+            status=HandlerResultStatus.PASS,
+            message="planned",
+            evidence={"file_changes": [c.model_dump(mode="json") for c in changes]},
+        )
+
+    registry.register(
+        "_two_files", "deterministic", _two_files, supports_plan=True, settings={"path", "project_reference"}
+    )
+    config = RemediationConfig(
+        handlers=[
+            HandlerInvocation(
+                handler="_two_files", path="./docs/model/SUMMARY.md", project_reference="security.threat_model"
+            )
+        ]
+    )
+
+    try:
+        result = _execute(repo, config, dry_run=False)
+    finally:
+        registry._handlers.pop("_two_files", None)
+
+    assert (repo / ".project" / "project.yaml").read_text(encoding="utf-8") == (
+        "name: repo\nsecurity:\n  threat_model:\n    path: docs/model/SUMMARY.md\n"
+    )
+    referenced = {c.path: c.project_reference for c in result.file_changes}
+    assert referenced["docs/model/SUMMARY.md"] == "security.threat_model"
+    assert referenced["docs/model/extra.md"] is None
 
 
 @pytest.mark.integration

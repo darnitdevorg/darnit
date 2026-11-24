@@ -1139,10 +1139,12 @@ class RemediationExecutor:
                 result_entry["message"] = f"Invalid file changes from handler '{invocation.handler}': {e}"
                 all_success = False
                 changes = []
-            reference = handler_config.get("project_reference") if invocation.handler == "file_create" else None
+            reference = handler_config.get("project_reference")
             if reference:
                 changes = [
-                    c.model_copy(update={"project_reference": reference}) if c.action == "create" else c
+                    c.model_copy(update={"project_reference": reference})
+                    if c.action == "create" and _is_referenced_file(invocation.handler, handler_config, c)
+                    else c
                     for c in changes
                 ]
 
@@ -1269,6 +1271,22 @@ def _file_changes(evidence: Mapping[str, Any]) -> list[FileChange]:
     if not isinstance(raw, list):
         raise ValueError("file_changes must be a list")
     return [item if isinstance(item, FileChange) else FileChange.model_validate(item) for item in raw]
+
+
+def _is_referenced_file(handler: str, handler_config: Mapping[str, Any], change: FileChange) -> bool:
+    """Whether ``change`` is the file a step's ``project_reference`` names (framework-design 4.3).
+
+    ``file_create`` creates only its own file. Another handler may create
+    companion files as well (``generate_threat_model`` writes the data flow,
+    the raw findings and one file per finding group next to its summary), so
+    only the file at the step's ``path`` is referenced.
+    """
+    if handler == "file_create":
+        return True
+    try:
+        return change.path == normalize_repo_path(str(handler_config.get("path", "")))
+    except ValueError:
+        return False
 
 
 def _reference_note(change: FileChange, kept: str | None) -> dict[str, Any]:

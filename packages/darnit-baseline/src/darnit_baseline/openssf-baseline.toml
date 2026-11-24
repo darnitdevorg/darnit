@@ -4540,11 +4540,9 @@ safe = true
 [[controls."OSPS-SA-03.02".remediation.handlers]]
 handler = "generate_threat_model"
 path = "docs/threatmodel/SUMMARY.md"
+project_reference = "security.threat_model"
 template = "threat_model_basic"
 overwrite = false
-
-[controls."OSPS-SA-03.02".remediation.project_update]
-set = { "security.threat_model.path" = "docs/threatmodel/SUMMARY.md" }
 
 # =============================================================================
 # RFC-0001 Stage 1 Reference Control (feature 025 T044)
