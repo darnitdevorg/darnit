@@ -140,7 +140,10 @@ here (see the next section for why).
 
 Response headers are not bound (`gh api` does not expose them). An
 `expr` that cannot be evaluated here is ERROR (class `evaluation`), not
-a preserved verdict. Test for a field with `has()`:
+a preserved verdict. When a response field is permission-gated (such as
+organization settings visible only to organization owners), declare
+`auth_fields` on the step so an omitted field reports ERROR (class `auth`)
+instead of an evaluation error. Test for an optional field with `has()`:
 `has(response.body.required_pull_request_reviews)`; comparing a map to
 `null` has no overload in the evaluator and errors. Non-2xx answers
 never reach `expr`; see framework-design.md section 3.8.

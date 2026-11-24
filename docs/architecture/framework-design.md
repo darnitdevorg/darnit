@@ -1,6 +1,6 @@
 # Darnit Framework Design Specification
 
-> **Version**: 1.0.0-alpha.30
+> **Version**: 1.0.0-alpha.31
 > **Status**: Authoritative
 > **Last Updated**: 2026-11-24
 
@@ -796,11 +796,12 @@ expr = 'has(response.body.required_pull_request_reviews)'
 | `fail_on_status` | `list[int]` | HTTP statuses that prove failure (step field) |
 | `expr` | `str` | CEL over `response.status_code` and `response.body` (the parsed JSON body); `true` -> PASS, `false` -> FAIL. Evaluated by the handler, not by the post-step of section 3.7, so `output.*` and `project.*` are not bound. Response headers are not available (`gh api` does not expose them). |
 | `evidence_fields` | `list[str]` | Top-level `response.body` keys kept in the stored evidence. When set, every other body key is dropped from evidence, and so from reports and attestations; `expr` still evaluates against the full response. |
+| `auth_fields` | `dict[str, str]` | Response body keys visible only with specific permissions (e.g. organization owners), mapped to reasons. When a 2xx response omits any of these keys, the handler returns ERROR, class `auth`, naming the field and permission needed. |
 
 **Ceiling**: `{pass, fail}`.
 
 **Behavior**:
-1. 2xx: `expr` decides (no `expr`: PASS); an `expr` that cannot be evaluated over the response -> ERROR, class `evaluation`
+1. 2xx: if an `auth_fields` key is absent from the response body -> ERROR, class `auth`; otherwise `expr` decides (no `expr`: PASS); an `expr` that cannot be evaluated over the response -> ERROR, class `evaluation`
 2. 429, or a 403 whose message is a rate limit -> ERROR, class `rate_limit`, even when the status is in `fail_on_status` (a rate limit never proves failure)
 3. A status in `fail_on_status` -> FAIL
 4. 401 / 403 -> ERROR, class `auth`
@@ -854,6 +855,10 @@ A `gh_api` step reading a personal record MUST declare `evidence_fields`, listin
 #### Scenario: Evidence limited to declared fields
 - **WHEN** a `gh_api` step with `evidence_fields = ["login", "two_factor_authentication"]` receives a body that also has `email` and `bio`
 - **THEN** the stored evidence MUST contain only `login` and `two_factor_authentication` in `response.body`
+
+#### Scenario: Permission-gated response field omitted
+- **WHEN** a `gh_api` step with `auth_fields` receives 200 but the response omits a declared key
+- **THEN** the handler MUST return ERROR, class `auth`, naming the field
 
 ---
 
@@ -2668,6 +2673,7 @@ The following requirements have been superseded: by the handler dispatch archite
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.0.0-alpha.31 | 2026-11-24 | `gh_api` step setting `auth_fields`: when an HTTP 2xx response omits any declared field, reports ERROR with error class `auth` naming the elevated permission requirement (Section 3.8; #753) |
 | 1.0.0-alpha.30 | 2026-11-24 | An `exec` remediation step previewed in a scratch copy marks files that have uncommitted user changes in the checkout with `action = "none"` and `reason = "user_changes_present"`, reports that the command will not run, and omits files the command will not touch, matching what the apply does (Section 4.4; #543) |
 | 1.0.0-alpha.29 | 2026-11-22 | `project_reference` is accepted on any step whose handler declares it in its settings, not only `file_create`; on a handler other than `file_create` it records only the file at the step's `path`. OSPS-SA-03.02 records `security.threat_model` through `project_reference` on `generate_threat_model` instead of an unconditional `project_update` (Sections 4.3, 7.9; #545) |
 | 1.0.0-alpha.28 | 2026-11-22 | Fenced JSON block returned by `remediate_audit_findings` omits file contents in `file_changes` in the plan and outcomes (keeping `path`, `action`, `reason`, `ignored`, `before_digest`, and `after_digest`) to keep report output within client limits (Section 15.4; #725) |
