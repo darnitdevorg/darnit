@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 2
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version == '3.13.*'",
@@ -475,8 +475,6 @@ dependencies = [
     { name = "packaging" },
     { name = "rfc3161-client" },
     { name = "sigstore" },
-    { name = "darnit-core" },
-    { name = "packaging" },
 ]
 
 [package.metadata]
@@ -486,8 +484,6 @@ requires-dist = [
     { name = "packaging", specifier = ">=23.0" },
     { name = "rfc3161-client", specifier = ">=1.0" },
     { name = "sigstore", specifier = ">=4.0,<5" },
-    { name = "darnit-core", editable = "packages/darnit" },
-    { name = "packaging", specifier = ">=23.0" },
 ]
 
 [[package]]

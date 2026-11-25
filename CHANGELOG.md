@@ -108,21 +108,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `darnit-amber run`, `verify`, `claim` and `rerun` (#677 steps A, C, D; #678;
-  specs/046-amber-run-bundle): one execution of an artifact's experiment under
-  Witness becomes a signed run bundle (statement signed as DSSE with the
-  researcher's key and timestamped, Witness envelopes bound by digest,
-  outputs stored and hashed). Claims are measured only from outputs the
-  experiment produced; `rerun` verifies before it executes and asks for
-  consent. A clean checkout is run from a fresh clone of its commit and
-  untracked files make it dirty, so the experiment reads only what the
-  commit contains; the bundle records no path of the researcher's machine
-  (`$HOME/...`, `$CHECKOUT/...`, `local/<name>`) and says under
-  `provenance` which fields Witness observed and which the tool wrote down;
-  the experiment's exit status and the audit report are Witness products
-  (`.amber/`, removed after each step) that `verify` reads back by digest.
-  `verify` names two signers for a derived bundle (`--pubkey`,
-  `--claimer-pubkey`); values and tolerances must be finite plain decimals.
+- `darnit-amber run`, `verify` and `rerun` (#677, #678; specs/046-amber-run-bundle): `run` runs an
+  experiment's command under Witness in a clean clone of its commit and
+  records a signed run in `.amber/`: the command, exit code, result digests
+  and copies, and on Linux an environment lock (dpkg, Python and pip package
+  versions, from Witness's trace). Runs are signed keyless with Sigstore by
+  default, or with `--key`. `verify` checks a run against its Witness
+  attestation and its signer. `rerun` verifies a run, rebuilds its
+  environment as a Docker image from the lock, runs the command again, and
+  compares the results. New control RE-02.03 (`repro_run_verified`) passes
+  when a run of the audited commit verifies and was signed by a trusted key
+  or identity; RE-02.01 reads network evidence from verified runs.
 - `darnit harness` can use OpenAI for model judgments: set `[llm]
 provider = "openai"` and `model` in operator configuration and export
   `OPENAI_API_KEY`. The credential check now looks for the configured

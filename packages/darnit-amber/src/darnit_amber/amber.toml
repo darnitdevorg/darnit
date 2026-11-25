@@ -104,16 +104,14 @@ description = "Build does not fetch dependencies at build time"
 tags = { level = 2, domain = "RE" }
 depends_on = ["RE-01.02"]  # Nix flake strong signal is gated on BuildEnvDeclared having confirmed it
 
-# repro_witness_attestation fetches the Witness / in-toto attestation artifacts
-# of the successful CI runs for the audited commit via `gh`, Sigstore-verifies
-# them against this repository's GitHub Actions identity and that commit, and
-# FAILs when a verified runtime trace records network events (or a verified
-# command-run process line matches an installer).  A verified clean trace is
-# evidence only: an empty network log is also what a monitor that does not
-# trace sockets records (#553).
-# verify_witness_attestations (bool, default true): set to false to skip the
-# network round-trip entirely (air-gapped audits, or repos with no usable `gh`
-# login).  See witness_attestation.py for details.
+# repro_witness_attestation reads the darnit-amber runs of the audited commit
+# in the repository's bundle (.amber/), each verified with `darnit-amber
+# verify` against the signer it names, and FAILs when a verified Witness
+# attestation records network events in a runtime trace (or a traced process's
+# command line matches an installer).  A verified clean trace is evidence only:
+# an empty network log is also what a monitor that does not trace sockets
+# records (#553).
+# verify_witness_attestations (bool, default true): set to false to skip it.
 [[controls."RE-02.01".passes]]
 handler = "repro_witness_attestation"
 
@@ -150,6 +148,35 @@ steps = [
     "Check CI workflow for sigstore/cosign signing steps",
     "Look for .intoto.jsonl or attestation files in releases",
     "Verify SLSA provenance is generated (slsa-github-generator or equivalent)",
+]
+
+# =============================================================================
+# Control: Is the experiment's run recorded and verifiable?
+# `darnit-amber run` records a run in a bundle (.amber/ by default): a signed,
+# timestamped statement of the command, its exit code, its results, and its
+# environment, bound to Witness's attestation of what ran.
+# =============================================================================
+
+# repro_run_verified checks every run of the audited commit with
+# `darnit-amber verify`. A run that does not verify FAILs the control. PASS
+# needs one that exited 0, by a signer the operator lists: `trusted_keys`
+# (sha256 key fingerprints) or `trusted_identities` ([identity, issuer] pairs,
+# for keyless runs). A run checked against the signer it names only shows the
+# record was not changed, not who made it.
+[controls."RE-02.03"]
+name = "RunRecorded"
+description = "The experiment's run at this commit is recorded, signed, and verifies"
+tags = { level = 2, domain = "RE" }
+
+[[controls."RE-02.03".passes]]
+handler = "repro_run_verified"
+
+[[controls."RE-02.03".passes]]
+handler = "manual"
+steps = [
+    "Run `darnit-amber verify --pubkey <the researcher's public key>` in the repository",
+    "Confirm the key belongs to the researcher (obtained from them, not from the bundle)",
+    "Confirm the verified run is of the audited commit and exited 0",
 ]
 
 # =============================================================================

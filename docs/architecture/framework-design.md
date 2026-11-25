@@ -239,7 +239,7 @@ Every step type registers a **ceiling**: the set of outcomes (`pass`, `fail`) it
 | `manual`, `manual_steps` | `{}` | -- |
 | remediation handlers (`file_create`, `platform_setting`, `project_update`, `yaml_inject`, and plugin remediation handlers such as `generate_threat_model`) | `{}` | -- |
 
-A plugin handler registers its ceiling with the handler (`registry.register(..., ceiling={"pass", "fail"})`). A plugin handler that registers no ceiling has the ceiling `{}`: its results are evidence only. A step type that decides from text or file-presence signals registers `{fail}`; the reproducibility framework's five such step types (`repro_deps_pinned`, `repro_build_env_declared`, `repro_hermetic_build`, `repro_provenance_exists`, `repro_bit_for_bit`) do, so they conclude PASS only with a promotion, and their signals reach the control's later steps as evidence (feature 044, section 12). Its sixth, `repro_witness_attestation`, registers `{fail}` for a different reason: a Sigstore-verified in-toto runtime-trace attestation for the audited commit can show that the build accessed the network, but cannot yet show that it did not. Under the in-toto parsing rules an absent optional list is equivalent to an empty one, and what `monitorLog.network` records depends on the monitor's type and trace policy, so a monitor that does not trace sockets produces the same empty log as a build with no network access. A verified clean trace is therefore evidence, and PASS waits for an allowlist of monitor types backed by real attestations (#553).
+A plugin handler registers its ceiling with the handler (`registry.register(..., ceiling={"pass", "fail"})`). A plugin handler that registers no ceiling has the ceiling `{}`: its results are evidence only. A step type that decides from text or file-presence signals registers `{fail}`; the reproducibility framework's five such step types (`repro_deps_pinned`, `repro_build_env_declared`, `repro_hermetic_build`, `repro_provenance_exists`, `repro_bit_for_bit`) do, so they conclude PASS only with a promotion, and their signals reach the control's later steps as evidence (feature 044, section 12). Its sixth, `repro_witness_attestation`, registers `{fail}` for a different reason: the verified Witness attestation of a `darnit-amber run` of the audited commit can show that the run accessed the network, but cannot yet show that it did not. Under the in-toto parsing rules an absent optional list is equivalent to an empty one, and what `monitorLog.network` records depends on the monitor's type and trace policy, so a monitor that does not trace sockets produces the same empty log as a build with no network access. A verified clean trace is therefore evidence, and PASS waits for an allowlist of monitor types backed by real attestations (#553).
 
 **Step fields** (on any `[[controls."ID".passes]]` entry; none are passed to the handler except `fail_on_miss` and `fail_on_status`):
 
@@ -280,10 +280,10 @@ The orchestrator computes the effective set from the registry at dispatch time a
 - **THEN** loading the framework configuration MUST fail with an error naming the framework, control, step index, and outcome
 
 #### Scenario: A runtime trace proves only network access
-- **WHEN** a `repro_witness_attestation` step verifies an attestation for the audited commit whose runtime-trace `monitorLog.network` records one or more events
+- **WHEN** a `repro_witness_attestation` step reads the verified Witness attestation of a `darnit-amber run` of the audited commit whose runtime-trace `monitorLog.network` records one or more events
 - **THEN** its FAIL MUST conclude the control
 - **AND** when the verified trace records no network events, the step MUST NOT report PASS; its result MUST be recorded as evidence and evaluation MUST continue
-- **AND** an attestation whose signing identity is not bound to the audited repository and the audited commit MUST NOT be used
+- **AND** an attestation of a run that does not verify, or whose statement does not name the audited commit, MUST NOT be used
 
 ### 3.0.2 Step Disposition Table
 
@@ -2113,6 +2113,7 @@ Implementation-registered sieve handlers (non-exhaustive):
 | `gittuf_verify_policy`, `gittuf_commits_signed` | `darnit-gittuf` | `{pass, fail}` (cryptographic verification) |
 | `repro_deps_pinned`, `repro_build_env_declared`, `repro_hermetic_build`, `repro_provenance_exists`, `repro_bit_for_bit` | `darnit-amber` | `{fail}`: they decide from text and file-presence signals, so PASS needs a corpus-backed promotion (section 3.0.1) |
 | `repro_witness_attestation` | `darnit-amber` | `{fail}`: a verified runtime-trace attestation can show network access but, until monitor types are allowlisted, cannot show its absence (section 3.0.1, #553) |
+| `repro_run_verified` | `darnit-amber` | `{pass, fail}` (cryptographic verification of a `darnit-amber run` record of the audited commit; PASS only for a signer in its `trusted_keys` or `trusted_identities` setting) |
 | `csl_llm_if_present` | `darnit-csl` | `{fail}` |
 
 The reproducibility ceilings are part of that framework's own registration, not its package name, so they hold under a rename of the package.

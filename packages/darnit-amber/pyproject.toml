@@ -7,7 +7,7 @@ requires-python = ">=3.11"
 dependencies = [
     "cryptography>=46",
     "rfc3161-client>=1.0",  # verify decodes and checks the RFC 3161 timestamps Witness attaches
-    "sigstore>=4.0,<5",  # verify reads Sigstore's trusted root for the timestamp authorities (private API; pinned)
+    "sigstore>=4.0,<5",  # verify reads Sigstore's trusted root for the timestamp authorities
     "darnit-core==0.1.1",
     # PEP 440 requirement parsing for the requirements.txt pin classifier.
     # darnit-core already imports `packaging` at runtime (core/composition.py,

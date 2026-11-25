@@ -1,188 +1,219 @@
-"""Console script ``darnit-amber``."""
+"""Console script ``darnit-amber``: run, verify, rerun."""
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
+import shlex
+import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
-from darnit.stores.errors import StoreError
-
-from .claim import claim
+from .environment import docker_run
 from .rerun import rerun, verify
-from .run import TSA_URL, RunError, run
-
-# What a bad entry, a bad regex, a missing file or a store problem raise: reported, not traced back.
-_REPORTED = (RunError, StoreError, OSError, KeyError, ValueError, TypeError)
+from .run import run
+from .utils import DEFAULT_BUNDLE, PUBLIC_KEY_FILE, TSA_URL, RunError, newest_run, read_run
 
 
-def _make_store(a: argparse.Namespace):  # noqa: ANN202
-    from darnit.stores.defaults.local_fs import LocalFsAttestationStore
+def _consent(yes: bool) -> Callable[[str, str | None], bool]:
+    def ask(command: str, recipe: str | None) -> bool:
+        # In an image: say which one (its Dockerfile is saved with the rerun) and go.
+        if recipe:
+            base = next((line.split()[-1] for line in recipe.splitlines() if line.startswith("FROM ")), "")
+            print(f"amber: rerunning in an image of the run's environment ({base.split('/')[-1]})", file=sys.stderr)
+            return True
 
-    a.out.mkdir(parents=True, exist_ok=True)
-    return LocalFsAttestationStore(root=a.out)
-
-
-def _add_verify_args(q: argparse.ArgumentParser) -> None:
-    q.add_argument("--pubkey", type=Path, help="PEM public key the bundle must be signed with")
-    q.add_argument("--claimer-pubkey", type=Path, help="for a bundle derived by claim: the claimer's PEM public key")
-
-
-def _consent(yes: bool):  # noqa: ANN202
-    def ask(command: str) -> bool:
-        print(f"rerun will execute, on this machine, with your environment:\n  {command}", file=sys.stderr)
+        # On this machine: the command runs as you, outside any container, so ask first.
+        print(f"amber: `{command}` will run on this machine outside any container", file=sys.stderr)
         if yes:
             return True
         if not sys.stdin.isatty():
-            print("pass --yes to confirm (stdin is not a terminal)", file=sys.stderr)
+            print("amber: pass --yes to confirm (stdin is not a terminal)", file=sys.stderr)
             return False
-        # The prompt goes to stderr like the rest of the dialogue: stdout carries only the JSON report.
         print("run it? [y/N] ", end="", file=sys.stderr, flush=True)
         return sys.stdin.readline().strip().lower() in ("y", "yes")
 
     return ask
 
 
-def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(prog="darnit-amber", description="Amber reproducibility runs")
-    sub = p.add_subparsers(dest="cmd", required=True)
-    r = sub.add_parser(
-        "run",
-        help="run the Amber audit and the experiment under Witness; write a run bundle",
-        epilog="darnit-amber run --key k.pem -- ./run_experiment.sh   (inside the artifact checkout; outputs are inferred)",
-    )
-    r.add_argument("artifact", nargs="?", default=".", help="local path or git URL of the artifact (default: .)")
-    r.add_argument("--ref", help="commit, branch or tag to check out (URL artifacts only)")
-    r.add_argument("--key", type=Path, help="signing key (PEM); default: a key generated once under darnit's data dir")
-    r.add_argument("--tsa", default=TSA_URL, help="RFC 3161 timestamp authority (default: Sigstore's)")
-    r.add_argument("--no-timestamp", action="store_true", help="do not countersign with a timestamp authority")
-    r.add_argument("--claims", type=Path, help="corpus entry (yaml or json): claims and run.command")
-    r.add_argument(
-        "--allow-dirty",
-        action="store_true",
-        help="run on a checkout with uncommitted changes; the bundle then records no commit and cannot be rerun",
-    )
-    r.add_argument("--out", type=Path, default=Path("amber-runs"), help="store directory")
-    for name, help_ in (
-        ("verify", "check a stored bundle: id, statement signature, outputs vs Witness, timestamps, signer"),
-        ("rerun", "verify a stored bundle, then re-execute its experiment and compare outputs"),
-        ("claim", "attach a paper claim to a stored run, measured from its stored outputs"),
-    ):
-        q = sub.add_parser(name, help=help_)
-        q.add_argument("bundle_id")
-        q.add_argument("--out", type=Path, default=Path("amber-runs"))
-        if name == "verify":
-            _add_verify_args(q)
-        elif name == "rerun":
-            _add_verify_args(q)
-            q.add_argument("--yes", action="store_true", help="execute the bundle's command without asking")
-            q.add_argument(
-                "--artifact", help="path or URL to clone when the bundle names a local artifact (local/<name>)"
+def _expected_signer(a: argparse.Namespace, run_id: str) -> dict[str, Any]:
+    """
+    Who must have signed the run, for verify: what the verifier passed, else (with a warning) whom the run
+    names. A run checked against its own claim shows it was not changed, not who made it.
+    """
+    signing = read_run(a.bundle, run_id)[0]["predicate"]["signing"]
+
+    if signing.get("method") == "sigstore":
+        if not a.identity or not a.issuer:
+            print(
+                f"amber: checking the signature against the signer the run names, {signing.get('identity')}"
+                " (pass --identity <the researcher's email> to be sure)",
+                file=sys.stderr,
             )
-            q.add_argument("--key", type=Path, help="signing key for this rerun (default: the generated one)")
-            q.add_argument("--tsa", default=TSA_URL)
-            q.add_argument("--no-timestamp", action="store_true")
-        else:
-            q.add_argument("--id", required=True, help="claim id, e.g. figure6a-queries-per-sec")
-            q.add_argument("--file", required=True, help="output file of the run holding the value")
-            q.add_argument("--regex", required=True, help="regex over that file; group 1 is the value")
-            q.add_argument("--threshold", help="the paper's number, e.g. '>= 70' or '== falsified'")
-            q.add_argument("--tolerance", type=float)
-            q.add_argument("--scale", type=float, help="multiply the value, e.g. 100 for a fraction in percent")
-            q.add_argument("--unit")
-            q.add_argument("--source", help="where the threshold comes from, e.g. 'Table 3, row 2'")
-            q.add_argument("--expected", choices=["REPRODUCED", "NOT_REPRODUCED", "NOT_COMPARABLE"])
-            q.add_argument("--not-comparable", metavar="REASON", help="record the value but do not judge it")
-            q.add_argument("--key", type=Path, help="key that signs the derived bundle (default: the generated one)")
-            q.add_argument("--tsa", default=TSA_URL)
-            q.add_argument("--no-timestamp", action="store_true")
-    argv = sys.argv[1:] if argv is None else list(argv)
-    command: list[str] = []
-    if "--" in argv:
-        i = argv.index("--")
-        argv, command = argv[:i], argv[i + 1 :]
-    a = p.parse_args(argv)
+        return {"identity": a.identity or signing.get("identity"), "issuer": a.issuer or signing.get("issuer")}
 
-    if a.cmd in ("verify", "rerun", "claim"):
-        try:
-            store = _make_store(a)
-            if a.cmd == "verify":
-                result = verify(store, a.bundle_id, a.pubkey, claimer_pubkey=a.claimer_pubkey)
-            elif a.cmd == "rerun":
-                result = rerun(
-                    store,
-                    a.bundle_id,
-                    a.key,
-                    None if a.no_timestamp else a.tsa,
-                    pubkey=a.pubkey,
-                    consent=_consent(a.yes),
-                    artifact=a.artifact,
-                    claimer_pubkey=a.claimer_pubkey,
-                )
-            else:
-                spec = {
-                    "id": a.id,
-                    "threshold": a.threshold,
-                    "tolerance": a.tolerance,
-                    "unit": a.unit,
-                    "source": a.source,
-                    "expected_verdict": a.expected,
-                    "measure": {
-                        "file": a.file,
-                        "regex": a.regex,
-                        "scale": a.scale,
-                        "comparable": False if a.not_comparable else None,
-                        "reason": a.not_comparable,
-                    },
-                }
-                result = claim(store, a.bundle_id, spec, a.key, None if a.no_timestamp else a.tsa)
-        except _REPORTED as e:
-            print(f"darnit-amber: {e}", file=sys.stderr)
-            return 1
-        print(json.dumps(result, indent=2))
-        return 0 if result.get("verified", not result.get("drift")) else 2
-
-    try:
-        store = _make_store(a)
-        if command and a.cmd != "run":
-            raise RunError("a command after -- only makes sense with run")
-        bundle = run(
-            a.artifact,
-            a.ref,
-            a.key,
-            a.claims,
-            store,
-            command or None,
-            None if a.no_timestamp else a.tsa,
-            a.allow_dirty,
+    if a.pubkey is None:
+        print(
+            "amber: checking signatures against the bundle's own key.pub (pass --pubkey <researcher's key> to be sure)",
+            file=sys.stderr,
         )
-    except _REPORTED as e:
+    return {"pubkey": a.pubkey or a.bundle / PUBLIC_KEY_FILE}
+
+
+def main(argv: list[str] | None = None) -> int:
+    # Define CLI arguments and options for commands and subcommand
+    p = argparse.ArgumentParser(prog="darnit-amber", description="record, verify and rerun experiments")
+
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    run_args = sub.add_parser(
+        "run", help="run an experiment under Witness and record it: darnit-amber run [source] -- command"
+    )
+    run_args.add_argument(
+        "source", nargs="?", default=".", help="the experiment: a clean git checkout or URL (default: .)"
+    )
+    run_args.add_argument(
+        "--results",
+        action="append",
+        metavar="PATH",
+        help="a file or directory the command writes that holds its results: recorded, copied, compared (repeatable)",
+    )
+    run_args.add_argument("--output", type=Path, help="the bundle to record into (default: <source>/.amber)")
+    run_args.add_argument("--no-trace", action="store_true", help="do not trace, so record no environment lock")
+    run_args.add_argument(
+        "--record-failure", action="store_true", help="record the run even if the command fails (exits non-zero)"
+    )
+
+    verify_args = sub.add_parser("verify", help="check a recorded run: id, signatures, timestamps, results, lock")
+
+    rerun_args = sub.add_parser(
+        "rerun", help="verify a recorded run, run it again in its rebuilt environment, open a shell there"
+    )
+    rerun_args.add_argument("--yes", action="store_true", help="with --host-environment: run without asking")
+    rerun_args.add_argument(
+        "--sign", action="store_true", help="record the rerun as a signed run (keyless, or with --key)"
+    )
+    rerun_args.add_argument("--no-shell", action="store_true", help="do not open a shell afterwards")
+    rerun_args.add_argument("--host-environment", action="store_true", help="run in this machine's environment, traced")
+    rerun_args.add_argument("--source", help="the experiment's source (default: the folder the bundle is in)")
+
+    for q in (verify_args, rerun_args):
+        q.add_argument("run_id", nargs="?", help="the run (default: the bundle's newest)")
+        q.add_argument("--bundle", type=Path, default=Path(DEFAULT_BUNDLE), help="the bundle (default: ./.amber)")
+        q.add_argument(
+            "--identity", help="keyless runs: who must have signed it, e.g. an email (default: who it names)"
+        )
+        q.add_argument("--issuer", help="keyless runs: the login's issuer, e.g. https://github.com/login/oauth")
+        q.add_argument("--pubkey", type=Path, help="runs signed with a key: its public key (default: the bundle's)")
+
+    for q in (run_args, rerun_args):
+        q.add_argument(
+            "--key", type=Path, help="sign with this key (PEM) instead of keyless, as you sign in to Sigstore"
+        )  # on rerun, only with --sign
+        q.add_argument("--no-timestamp", action="store_true", help="do not timestamp (verify then fails)")
+
+    argv = sys.argv[1:] if argv is None else list(argv)
+    command = argv[argv.index("--") + 1 :] if "--" in argv else []
+    a = p.parse_args(argv[: len(argv) - len(command) - 1] if command else argv)
+    tsa = None if getattr(a, "no_timestamp", False) else TSA_URL
+
+    # Run, Verify, or Rerun
+    result = {}
+    try:
+        if a.cmd == "run":
+            if not command:
+                raise RunError("nothing to run: give the command after --")
+            local = not a.source.startswith(("https://", "http://", "ssh://", "git@"))
+            bundle = a.output or (Path(a.source) / DEFAULT_BUNDLE if local else Path(DEFAULT_BUNDLE))
+            recorded = run(
+                a.source,
+                a.key,
+                shlex.join(command),
+                bundle,
+                results=a.results,
+                tsa=tsa,
+                trace=False if a.no_trace else None,
+                record_failure=a.record_failure,
+            )
+            outputs = recorded["statement"]["predicate"]["outputs"]
+
+            if outputs:
+                results = f"{len(outputs)} result file(s)"
+            else:
+                results = "bundle contains no result files. use --results to add files"
+
+            print(f"amber: saved run {recorded['id'][:12]} in {bundle}/ ({results})", file=sys.stderr)
+
+            return 0
+
+        # verify and rerun: the newest run by default, checked against the signer it names unless told otherwise.
+        run_id = a.run_id or newest_run(a.bundle)
+        signer = _expected_signer(a, run_id)
+
+        if a.cmd == "verify":
+            report = verify(a.bundle, run_id, **signer)
+            print(json.dumps(report, indent=2))
+            return 0 if report["verified"] else 2
+
+        if a.cmd == "rerun":
+            source = a.source or (str(a.bundle.resolve().parent) if a.bundle.name == DEFAULT_BUNDLE else None)
+            result = rerun(
+                a.bundle,
+                run_id,
+                _consent(a.yes),
+                key=a.key,
+                **signer,
+                source=source,
+                tsa=tsa,
+                host_environment=a.host_environment,
+                sign=a.sign,
+            )
+    except (RunError, OSError, KeyError, ValueError) as e:
         print(f"darnit-amber: {e}", file=sys.stderr)
         return 1
-    pred = bundle["statement"]["predicate"]
-    statuses: dict[str, int] = {}
-    for x in pred["audit"]["results"]:
-        statuses[x["status"]] = statuses.get(x["status"], 0) + 1
-    exp = pred.get("experiment") or {}
-    summary = {
-        "id": bundle["id"],
-        "subject": bundle["statement"]["subject"][0],
-        "corpus_entry": pred.get("corpus_entry"),
-        "audit": statuses,
-        "verdict": pred.get("verdict"),
-        "signing": pred.get("signing"),
-        "claims": [
-            {
-                k: x.get(k)
-                for k in ("id", "measured", "threshold", "verdict", "expected_verdict", "matches_expected", "reason")
-            }
-            for x in pred["claims"]
-        ],
-        "experiment": {"exit_code": exp.get("exit_code"), "outputs": exp.get("outputs")} if exp else None,
-    }
-    print(json.dumps(summary, indent=2))
-    return 0
+    except KeyboardInterrupt:
+        print("\namber: interrupted; nothing recorded", file=sys.stderr)
+        return 130
+
+    # Rerun: whether its results match the first run's, and where its state is kept.
+    image, checkout = result.pop("image"), result.pop("checkout")
+    diff = result["diff"] or {}
+    differences = [
+        f"{len(diff.get('versions', {}))} package version(s)" if diff.get("versions") else "",
+        f"{len(diff.get('files', {}))} file(s)" if diff.get("files") else "",
+    ]
+    environment = {
+        "same_environment": ", in the same environment",
+        "different_environment": f", in an environment that differs by {' and '.join(filter(None, differences))}"
+        " (see result.json)",
+    }.get(result["grade"], "")
+    if result["changed"]:
+        outcome = f"results changed: {', '.join(result['changed'])}"
+    else:
+        outcome = "results identical to the first run" + environment
+    signed = f"signed as run {result['id'][:12]}" if result["id"] else "not signed: --sign records it as a run"
+    print(f"amber: {outcome}", file=sys.stderr)
+    print(f"amber: rerun saved in {os.path.relpath(result['dir'])}/ ({signed})", file=sys.stderr)
+
+    if not a.no_shell and sys.stdin.isatty():
+        # A shell where the rerun ran, to look around or try things; its prompt says where you are.
+        where = f"the rerun's container, in /{checkout.name}" if image else f"the rerun's checkout, {checkout}"
+        print(f"\namber: opening a shell in {where}. Type `exit` to leave.\n", file=sys.stderr)
+        prompt = f"[amber rerun {run_id[:12]}] \\w # "
+        if image:
+            flags = ("-t", "--hostname", f"amber-rerun-{run_id[:12]}", "-e", f"PS1={prompt}")
+            # --norc: the image's .bashrc would set its own prompt.
+            subprocess.run(
+                docker_run(image, checkout, *flags)
+                + ["sh", "-c", "command -v bash >/dev/null && exec bash --norc || exec sh"]
+            )
+        else:
+            subprocess.run([os.environ.get("SHELL", "sh")], cwd=checkout, env={**os.environ, "PS1": prompt})
+
+    return 2 if result["changed"] else 0
 
 
 if __name__ == "__main__":
