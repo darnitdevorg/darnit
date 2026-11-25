@@ -2,12 +2,15 @@
 
 import os
 
+import pytest
+
 from darnit.context.auto_detect import (
     _extract_hostname,
     collect_auto_context,
     detect_ci_provider,
     detect_languages,
     detect_license_type,
+    detect_package_manager_support,
     detect_platform,
     detect_primary_language,
 )
@@ -127,6 +130,118 @@ class TestDetectPrimaryLanguage:
 
     def test_no_language(self, tmp_path):
         assert detect_primary_language(str(tmp_path)) is None
+
+
+class TestDetectPackageManagerSupport:
+    """OSPS-QA-02.01 is skipped only on positive evidence of a script-only project."""
+
+    def test_shell_scripts_only_is_unsupported(self, tmp_path):
+        (tmp_path / "run.sh").write_text("echo hi")
+        (tmp_path / "README.md").write_text("# tool")
+        assert detect_package_manager_support(str(tmp_path)) == "unsupported"
+
+    def test_nested_shell_scripts_only_is_unsupported(self, tmp_path):
+        (tmp_path / "scripts").mkdir()
+        (tmp_path / "scripts" / "build.bash").write_text("echo hi")
+        assert detect_package_manager_support(str(tmp_path)) == "unsupported"
+
+    def test_manifest_is_supported(self, tmp_path):
+        (tmp_path / "run.sh").write_text("echo hi")
+        (tmp_path / "package.json").write_text("{}")
+        assert detect_package_manager_support(str(tmp_path)) == "supported"
+
+    def test_nested_manifest_is_supported(self, tmp_path):
+        (tmp_path / "run.sh").write_text("echo hi")
+        (tmp_path / "cmd").mkdir()
+        (tmp_path / "cmd" / "go.mod").write_text("module example.com")
+        assert detect_package_manager_support(str(tmp_path)) == "supported"
+
+    def test_package_managed_source_without_manifest_is_supported(self, tmp_path):
+        """A Node project that forgot its package.json must still be checked."""
+        (tmp_path / "run.sh").write_text("echo hi")
+        (tmp_path / "index.js").write_text("console.log(1)")
+        assert detect_package_manager_support(str(tmp_path)) == "supported"
+
+    def test_unclassified_language_is_uncertain(self, tmp_path):
+        (tmp_path / "run.sh").write_text("echo hi")
+        (tmp_path / "main.c").write_text("int main(){}")
+        assert detect_package_manager_support(str(tmp_path)) is None
+
+    def test_no_scripts_is_uncertain(self, tmp_path):
+        (tmp_path / "README.md").write_text("# docs only")
+        assert detect_package_manager_support(str(tmp_path)) is None
+
+    def test_empty_repo_is_uncertain(self, tmp_path):
+        assert detect_package_manager_support(str(tmp_path)) is None
+
+    def test_missing_path_is_uncertain(self, tmp_path):
+        assert detect_package_manager_support(str(tmp_path / "nope")) is None
+
+    def test_vendored_code_is_ignored(self, tmp_path):
+        (tmp_path / "run.sh").write_text("echo hi")
+        (tmp_path / "node_modules" / "dep").mkdir(parents=True)
+        (tmp_path / "node_modules" / "dep" / "package.json").write_text("{}")
+        assert detect_package_manager_support(str(tmp_path)) == "unsupported"
+
+    def test_oversized_tree_is_uncertain(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("darnit.context.auto_detect._PACKAGE_SCAN_MAX_ENTRIES", 3)
+        (tmp_path / "run.sh").write_text("echo hi")
+        for i in range(5):
+            (tmp_path / f"notes{i}.txt").write_text("x")
+        assert detect_package_manager_support(str(tmp_path)) is None
+
+    def test_manifest_below_depth_limit_is_uncertain(self, tmp_path):
+        """A scan that stopped at the depth limit has not seen everything."""
+        (tmp_path / "run.sh").write_text("echo hi")
+        deep = tmp_path / "a" / "b" / "c" / "d" / "e"
+        deep.mkdir(parents=True)
+        (deep / "package.json").write_text("{}")
+        assert detect_package_manager_support(str(tmp_path)) is None
+
+    def test_manifest_at_depth_limit_is_still_found(self, tmp_path):
+        (tmp_path / "run.sh").write_text("echo hi")
+        edge = tmp_path / "a" / "b" / "c" / "d"
+        edge.mkdir(parents=True)
+        (edge / "package.json").write_text("{}")
+        assert detect_package_manager_support(str(tmp_path)) == "supported"
+
+    def test_shallow_script_project_is_not_blocked_by_depth_limit(self, tmp_path):
+        """Reaching depth 4 with nothing deeper is a complete scan."""
+        (tmp_path / "run.sh").write_text("echo hi")
+        edge = tmp_path / "a" / "b" / "c" / "d"
+        edge.mkdir(parents=True)
+        (edge / "helper.sh").write_text("echo hi")
+        assert detect_package_manager_support(str(tmp_path)) == "unsupported"
+
+    @pytest.mark.parametrize(
+        "other_file",
+        ["analysis.ipynb", "deploy.ps1", "model.fs", "main.tf", "flake.nix", "script"],
+    )
+    def test_file_nobody_classified_is_uncertain(self, tmp_path, other_file):
+        """Shell scripts plus a file darnit cannot classify must not conclude."""
+        (tmp_path / "run.sh").write_text("echo hi")
+        (tmp_path / other_file).write_text("x")
+        assert detect_package_manager_support(str(tmp_path)) is None
+
+    def test_known_non_code_files_do_not_block_the_conclusion(self, tmp_path):
+        for name in ["run.sh", "README.md", "LICENSE", "logo.png", "ci.yml", ".editorconfig", "Dockerfile"]:
+            (tmp_path / name).write_text("x")
+        assert detect_package_manager_support(str(tmp_path)) == "unsupported"
+
+
+class TestCollectAutoContextPackageManagerSupport:
+    def test_key_present_only_when_decided(self, tmp_path):
+        (tmp_path / "run.sh").write_text("echo hi")
+        ctx = collect_auto_context(str(tmp_path), include_stored=False)
+        assert ctx["package_manager_support"] == "unsupported"
+
+        (tmp_path / "go.mod").write_text("module example.com")
+        ctx = collect_auto_context(str(tmp_path), include_stored=False)
+        assert ctx["package_manager_support"] == "supported"
+
+    def test_key_absent_when_uncertain(self, tmp_path):
+        ctx = collect_auto_context(str(tmp_path), include_stored=False)
+        assert "package_manager_support" not in ctx
 
 
 class TestDetectLanguages:

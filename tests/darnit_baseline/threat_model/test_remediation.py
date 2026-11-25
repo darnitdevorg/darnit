@@ -431,3 +431,66 @@ class TestComplianceCycleSC004:
         draft_second = (tmp_path / "THREAT_MODEL.md").read_text()
 
         assert draft_first == draft_second, "Skip path must leave the file byte-identical"
+
+    def test_remediation_strips_opengrep_install_paths_from_files_and_contents(self, tmp_path):
+        """Issue #776: Threat model generator must not write operator install paths
+        into generated file paths, file contents, or raw JSON findings."""
+        import json
+
+        from darnit_baseline.threat_model.opengrep_runner import OpengrepResult
+
+        (tmp_path / "app.py").write_text("@app.route('/test')\ndef test(): pass\n")
+        fake_check_id = "Users.testoperator..local.share.darnit.packages.opengrep_rules.darnit.entry.flask-route"
+        fake_og_result = OpengrepResult(
+            available=True,
+            findings=[
+                {
+                    "check_id": fake_check_id,
+                    "path": str(tmp_path / "app.py"),
+                    "start": {"line": 1, "col": 1},
+                    "end": {"line": 2, "col": 10},
+                    "extra": {
+                        "message": "Flask route: /test -> test",
+                        "severity": "INFO",
+                        "metadata": {"stride": "tampering"},
+                        "lines": "@app.route('/test')",
+                    },
+                }
+            ],
+            binary_used="opengrep",
+            version="1.22.0",
+        )
+
+        config = {"path": "docs/threatmodel/THREAT_MODEL.md", "overwrite": False}
+        context = _make_context(str(tmp_path))
+
+        with patch("darnit_baseline.threat_model.ts_discovery._run_opengrep_enrichment", return_value=fake_og_result):
+            result = _run(config, context)
+
+        assert result.status == HandlerResultStatus.PASS
+        file_changes = result.evidence.get("file_changes", [])
+
+        # 1. No file change path contains the operator path or username
+        for fc in file_changes:
+            path = fc["path"]
+            assert "testoperator" not in path, f"Operator name found in generated path: {path}"
+            assert "opengrep_rules" not in path, f"Rules directory found in generated path: {path}"
+
+        # 2. Detail file is generated with clean slug
+        expected_finding_file = tmp_path / "docs" / "threatmodel" / "findings" / "darnit-entry-flask-route.md"
+        assert expected_finding_file.exists(), "Expected clean finding detail file does not exist"
+
+        # 3. SUMMARY.md links to clean slug
+        summary_text = (tmp_path / "docs" / "threatmodel" / "THREAT_MODEL.md").read_text(encoding="utf-8")
+        assert "darnit-entry-flask-route.md" in summary_text
+        assert "testoperator" not in summary_text
+
+        # 4. raw-findings.json has clean query_id
+        raw_json_file = tmp_path / "docs" / "threatmodel" / "raw-findings.json"
+        assert raw_json_file.exists()
+        raw_data = json.loads(raw_json_file.read_text(encoding="utf-8"))
+        query_ids = [f["query_id"] for f in raw_data.get("findings", [])]
+        assert "darnit.entry.flask-route" in query_ids
+        for qid in query_ids:
+            assert "testoperator" not in qid
+

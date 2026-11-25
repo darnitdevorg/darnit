@@ -7,8 +7,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- In the fenced JSON returned by `remediate_audit_findings`, omit file contents from `file_changes` in the plan and outcomes, keeping path, action, reason, and digests so the result stays well within MCP client limits (fixes #725).
+- `remediate_audit_findings` and the preflight context check no longer block the entire run when a context key is unconfirmed; controls with confirmed or no context proceed through preview and remediation, while controls requiring unconfirmed context report `needs_confirmation` (fixes #767). The run blocks only when every failing control lacks context.
+
 ### Fixed
 
+- In previewable exec remediations, preview files with uncommitted user changes
+  as action `none` with reason `user_changes_present`, and omit files the command
+  will not touch when refused, matching what apply does (fixes #543).
+- Threat-model findings use the rule id (darnit.entry.flask-route), not the
+  Opengrep rules directory path, so generated file names and query_id values no
+  longer carry the install location (fixes #776).
+- Community Specification: `org` is now one of the `csl_coc_policy` values,
+  alongside `csl` and `umbrella`. The tool description, the notices template,
+  and `scripts/csl_onboard.py` already used it, but `confirm_project_data`
+  refused it and `get_pending_data` did not offer it, so a confirmed value
+  could never select the org notice. `remediate_community_spec` now rejects a
+  `coc_policy` or `governance_mode` outside the key's values, and
+  `csl_onboard.py` reads its choices from the framework TOML (fixes #522).
+- `darnit config migrate` writes `.project/darnit.yaml` through the same
+  comment-preserving round trip as the other `.project/` writers, so comments,
+  key order, and formatting already in the file are kept; only the migrated
+  claims change. It also refuses, with the validation errors and without
+  writing, when `.project/project.yaml` or `.project/darnit.yaml` is present
+  but invalid (fixes #524).
+- OpenSSF Baseline audits no longer include `STAGE1-REF-SECURITY-01`, the
+  RFC-0001 Stage 1 test control. It ran as a Level 1 control in every audit,
+  counting a missing SECURITY.md twice (with OSPS-VM-02.01) and reporting 66
+  controls against the catalog's 65 OSPS ones. It now lives in a test-only
+  fixture framework, and a test fails if any non-OSPS control is added to the
+  Baseline framework (fixes #466).
+- Remediation templates state a test command or link a file only when the
+  repository scan found it or the same run writes it; otherwise, they leave
+  a marked TODO gap (fixes #751).
+- Markdown audit reports no longer include a `Generated At` timestamp, so the
+  same results produce the same report on every run. The JSON and SARIF
+  outputs still record `generated_at` in their metadata (fixes #436).
+- The OSPS-SA-03.02 remediation records `security.threat_model` in `.project/`
+  only when it creates the threat model in that run, and only when the field is
+  empty or already names the same file. Before, it set the field after every
+  successful run, even when an existing threat model was kept, and replaced a
+  path the project had already set. `project_reference` is now accepted on
+  plugin handlers that declare it, not only on `file_create`; it records only
+  the file at the step's `path` (fixes #545).
+- In the gittuf commit signature check (GT-02.01), when commits lack good
+  signatures, the FAIL message states how many recent commits have a good
+  signature and reports commits that could not be checked on the machine
+  alongside unsigned and bad signatures (fixes #679).
+- Reject non-integer control maturity levels (including string numbers like `"1"`
+  and floats like `1.0`) and levels outside 1-3 (including 0, negative integers,
+  and integers above 3) when loading framework configurations or applying
+  composite overrides, ensuring `darnit audit` fails closed instead of silently
+  omitting controls whose level exceeds the default audit maximum (fixes #701).
+- In `/darnit-comply` and `/darnit-remediate`, tell the agent to list
+  enhanced files and syntax fixes for review before offering a pull request,
+  stating plainly that the pull request will not contain uncommitted working-tree
+  edits and leaving them for the person to review and commit, keeping darnit's
+  rule that it never commits content it did not write. Before, `/darnit-comply`
+  instructed the agent to make a new commit with its improvements, but
+  `commit_remediation_changes` deliberately commits only the run's files whose
+  content matches what remediation wrote, leaving an agent without a shell with
+  no tool to commit them (fixes #738).
+- Pin DOT_PROJECT_SPEC_VERSION to canonical upstream CNCF 1.0.0 and remove
+  project_path = "security.policy" from OSPS-DO-02.01 (fixes #502). Existing
+  .project/project.yaml files declaring schema_version: 1.4.0 are left as
+  they are and require a manual edit to pass upstream validation.
 - Baseline handler registration no longer imports `tree-sitter` or the language
   pack at registration time, preventing transient language pack download
   failures from taking down all baseline handlers; when a plugin handler registration
@@ -27,6 +92,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "no remediation run is recorded" and the confirmation page lost the run's
   files. A named non-GitHub repository is also no longer treated as a GitHub
   repository for platform settings.
+- OSPS-DO-03.02, DO-04.01, DO-05.01, DO-06.01, QA-06.02, and SA-01.01 no longer
+  fail a project whose documentation covers the topic in a README, CONTRIBUTING,
+  SECURITY, or SUPPORT file of any extension (`.rst`, `.adoc`, ...), in the
+  root, `.github/`, or `docs/`, or in `docs/dependency-policy.*`. QA-06.02 also
+  matches "tests are run". The model judgment that follows a match now sees the
+  files that were read.
+  community-spec CSL-06.01 also reads `README.txt`, `README.adoc`, and
+  `README` (#702).
+- OSPS-QA-02.01 no longer fails shell-script-only repositories, which have no
+  package manager. The control is skipped (N/A) only when a complete scan finds
+  shell scripts and otherwise only non-code files; if the scan is cut short
+  (entry or depth limit) or meets an unrecognized file, the check runs as
+  before (fixes #308).
 
 ### Added
 
@@ -45,7 +123,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`.amber/`, removed after each step) that `verify` reads back by digest.
   `verify` names two signers for a derived bundle (`--pubkey`,
   `--claimer-pubkey`); values and tolerances must be finite plain decimals.
-
+- `darnit harness` can use OpenAI for model judgments: set `[llm]
+provider = "openai"` and `model` in operator configuration and export
+  `OPENAI_API_KEY`. The credential check now looks for the configured
+  provider's key, every model judgment result records the model in its
+  evidence (`llm_model`), and `darnit-core` depends on
+  `pydantic-ai-slim[anthropic,openai]` (#764).
+- An OpenSSF Security Insights file (`security-insights.yml` at the root or
+  in `.github/` / `.gitlab/`, schema 1.x or 2.x) proposes the project's
+  security contact as an unconfirmed candidate in `get_pending_data`, with the
+  file named as its origin. It is never used until a person confirms it and
+  never replaces a value stored in `.project/` (#497).
 - Developer test flow automation scripts (`scripts/clean_and_install_dev.sh`,
   `scripts/setup_dev_projects.sh`, `scripts/run_dev_test_flow.sh`) to
   generate reproducible test fixtures (`failing-empty`,
@@ -81,29 +169,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `HandlerImportRefused` naming the path and the allowed packages; at server
   start the tool is not registered and the refusal is logged at ERROR.
   `HandlerRegistry.get_handler` raises it instead of returning `None` (#490).
+- Operator configuration `[plugins] allowed` is applied before a plugin is
+  loaded. Before, discovery imported every installed plugin and ran its
+  `register()` before the list was checked, and only an audit of a framework
+  left out was refused. Now `darnit audit`, `run`, `harness`, `serve`, and
+  the MCP tools do not load a `darnit.implementations` or `darnit.frameworks`
+  entry point the list leaves out, so its step types and handlers are not
+  registered, its framework does not resolve (also as a composition source),
+  and `darnit serve --framework` refuses it with the `plugins.allowed`
+  message (framework-design 6.6).
 
 ### Removed
 
 - **BREAKING (Python API only):** unused code in darnit-baseline, the core
   tools and server modules, and two scripts. No behavior change for CLI, MCP,
   or TOML users. Removed:
-  - the `darnit_baseline.config` package (`darnit_baseline.config.mappings`
-    with `PROJECT_TYPE_EXCLUSIONS`, `DEFAULT_FILE_LOCATIONS`, and its
-    re-exports of `darnit.config` names);
-  - `darnit.tools.audit_org`: `run_org_audit`, `aggregate_org_results`,
-    `format_org_results_markdown`, `format_org_results_json` (the
-    `list_org_repos` and `audit_org` MCP tools are unchanged);
-  - `darnit.tools` / `darnit.tools.audit`: `list_available_checks` and
-    `AuditOptions` (the `list_available_checks` MCP tool is
-    darnit-baseline's own and is unchanged);
-  - `darnit.server` / `darnit.server.factory`: `create_server_from_dict`
-    (use `create_server` with a TOML path);
-  - the `template` parameter of darnit-baseline's `create_security_policy`,
-    which was never read. MCP clients that still send it are unaffected;
-    Python callers passing `template=` get a `TypeError`;
-  - the `security_policy_minimal` template, which no remediation used (an
-    operator custom control naming it now fails to find it);
-  - `scripts/extract_templates.py` and `scripts/audit_hermetic_real_repos.py`.
+    - the `darnit_baseline.config` package (`darnit_baseline.config.mappings`
+      with `PROJECT_TYPE_EXCLUSIONS`, `DEFAULT_FILE_LOCATIONS`, and its
+      re-exports of `darnit.config` names);
+    - `darnit.tools.audit_org`: `run_org_audit`, `aggregate_org_results`,
+      `format_org_results_markdown`, `format_org_results_json` (the
+      `list_org_repos` and `audit_org` MCP tools are unchanged);
+    - `darnit.tools` / `darnit.tools.audit`: `list_available_checks` and
+      `AuditOptions` (the `list_available_checks` MCP tool is
+      darnit-baseline's own and is unchanged);
+    - `darnit.server` / `darnit.server.factory`: `create_server_from_dict`
+      (use `create_server` with a TOML path);
+    - the `template` parameter of darnit-baseline's `create_security_policy`,
+      which was never read. MCP clients that still send it are unaffected;
+      Python callers passing `template=` get a `TypeError`;
+    - the `security_policy_minimal` template, which no remediation used (an
+      operator custom control naming it now fails to find it);
+    - `scripts/extract_templates.py` and `scripts/audit_hermetic_real_repos.py`.
 - **BREAKING:** `read_maintainers` is removed from the plugin-facing
   `ProjectStateStore` protocol (`darnit.stores.protocols`) and its
   implementations (`FilesystemProjectStateStore`, `InMemoryProjectStateStore`).
@@ -116,6 +213,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its filesystem default (`darnit.stores.defaults.project`). Writes to
   `.project/` are managed exclusively by `darnit.config.context_writes`
   under feature 042 single-writer rules (#588, fixes #574).
+- **BREAKING:** plugin signature verification, which never verified
+  anything. Discovery always ran with `allow_unsigned = true`, looked
+  plugins up by entry point name instead of distribution name (so every
+  lookup failed and logged a "failed verification but will be loaded
+  anyway" WARNING on each run), and wrote `~/.darnit/verification_cache`
+  under the real home directory. The verifier made no cryptographic check:
+  it trusted a package whose self-declared author or maintainer email
+  contained a trusted publisher name. Removed: `darnit.core.verification`
+  (`PluginVerifier`, `VerificationConfig`, `VerificationResult`,
+  `VerificationCache`, `AttestationInfo`, `verify_plugin`,
+  `DEFAULT_TRUSTED_PUBLISHERS`) and its `darnit.core` re-exports; the
+  operator configuration keys `[plugins] allow_unsigned` and
+  `trusted_publishers`, which were never read and now fail loading with a
+  message saying they were removed; and the unread framework TOML
+  `[plugins]` models (`PluginsConfig`, `PluginConfig`,
+  `FrameworkConfig.plugins`). A framework TOML `[plugins]` table still loads
+  and has no effect. `darnit config migrate` no longer copies the two keys
+  into its operator configuration fragment. darnit does not verify plugin
+  signatures; verify packages when installing them and restrict which
+  installed plugins load with `[plugins] allowed` (framework-design 6.6).
+- **BREAKING (Python API only):** `audit_openssf_baseline` no longer accepts
+  `auto_init_config`, and `get_pending_data` no longer accepts `level` or
+  `profile` (#528). None of them was read. Python callers passing them get a
+  `TypeError`. MCP clients that still send them are unaffected: FastMCP
+  ignores unknown arguments. `get_pending_context` no longer accepts `level`;
+  that ignored parameter was removed in #552.
 - `.baseline.toml` reading and the code that existed only for it:
   `load_user_config` (including its `trusted` path),
   `load_user_config_with_report`, `validate_user_config`, `deep_merge`, and
@@ -174,6 +297,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BREAKING:** a control-level `check` key in a framework TOML or an
   operator custom control now fails loading, like any unknown control key
   (#487).
+- **BREAKING:** shared handlers. A step referencing a `[shared_handlers]`
+  entry (`shared = "<name>"`) cached its result after its own control's
+  `expr` ran, so every later control referencing the same entry got that
+  verdict and never evaluated its own `expr`: a second control could PASS on
+  an expression that was false. The effective configuration, which the CLI
+  and MCP audits load, never resolved the references. A framework TOML with
+  a `[shared_handlers]` table, or a verification or remediation step with
+  `shared`, now fails loading with an error saying shared handlers were
+  removed; declare the step's full configuration on each control. Removed
+  with it: `SharedHandlerConfig`, `FrameworkConfig.shared_handlers`,
+  `HandlerInvocation.shared`, `HandlerContext.shared_cache` (construct a
+  `HandlerContext` without it), the `shared_handlers` parameter of
+  `control_from_framework`, and the three unreferenced `[shared_handlers]`
+  entries in `openssf-baseline.toml`.
 - **BREAKING:** framework TOML `[adapters]` tables and `[defaults]`
   `check_adapter` / `remediation_adapter` are no longer read. A framework
   that still has them loads (unknown top-level tables are accepted), and
@@ -220,42 +357,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BREAKING (Python API only):** unused functions, classes, and modules in
   the core package that no product code called. No behavior change for CLI,
   MCP, or TOML users. Removed import paths:
-  - modules `darnit.context.collection`, `darnit.context.inject`,
-    `darnit.context.detectors`, `darnit.remediation.helpers`, and
-    `darnit.sieve.project_context`, with their `darnit.context` and
-    `darnit.remediation` re-exports;
-  - `darnit.config`: `resolve_file_for_control`,
-    `update_config_after_file_create`, `sync_discovered_file_to_config`
-    (`config.resolver`); `discover_and_create_config` (`config.discovery`);
-    `init_project_config` and `update_project_config` (`config.loader`; the
-    `init_project_config` MCP tool is unchanged); `parse_resource_ref`,
-    `get_path_from_ref`, `create_full_config`, and the `ProjectConfig`
-    methods `is_control_applicable`, `set_type_exclusions`,
-    `get_excluded_controls`, `get_security_contact`, `get_audits`,
-    `get_ci_provider`, `get_contributor_agreement_type` (`config.schema`);
-    `create_framework_config` and `FrameworkConfig.get_controls_by_domain`
-    (`config.framework_schema`); `EffectiveConfig.get_controls_by_domain`
-    (`config.merger`); `load_controls_by_name` and
-    `register_controls_from_config` (`config.control_loader`);
-    `ContextByCategory`, `ContextCategory`, `ExtensionMetadata`,
-    `BaselineExtensionConfig`, `CNCFBaselineExtension`, `ProjectExtensions`,
-    and `CNCFProjectConfig` (`config.context_schema`);
-  - `darnit.context.auto_detect`: `collect_auto_context_with_confidence`,
-    `detect_governance_model`, `detect_project_type`,
-    `detect_has_subprojects`;
-  - `darnit.core`: `PassInfo`, `TemplateInfo`, `register_pass`,
-    `get_template`, `list_handlers`, and the `HandlerRegistry` methods
-    `register_pass`, `get_pass`, `list_passes`, `register_template`,
-    `get_template`, `list_templates`, `discover_templates`, `list_handlers`
-    (`core.handlers`); `ExecutionContext.get_or_run_tool`,
-    `get_cached_result`, `cache_result`, and its `tool_outputs`,
-    `api_responses`, and `cached_results` fields (`core.models`);
-    `file_contains` and `make_result` (`core.utils`);
-  - `darnit.remediation`: `detect_workflow_checks` (`remediation.github`)
-    and `get_context_requirements_for_category`
-    (`remediation.context_validator`);
-  - `darnit.sieve`: `SieveOrchestrator.verify_batch` and
-    `SieveHandlerRegistry.validate_phase`.
+    - modules `darnit.context.collection`, `darnit.context.inject`,
+      `darnit.context.detectors`, `darnit.remediation.helpers`, and
+      `darnit.sieve.project_context`, with their `darnit.context` and
+      `darnit.remediation` re-exports;
+    - `darnit.config`: `resolve_file_for_control`,
+      `update_config_after_file_create`, `sync_discovered_file_to_config`
+      (`config.resolver`); `discover_and_create_config` (`config.discovery`);
+      `init_project_config` and `update_project_config` (`config.loader`; the
+      `init_project_config` MCP tool is unchanged); `parse_resource_ref`,
+      `get_path_from_ref`, `create_full_config`, and the `ProjectConfig`
+      methods `is_control_applicable`, `set_type_exclusions`,
+      `get_excluded_controls`, `get_security_contact`, `get_audits`,
+      `get_ci_provider`, `get_contributor_agreement_type` (`config.schema`);
+      `create_framework_config` and `FrameworkConfig.get_controls_by_domain`
+      (`config.framework_schema`); `EffectiveConfig.get_controls_by_domain`
+      (`config.merger`); `load_controls_by_name` and
+      `register_controls_from_config` (`config.control_loader`);
+      `ContextByCategory`, `ContextCategory`, `ExtensionMetadata`,
+      `BaselineExtensionConfig`, `CNCFBaselineExtension`, `ProjectExtensions`,
+      and `CNCFProjectConfig` (`config.context_schema`);
+    - `darnit.context.auto_detect`: `collect_auto_context_with_confidence`,
+      `detect_governance_model`, `detect_project_type`,
+      `detect_has_subprojects`;
+    - `darnit.core`: `PassInfo`, `TemplateInfo`, `register_pass`,
+      `get_template`, `list_handlers`, and the `HandlerRegistry` methods
+      `register_pass`, `get_pass`, `list_passes`, `register_template`,
+      `get_template`, `list_templates`, `discover_templates`, `list_handlers`
+      (`core.handlers`); `ExecutionContext.get_or_run_tool`,
+      `get_cached_result`, `cache_result`, and its `tool_outputs`,
+      `api_responses`, and `cached_results` fields (`core.models`);
+      `file_contains` and `make_result` (`core.utils`);
+    - `darnit.remediation`: `detect_workflow_checks` (`remediation.github`)
+      and `get_context_requirements_for_category`
+      (`remediation.context_validator`);
+    - `darnit.sieve`: `SieveOrchestrator.verify_batch` and
+      `SieveHandlerRegistry.validate_phase`.
 
 ### Added
 
@@ -287,6 +424,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which is about 1 MB and too large for an MCP client's tool result (#644).
   `summary` rows of a PENDING control now carry `pending.kind`, and a PASS
   candidate's model, reasoning, and number of cited excerpts.
+- `scripts/quickstart.sh`: one-command setup from source. It installs uv and
+  zizmor if they are missing (asking first), installs darnit with the
+  versions pinned in `uv.lock`, runs an OpenSSF Baseline level 1 audit, and
+  offers to register the MCP server with Claude Code.
 - `darnit install --from-source` registers the darnit executable of the
   running installation as the MCP server command. Without it, the entry
   runs the darnit-mcp release on PyPI through `uvx`, even when darnit was
@@ -316,7 +457,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI trust decisions: in CI a repository is trusted only under the opt-in
   `push-default-branch` rule (GitHub Actions, GitLab CI); pull requests,
   merge requests, and unrecognized CI are untrusted. Locally, `--repo
-  HOST/NAMESPACE/NAME` (or an MCP tool's `owner`/`repo`) names the audited
+HOST/NAMESPACE/NAME` (or an MCP tool's `owner`/`repo`) names the audited
   repository; a checkout's own remotes are never trusted. Reports record the
   decision, its reason, and the CI facts used.
 - Assertion outcomes for not-applicable claims from `.project/darnit.yaml`
@@ -399,7 +540,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (an `auto_detect = true` key detected in this run; never persisted),
   `candidate` (a value with an origin that no person confirmed), or
   `unknown`. Only confirmed values and concluded values of `auto_detect =
-  true` keys reach control applicability, compliance, remediation,
+true` keys reach control applicability, compliance, remediation,
   attestations, and the harness; a candidate is shown labelled with its
   origin and never consumed.
 - Context confirmation records: who (`confirmed_by`), when
@@ -467,7 +608,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   under unrelated fields (a bug report template as the security policy) and
   replaced existing references.
 - Exec remediation steps declare `effects = "working_tree"` and `offline =
-  true` to be previewed in a scratch copy of the working tree; other exec
+true` to be previewed in a scratch copy of the working tree; other exec
   steps are labelled "cannot be previewed exactly".
 - `expr_decides` step field: on a handler PASS the step's `expr` alone
   decides, true PASS and false FAIL, within the step's effective set. It is
@@ -489,6 +630,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Composite frameworks now fail to load when `include_controls` names an ID
+  absent from the source framework. The error lists the missing IDs and the
+  source. Update stale IDs in custom framework TOML before loading it (#723).
+
 - OpenSSF Baseline OSPS-AC-02.01 was renamed from `AllowForking` to
   `RestrictCollaboratorPermissions`. It now records the organization's base
   repository permission as evidence and keeps invitation verification manual.
@@ -502,23 +647,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   package `darnit_amber`, framework and MCP server name `amber`,
   `AmberImplementation`, `amber.toml`. Control ids (`RE-*`), handler names
   (`repro_*`) and the `audit_reproducibility` MCP tool are unchanged (#532).
-  Migration:
-  - `darnit-mcp` depends on a transitional `darnit-reproducibility` for this
-    one release: it has no entry points and only pulls in `darnit-amber`, so
-    upgrading `darnit-mcp` replaces the old plugin instead of leaving it
-    installed beside the new one. After upgrading, `pip uninstall
-    darnit-reproducibility`; the next release drops it.
-  - Rename `reproducibility` to `amber` in `darnit audit -f`, `darnit serve
-    --framework`, MCP client configurations (server name and framework
-    argument), and operator configuration: `[plugins].allowed` and
-    `[[compose]] source`.
-  - Python code: `import darnit_amber`; `darnit_reproducibility` re-exports
-    its top-level names with a `DeprecationWarning` for this release
-    (submodules such as `darnit_reproducibility.handlers` are not provided).
-  - Upgrading: `darnit-mcp` pins its components to its own version, so
-    `pip install -U darnit-mcp` moves `darnit-core`, the plugins and the
-    transitional package together; `darnit-amber` and the transitional
-    package pin the same way.
+  Migration: - `darnit-mcp` depends on a transitional `darnit-reproducibility` for this
+  one release: it has no entry points and only pulls in `darnit-amber`, so
+  upgrading `darnit-mcp` replaces the old plugin instead of leaving it
+  installed beside the new one. After upgrading, `pip uninstall
+darnit-reproducibility`; the next release drops it. - Rename `reproducibility` to `amber` in `darnit audit -f`, `darnit serve
+--framework`, MCP client configurations (server name and framework
+  argument), and operator configuration: `[plugins].allowed` and
+  `[[compose]] source`. - Python code: `import darnit_amber`; `darnit_reproducibility` re-exports
+  its top-level names with a `DeprecationWarning` for this release
+  (submodules such as `darnit_reproducibility.handlers` are not provided). - Upgrading: `darnit-mcp` pins its components to its own version, so
+  `pip install -U darnit-mcp` moves `darnit-core`, the plugins and the
+  transitional package together; `darnit-amber` and the transitional
+  package pin the same way.
 - In OpenSSF Baseline assessment attestation predicates, `assessor.name`
   changes from `openssf-baseline-mcp` to `openssf-baseline`, `assessor.uri`
   points to `https://github.com/darnitdevorg/darnit`, `assessor.version`
@@ -625,7 +766,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   confirmation record, including every value written by an earlier darnit
   version, is a candidate (origin `stored_unconfirmed`) and is no longer
   used. Review them with `confirm_project_data(confirm_stored=[...],
-  reject_stored=[...])`.
+reject_stored=[...])`.
 - **BREAKING:** `confirm_project_data` requires `owner` and `repo` for
   context values (they decide where the record is written) and accepts a
   detected candidate only by digest (`accept_candidates={key: digest}`);
@@ -638,7 +779,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the other `csl_*` values) no longer default (the code license used to
   default to MIT). An omitted parameter is taken from confirmed context
   only; otherwise the tool writes nothing and reports `confirmation
-  required: <key>`.
+required: <key>`.
 - **BREAKING:** answers a coding agent submits to an ActionPlan
   `collect_context` step over MCP are used for that run only and are no
   longer saved. Answers a person types into `darnit run` are recorded as
@@ -742,7 +883,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   configuration; `load_effective_config`, `load_effective_config_by_name`,
   `load_controls_from_toml`, and `load_controls_by_name` take no repository
   path, and `load_effective_config_auto(framework_path=None,
-  framework_name=None, *, operator=None)` no longer takes one;
+framework_name=None, *, operator=None)` no longer takes one;
   `EffectiveControl` loses `status`, `status_reason`, `from_user`, and
   `is_applicable()`, and `EffectiveConfig` loses `cache_results`,
   `cache_ttl`, `timeout`, and `get_excluded_controls()`;
@@ -776,7 +917,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `repro_hermetic_build` into a new step type, `repro_witness_attestation`,
   which runs first in RE-02.01 and can conclude only FAIL. It verifies the
   attestations of the successful CI runs for the audited commit (`git
-  rev-parse HEAD`), with a signing policy bound to the repository and that
+rev-parse HEAD`), with a signing policy bound to the repository and that
   commit, instead of the latest run on the default branch. It reads network
   events only from a statement whose predicate type is exactly
   `https://in-toto.io/attestation/runtime-trace/v0.1` (`monitorLog.network`),
@@ -852,6 +993,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   path components against case-exact directory entries, preventing spurious
   matches on lowercase aliases, deduplicating file contents read into
   consultation evidence, and citing exact repository paths (fixes #645).
+- The audit report's "Confirm project context" step reads answers confirmed
+  operator-side for the repository the audit names (#664). Before, it called
+  the pending-context check without the identity, so after every question
+  was answered for an untrusted repository the report still asked for all of
+  them.
 - Control `when` and step `when` now use one evaluator
   (framework-design 5.1.1). A list-valued control `when` such as
   `{ ci_provider = ["github", "gitlab"] }` made the control N/A even when

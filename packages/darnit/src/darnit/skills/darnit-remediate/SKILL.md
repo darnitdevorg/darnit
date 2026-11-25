@@ -4,7 +4,7 @@ description: Apply automated fixes for failing compliance controls. Shows a plan
 compatibility: Requires darnit MCP server running (darnit serve)
 metadata:
   author: kusari-oss
-  version: "2.3"
+  version: "2.4"
 ---
 
 # Compliance Remediation
@@ -28,6 +28,7 @@ Present the plan:
 - **File changes**: every file that will be created or modified
 - **Platform changes**: for each change set, the target (repository or branch), every field as `before -> after`, and its `impact_notes` word for word. A high-impact change (repository visibility, organization settings) is shown on its own, with its impact, never folded into a list
 - **Needs individual approval**: items with `requires_individual_approval: true` (unsafe, cannot be previewed exactly, or high-impact), each with its digest
+- **Needs confirmation**: controls that require unconfirmed project context data (e.g. maintainers, security contact). Ask the person for the keys the preview reports as `needs_confirmation` and record them with `confirm_project_data` before they approve the apply
 - **Manual**: why these can't be auto-fixed, what to do instead
 - **No fix available**: controls without remediation handlers
 
@@ -81,28 +82,34 @@ Read them. The templates are designed to produce correct output — trust them.
 
 **The test for whether a change is justified:** Would a wrong value here cause someone to do the wrong thing or break a CI pipeline? If no, leave it alone.
 
-If any files needed syntax fixes, make a new commit describing the specific fixes. If everything is clean (which is the expected case), say so and move on.
+If any files needed syntax fixes:
+- State plainly that a generated file needing a syntax fix is a template bug.
+- List the files left uncommitted in the working tree and describe the specific fixes for the person to review.
+- Warn that `create_remediation_pr` pushes only what remediation committed: the pull request will not contain these working-tree fixes, and the branch as pushed still carries the unpatched template file. The person must review, commit, and push the fixes to the PR branch after it is opened.
+
+If everything is clean (which is the expected case), say so and move on.
 
 ### 4. Offer PR creation
 
-Ask if the user wants a PR. If yes, call `create_remediation_pr` and display the URL.
+After reporting any uncommitted syntax fixes and template bugs, ask if the user wants a PR. If yes, call `create_remediation_pr` and display the URL.
 
 ### 5. Summary
 
-Show: branch name, controls fixed, files changed, PR URL (if created), and remaining manual items.
+Show: branch name, controls fixed, files changed, any syntax fixes left uncommitted (flagged as template bugs for human review and commit), PR URL (if created), and remaining manual items.
 
 ## Gotchas
 
 - Always show the dry-run plan first. Never apply changes without confirmation.
 - Do NOT call `audit_openssf_baseline` separately — `remediate_audit_findings` handles audit internally.
 - Do NOT call `create_remediation_branch` or `commit_remediation_changes` separately — use the `branch_name` and `auto_commit` params instead.
+- Darnit tools commit only content written directly by remediation. Any manual or agent syntax fixes remain uncommitted in the working tree for the person to review and commit after the PR is opened.
 - If `remediate_audit_findings` fails mid-way, report which files were already changed so the user can review.
 - Unsafe remediations (`safe = false`), steps that cannot be previewed exactly, and high-impact platform changes run only when their own digest is in `approve`. Approving a batch never covers them.
 - The operator's `[remediation]` policy decides how platform changes are made: `prompt` (approve by digest), `manual` (darnit only reports the steps; give them to the person), or `auto` (applied without a digest). The report states the policy in effect. Never try to change it from the repository.
 - `enable_branch_protection` follows the same rules: it previews by default, never lowers existing settings, and applies only with `dry_run: false` and `approve` set to the change-set digest the person approved.
 - Register darnit's MCP server at user scope (`darnit install` does this by default); a repository-scoped `uv run darnit serve` runs the repository's own copy of darnit.
 - Only controls whose not-applicable claim is `honored` are skipped. Controls with a `pending` or `contradicted` claim are remediated like any other failing control. Do not confirm a pending claim to avoid a remediation; confirm one only when the operator explicitly tells you to.
-- If there are unresolved data questions, the remediation tool will block and tell you. Call `get_pending_data` with `owner`, `repo`, and `local_path` and follow the `procedure` in its result, then preview again.
+- If controls have unconfirmed context questions, the preview reports them as `needs_confirmation` while ready controls proceed. Ask the person for the keys reported as `needs_confirmation` and confirm them with `confirm_project_data` before they approve the apply. If every failing control lacks context, the remediation tool blocks and prompts for all needed context.
 - The §3a verification-prompt-block files (today: `THREAT_MODEL.md` / `docs/threatmodel/SUMMARY.md`) are the ONE exception to §3b's "trust the template" stance. Always ask the user before doing a large triage pass on these — don't silently rewrite dozens of findings, and don't silently skip them either. The default "skip enhancement" rule from §3b is wrong for these files.
 
 ## Error handling

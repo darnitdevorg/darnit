@@ -150,7 +150,6 @@ class HandlerContext:
             binds to (framework-design 3.7). Empty when the driver supplies
             none.
         gathered_evidence: Evidence accumulated from previous handlers in this control.
-        shared_cache: Cache for shared handler results (keyed by shared handler name).
         dependency_results: Results from dependency controls (keyed by control ID).
         execution_context: Shared context instance across the entire audit run.
         mode: Feature 043. ``plan`` asks a remediation handler to compute its
@@ -175,7 +174,6 @@ class HandlerContext:
     project_context: dict[str, Any] = field(default_factory=dict)
     usable_project: dict[str, Any] = field(default_factory=dict)
     gathered_evidence: dict[str, Any] = field(default_factory=dict)
-    shared_cache: dict[str, HandlerResult] = field(default_factory=dict)
     dependency_results: dict[str, Any] = field(default_factory=dict)
     execution_context: Any | None = None
     # Feature 031: assigned by the orchestrator's dispatch site when the

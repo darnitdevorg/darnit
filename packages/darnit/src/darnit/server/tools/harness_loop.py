@@ -24,11 +24,32 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+from darnit.config.merger import FrameworkSelectionError, require_registered_framework
 from darnit.core.action_plan import HarnessState, next_action, run_audit_step, submit_result
 from darnit.core.errors import OutOfOrderSubmission, ResultSchemaMismatch
 from darnit.core.logging import get_logger
 
 logger = get_logger("server.tools.harness_loop")
+
+
+def _validated_state(state: dict[str, Any]) -> HarnessState:
+    """Validate a client's ``HarnessState``; its framework must be a registered name.
+
+    Raises ``ValueError`` (contract M2) before anything is loaded or run when
+    the state is malformed or names a framework by path or by an
+    unregistered name (framework-design 14.4).
+    """
+    try:
+        validated_state = HarnessState.model_validate(state)
+    except Exception as exc:
+        # M2: structural validation error surfaces to the client.
+        raise ValueError(f"Invalid HarnessState: {exc}") from exc
+    if validated_state.framework_name is not None:
+        try:
+            require_registered_framework(validated_state.framework_name)
+        except FrameworkSelectionError as exc:
+            raise ValueError(f"Invalid HarnessState: framework_name: {exc}") from exc
+    return validated_state
 
 
 # ---------------------------------------------------------------------------
@@ -52,11 +73,7 @@ async def run_next_action_tool(state: dict[str, Any]) -> dict[str, Any] | None:
             The FastMCP layer surfaces this as an MCP protocol error whose
             message names the offending field.
     """
-    try:
-        validated_state = HarnessState.model_validate(state)
-    except Exception as exc:
-        # M2: structural validation error surfaces to the client.
-        raise ValueError(f"Invalid HarnessState: {exc}") from exc
+    validated_state = _validated_state(state)
 
     plan = next_action(validated_state)
     if plan is None:
@@ -94,10 +111,7 @@ async def submit_action_result_tool(
             (M3 / A3), schema mismatch (M3 / A4). All three are surfaced as
             MCP protocol errors carrying structured detail.
     """
-    try:
-        validated_state = HarnessState.model_validate(state)
-    except Exception as exc:
-        raise ValueError(f"Invalid HarnessState: {exc}") from exc
+    validated_state = _validated_state(state)
 
     expected = next_action(validated_state)
     if expected is not None and expected.step.id == step_id and expected.step.integration == "audit":

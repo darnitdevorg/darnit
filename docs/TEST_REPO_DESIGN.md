@@ -29,7 +29,7 @@ This document describes a **minimal test repository** that intentionally fails a
 1. Run audits and see failures clearly
 2. Implement fixes one-by-one to learn the requirements
 3. Track progress from 0% to 100% compliance
-4. Test the baseline-mcp tooling
+4. Test the darnit tooling
 
 ## Design Philosophy
 
@@ -342,7 +342,7 @@ echo "  audit_openssf_baseline(local_path='$(pwd)')"
 
 ## Tracking Progress
 
-Use the baseline-mcp audit to track progress:
+Use the darnit audit to track progress:
 
 ```python
 # Run audit after each phase

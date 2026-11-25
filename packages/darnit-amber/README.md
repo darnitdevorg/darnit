@@ -3,11 +3,13 @@
 Scientific reproducibility checks plugin for darnit.
 
 Provides five controls across three maturity levels:
+
 - RE-01.01 (L1) DependenciesPinned — checks for lock files
 - RE-01.02 (L1) BuildEnvDeclared — checks for Dockerfile, Nix flake, etc.
 - RE-02.01 (L2) HermeticBuild — scans CI workflows for live network fetches
 - RE-02.02 (L2) ProvenanceExists — checks for sigstore/cosign or SLSA provenance
 - RE-03.01 (L3) BitForBitReproducible — checks for SOURCE_DATE_EPOCH and reprotest
+
 ## What the checks can conclude
 
 Each check reads text and file-presence signals: lock files, environment
@@ -26,7 +28,6 @@ So every check here registers the ceiling `{fail}` (feature 044, FR-010):
 - A control concludes PASS automatically only when its step declares a
   `promotion` backed by a corpus measurement (framework-design 3.0.1, 5.5).
   None ships today.
-
 
 ## Amber runs: record an experiment, verify it, rerun it
 
@@ -110,8 +111,8 @@ report that differs byte for byte but gives the same verdict is not drift.
 
 Nothing leaves the researcher's machine by default except a hash.
 
-| | what it proves | who learns what |
-|---|---|---|
+|         | what it proves                                                                                                                            | who learns what                                                    |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
 | default | the bundle was signed with the researcher's key and existed at the time in the RFC 3161 countersignature (Sigstore's timestamp authority) | the timestamp authority sees a hash of the signature, nothing else |
 
 The default key is generated once, ed25519, under darnit's data directory
@@ -158,15 +159,15 @@ The same information can be given up front as a YAML (or JSON) entry with
 
 ## Fields
 
-| Field | Required | Meaning |
-|---|---|---|
-| `id` | yes | Short name, recorded in the bundle as `corpus_entry` |
-| `artifact.clone`, `artifact.ref` | yes | Git URL and commit; `run` checks out exactly that commit |
-| `environment` | when the experiment needs an image | See below |
-| `run.command` | for an experiment step | Shell (`sh -c`) run inside the checkout under Witness |
-| `run.outputs` | with `run.command` | Files the command writes; their digests go into the bundle |
-| `claims[]` | yes | One per paper claim: `id`, `metric`, `threshold`, `unit`, `source`, `measurement_protocol`, `expected_verdict`, optional `tolerance`, optional `measure` |
-| `expected_verdict` | yes | What the entry author expects overall: `REPRODUCED`, `NOT_REPRODUCED`, `NOT_COMPARABLE` |
+| Field                            | Required                           | Meaning                                                                                                                                                  |
+| -------------------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                             | yes                                | Short name, recorded in the bundle as `corpus_entry`                                                                                                     |
+| `artifact.clone`, `artifact.ref` | yes                                | Git URL and commit; `run` checks out exactly that commit                                                                                                 |
+| `environment`                    | when the experiment needs an image | See below                                                                                                                                                |
+| `run.command`                    | for an experiment step             | Shell (`sh -c`) run inside the checkout under Witness                                                                                                    |
+| `run.outputs`                    | with `run.command`                 | Files the command writes; their digests go into the bundle                                                                                               |
+| `claims[]`                       | yes                                | One per paper claim: `id`, `metric`, `threshold`, `unit`, `source`, `measurement_protocol`, `expected_verdict`, optional `tolerance`, optional `measure` |
+| `expected_verdict`               | yes                                | What the entry author expects overall: `REPRODUCED`, `NOT_REPRODUCED`, `NOT_COMPARABLE`                                                                  |
 
 ## `measure`: reading the number out of the run
 
@@ -177,15 +178,15 @@ With it, darnit reads the value from an output file and compares it with
 
 ```yaml
 claims:
-  - id: figure6a-queries-per-sec
-    threshold: ">= 0"
-    tolerance: 0.5          # optional, absolute, finite and >= 0, for numeric thresholds
-    measure:
-      file: amber-out/doram_timing_report1.txt   # relative to the checkout
-      regex: '^Queries/sec: ([0-9.]+)'           # group 1 is the value, multiline
-      scale: 100                                 # optional multiplier (0.71 -> 71)
-      comparable: false                          # optional: record, do not judge
-      reason: "throughput on different hardware"  # shown with NOT_COMPARABLE
+    - id: figure6a-queries-per-sec
+      threshold: ">= 0"
+      tolerance: 0.5 # optional, absolute, finite and >= 0, for numeric thresholds
+      measure:
+          file: amber-out/doram_timing_report1.txt # relative to the checkout
+          regex: "^Queries/sec: ([0-9.]+)" # group 1 is the value, multiline
+          scale: 100 # optional multiplier (0.71 -> 71)
+          comparable: false # optional: record, do not judge
+          reason: "throughput on different hardware" # shown with NOT_COMPARABLE
 ```
 
 `threshold` is `<op> <value>` with `op` in `==`, `!=`, `<`, `<=`, `>`, `>=`;
@@ -222,12 +223,12 @@ Many experiments only run inside a specific toolchain. Two cases:
 
 ```yaml
 environment:
-  image: "localhost/gigadoram:06cfefb"
-  image_digest: "sha256:60457c90…"
-  containerfile: |
-    FROM docker.io/library/ubuntu:22.04
-    …
-  notes: "emp-tool pinned to 0.2.5; tc needs --cap-add NET_ADMIN"
+    image: "localhost/gigadoram:06cfefb"
+    image_digest: "sha256:60457c90…"
+    containerfile: |
+        FROM docker.io/library/ubuntu:22.04
+        …
+    notes: "emp-tool pinned to 0.2.5; tc needs --cap-add NET_ADMIN"
 ```
 
 Today the image is built by hand from `containerfile` on the machine that
@@ -260,8 +261,8 @@ gives the same verdict is not drift.
 
 ## Example entries
 
-| Entry | Experiment | Verdict | Rerun |
-|---|---|---|---|
-| `usenixsec2024-spf-centralization` | Python script over precomputed data, 3 s | NOT_COMPARABLE (71.3 %, expected) | outputs identical |
-| `usenixsec2023-aeadprotocols` | Tamarin proof in the authors' image, ~1 min | REPRODUCED (`falsified`) | outputs identical |
-| `usenixsec2023-gigadoram` | C++ benchmark in a locally built image, 2 s (10 min build) | NOT_COMPARABLE (126.8 queries/s) | report changed, verdict same, no drift |
+| Entry                              | Experiment                                                 | Verdict                           | Rerun                                  |
+| ---------------------------------- | ---------------------------------------------------------- | --------------------------------- | -------------------------------------- |
+| `usenixsec2024-spf-centralization` | Python script over precomputed data, 3 s                   | NOT_COMPARABLE (71.3 %, expected) | outputs identical                      |
+| `usenixsec2023-aeadprotocols`      | Tamarin proof in the authors' image, ~1 min                | REPRODUCED (`falsified`)          | outputs identical                      |
+| `usenixsec2023-gigadoram`          | C++ benchmark in a locally built image, 2 s (10 min build) | NOT_COMPARABLE (126.8 queries/s)  | report changed, verdict same, no drift |

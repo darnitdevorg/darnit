@@ -39,7 +39,12 @@ class HelloImplementation:
     @property
     def version(self) -> str:
         """Your plugin's version. Independent of the darnit framework version."""
-        return "0.1.0"
+        import importlib.metadata
+
+        try:
+            return importlib.metadata.version("darnit-hello")
+        except importlib.metadata.PackageNotFoundError:
+            return "dev"
 
     @property
     def spec_version(self) -> str:

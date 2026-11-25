@@ -34,7 +34,6 @@ packages/
 │       ├── config/          # Project context configuration
 │       ├── formatters/      # Output formatting (Markdown, JSON, SARIF)
 │       ├── remediation/     # Remediation orchestration
-│       ├── rules/           # SARIF rule definitions (from TOML)
 │       └── threat_model/    # Threat model generation
 │
 └── darnit-testchecks/       # Test implementation (for testing)
@@ -243,7 +242,7 @@ The framework design is governed by the authoritative specification at:
 3. **CI Enforces Sync**: PRs are blocked if:
    - TOML configs don't validate against framework schema
    - Handler names in code don't match those documented in `docs/architecture/framework-design.md`
-   - The SARIF formatter references the catalog (it should read from TOML only)
+   - The SARIF formatter does not read control metadata from the framework TOML (there is no Python rules catalog)
 
 ### Validation Commands
 
@@ -254,9 +253,10 @@ uv run python scripts/validate_sync.py --verbose
 
 ### TOML-First Architecture
 
-All controls are defined in `openssf-baseline.toml`. The `rules/catalog.py` file
-is a deprecated fallback that remains for backward compatibility but is not
-actively used. All new controls must be defined entirely in TOML.
+All controls are defined in `openssf-baseline.toml`, including the metadata
+SARIF output uses (descriptions, severity, help text, `docs_url`). There is no
+Python rules catalog: `rules/catalog.py` was removed. All new controls must be
+defined entirely in TOML.
 
 ## TOML Schema Features
 
@@ -278,7 +278,7 @@ Names by step type (each step type declares its `expression_names`; one with non
 - `gh_api`: `response.status_code`, `response.body` (evaluated by the handler; no headers)
 - `mcp`: `result.*` (evaluated by the handler)
 
-`project.*` holds only usable values (in an audit, confirmed values); reading anything else is an evaluation error.
+`project.*` holds only usable values (confirmed values and values concluded by detection). Audits run framework detection for auto-detectable keys with detectors used in selected verification steps' `when` clauses. Reading a value outside the usable mapping is an evaluation error.
 
 Custom functions: `file_exists(path)` (relative to the audited repository), `json_path(obj, path)`
 
@@ -339,16 +339,15 @@ handler = "my_tool"  # Short name instead of full module path
 
 ### Plugin Security
 
-Plugins support Sigstore verification:
+darnit does not verify plugin signatures; installing a package is the trust decision, and verifying it is the installer's job. Operator configuration restricts which installed plugins load:
 
 ```toml
 # operator configuration (~/.config/darnit/config.toml)
 [plugins]
-allow_unsigned = false
-trusted_publishers = ["https://github.com/kusari-oss"]
+allowed = ["openssf-baseline"]   # entry point names; empty or absent: all installed
 ```
 
-Default trusted publishers: `kusari-oss`, `kusaridev`
+Drivers that read operator configuration (audit, run, harness, serve, MCP tools) never load an entry point left out (no import, no step types), and refuse an audit of its framework. `allow_unsigned` and `trusted_publishers` were removed and fail loading (framework-design.md 6.6, Appendix C).
 
 ## Common Patterns
 

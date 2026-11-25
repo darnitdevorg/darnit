@@ -17,7 +17,7 @@ Name the audited repository on every darnit call, the audit included: `owner` an
 
 ## Workflow
 
-1. Call `get_pending_data` with `local_path` set to the repository root and `owner` and `repo` naming the repository. If the user mentioned a profile, pass it as `profile`. This call writes nothing.
+1. Call `get_pending_data` with `local_path` set to the repository root and `owner` and `repo` naming the confirmed repository (plus `host` when it is not github.com). This call writes nothing.
 
 2. Follow the `procedure` in its result, step by step. It says how to show candidates, how to ask the questions, how to call `confirm_project_data`, when to call `get_pending_data` again, how to review values stored without a confirmation, and what to summarize at the end. Each `confirm_project_data` result names the next call.
 

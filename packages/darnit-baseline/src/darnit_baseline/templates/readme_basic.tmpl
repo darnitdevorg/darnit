@@ -22,12 +22,24 @@ After installation, you can use << REPO >> as follows:
 # (Update this section with actual commands for your project)
 ```
 
-See the [documentation](docs/) directory for detailed guides.
+<% if scan.docs_link %>
+See the << scan.docs_link >> directory for detailed guides.
+<% else %>
+TODO: No docs/ directory was found. Add documentation before linking to that directory.
+<% endif %>
 
 ## Contributing
 
-Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to submit changes, report issues, and set up a development environment.
+<% if scan.contributing_link %>
+Contributions are welcome. Please read << scan.contributing_link >> for guidelines on how to submit changes, report issues, and set up a development environment.
+<% else %>
+TODO: No CONTRIBUTING.md was found. Add a contributing guide before linking to it.
+<% endif %>
 
 ## License
 
-This project is licensed under the terms specified in [LICENSE](LICENSE).
+<% if scan.license_link %>
+This project is licensed under the terms specified in << scan.license_link >>.
+<% else %>
+TODO: No LICENSE file was found. Add a license before linking to it.
+<% endif %>

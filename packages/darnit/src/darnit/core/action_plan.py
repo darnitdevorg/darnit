@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from darnit.core.authority import Authority
 from darnit.core.context_validation import validate_context_answer
@@ -142,6 +142,16 @@ class HarnessState(BaseModel):
     error: str | None = None
 
     model_config = ConfigDict(extra="forbid")
+
+    @field_validator("framework_name")
+    @classmethod
+    def _framework_is_a_name(cls, value: str | None) -> str | None:
+        """A framework is selected by registered name, never by a path (framework-design 14.4)."""
+        if value is None:
+            return None
+        from darnit.config.merger import require_framework_name
+
+        return require_framework_name(value)
 
     # -----------------------------------------------------------------
     # Compat conversions with darnit.agent.state.AuditState

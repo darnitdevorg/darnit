@@ -1,0 +1,405 @@
+[
+  {
+    "description": "Run reproducibility checks",
+    "inputSchema": {
+      "properties": {
+        "host": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Host"
+        },
+        "level": {
+          "default": 3,
+          "title": "Level",
+          "type": "integer"
+        },
+        "local_path": {
+          "default": ".",
+          "title": "Local Path",
+          "type": "string"
+        },
+        "output_format": {
+          "default": "markdown",
+          "title": "Output Format",
+          "type": "string"
+        },
+        "owner": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Owner"
+        },
+        "repo": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Repo"
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tags"
+        }
+      },
+      "title": "builtin_auditArguments",
+      "type": "object"
+    },
+    "name": "audit_reproducibility",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "builtin_auditOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Confirm stored PASS candidates (PENDING, pending.kind = confirmation) for the named repository. Call ONLY on the operator's explicit instruction; never on your own judgment. Confirms only a candidate for the current evidence; the confirmation lapses on expiry or when the judged content or rubric changes.",
+    "inputSchema": {
+      "properties": {
+        "control_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Control Ids",
+          "type": "array"
+        },
+        "host": {
+          "default": "github.com",
+          "title": "Host",
+          "type": "string"
+        },
+        "local_path": {
+          "default": ".",
+          "title": "Local Path",
+          "type": "string"
+        },
+        "owner": {
+          "title": "Owner",
+          "type": "string"
+        },
+        "repo": {
+          "title": "Repo",
+          "type": "string"
+        }
+      },
+      "required": [
+        "control_ids",
+        "owner",
+        "repo"
+      ],
+      "title": "confirm_pass_candidateArguments",
+      "type": "object"
+    },
+    "name": "confirm_pass_candidate",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "confirm_pass_candidateOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Get what you need to judge the controls awaiting a judgment (PENDING, pending.kind = llm_judgment): each control's prompt, analysis hints, and the keys of its files in a shared files map holding exactly the content submit_judgment checks citations against. Pages stay under 40,000 bytes; call again with control_ids set to 'remaining' until it is empty. Controls with a stored PASS candidate are left out unless include_judged is true. Records nothing.",
+    "inputSchema": {
+      "properties": {
+        "control_ids": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Control Ids"
+        },
+        "host": {
+          "default": "github.com",
+          "title": "Host",
+          "type": "string"
+        },
+        "include_judged": {
+          "default": false,
+          "title": "Include Judged",
+          "type": "boolean"
+        },
+        "local_path": {
+          "default": ".",
+          "title": "Local Path",
+          "type": "string"
+        },
+        "owner": {
+          "title": "Owner",
+          "type": "string"
+        },
+        "repo": {
+          "title": "Repo",
+          "type": "string"
+        }
+      },
+      "required": [
+        "owner",
+        "repo"
+      ],
+      "title": "get_judgment_requestsArguments",
+      "type": "object"
+    },
+    "name": "get_judgment_requests"
+  },
+  {
+    "description": "Get the PASS candidates awaiting the operator's confirmation (PENDING, pending.kind = confirmation) that match the current evidence: each control's title, requirement, files, the judgment's reasoning, and its cited passages, and, with run_id, whether remediation wrote the document. Follow the returned procedure: show every candidate, ask about each, and pass to confirm_pass_candidate only the controls the operator confirms. Records nothing.",
+    "inputSchema": {
+      "properties": {
+        "control_ids": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Control Ids"
+        },
+        "host": {
+          "default": "github.com",
+          "title": "Host",
+          "type": "string"
+        },
+        "local_path": {
+          "default": ".",
+          "title": "Local Path",
+          "type": "string"
+        },
+        "owner": {
+          "title": "Owner",
+          "type": "string"
+        },
+        "repo": {
+          "title": "Repo",
+          "type": "string"
+        },
+        "run_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Run Id"
+        }
+      },
+      "required": [
+        "owner",
+        "repo"
+      ],
+      "title": "get_pass_candidatesArguments",
+      "type": "object"
+    },
+    "name": "get_pass_candidates"
+  },
+  {
+    "description": "Return the next ActionPlan step for a HarnessState, or None if the audit/collect/remediate loop has terminated. Pure function; the server retains no per-run state (per Q1 clarification).",
+    "inputSchema": {
+      "properties": {
+        "state": {
+          "additionalProperties": true,
+          "title": "State",
+          "type": "object"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "title": "run_next_action_toolArguments",
+      "type": "object"
+    },
+    "name": "run_next_action",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Result"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "run_next_action_toolOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Apply the result of an executed step to a HarnessState and return the new state. For the audit step pass result={}: the server runs the audit and records only its own results; submit model judgments with submit_judgment. Raises OutOfOrderSubmission when step_id doesn't match the expected next step, and ResultSchemaMismatch when the result violates a declared result_schema. Context answers are used for this run only; nothing is written to the repository.",
+    "inputSchema": {
+      "properties": {
+        "result": {
+          "additionalProperties": true,
+          "title": "Result",
+          "type": "object"
+        },
+        "state": {
+          "additionalProperties": true,
+          "title": "State",
+          "type": "object"
+        },
+        "step_id": {
+          "title": "Step Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "state",
+        "step_id",
+        "result"
+      ],
+      "title": "submit_action_result_toolArguments",
+      "type": "object"
+    },
+    "name": "submit_action_result",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "submit_action_result_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Submit a judgment for a control awaiting one (PENDING, pending.kind = llm_judgment). Never makes a control PASS: a 'pass' verdict whose cited_evidence excerpts all appear verbatim in the files the control's model step read becomes a PASS candidate, non-compliant until the operator confirms it; a 'fail' verdict is a suggestive FAIL finding; unverifiable citations are rejected. Never state your verdict as the audit result.",
+    "inputSchema": {
+      "properties": {
+        "cited_evidence": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Cited Evidence",
+          "type": "array"
+        },
+        "control_id": {
+          "title": "Control Id",
+          "type": "string"
+        },
+        "host": {
+          "default": "github.com",
+          "title": "Host",
+          "type": "string"
+        },
+        "local_path": {
+          "default": ".",
+          "title": "Local Path",
+          "type": "string"
+        },
+        "model": {
+          "title": "Model",
+          "type": "string"
+        },
+        "model_version": {
+          "title": "Model Version",
+          "type": "string"
+        },
+        "owner": {
+          "title": "Owner",
+          "type": "string"
+        },
+        "reasoning": {
+          "title": "Reasoning",
+          "type": "string"
+        },
+        "repo": {
+          "title": "Repo",
+          "type": "string"
+        },
+        "verdict": {
+          "enum": [
+            "pass",
+            "fail"
+          ],
+          "title": "Verdict",
+          "type": "string"
+        }
+      },
+      "required": [
+        "control_id",
+        "verdict",
+        "reasoning",
+        "cited_evidence",
+        "model",
+        "model_version",
+        "owner",
+        "repo"
+      ],
+      "title": "submit_judgmentArguments",
+      "type": "object"
+    },
+    "name": "submit_judgment",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "submit_judgmentDictOutput",
+      "type": "object"
+    }
+  }
+]

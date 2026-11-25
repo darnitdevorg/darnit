@@ -144,6 +144,19 @@ class TestPreview:
 
         assert first.plan[0].digest == second.plan[0].digest
 
+    def test_preview_with_user_changes_marks_action_none_and_reports_conflict(self, repo: Path) -> None:
+        (repo / "a.txt").write_text("old\nmine\n", encoding="utf-8")
+
+        result = _executor(repo).execute("T-01", _previewable(FIX), dry_run=True)
+
+        assert result.success is False
+        assert result.file_changes == [FileChange(path="a.txt", action="none", reason="user_changes_present")]
+        assert "a.txt" in result.details["handlers"][0]["message"]
+        assert result.details["handlers"][0]["status"] == "error"
+        [item] = result.plan
+        assert item.previewable is True
+        assert item.file_changes == [FileChange(path="a.txt", action="none", reason="user_changes_present")]
+
 
 THROUGH_LINK = """
 from pathlib import Path
@@ -272,6 +285,7 @@ class TestApply:
     def test_previewed_path_with_user_changes_is_not_run(self, repo: Path) -> None:
         (repo / "a.txt").write_text("old\nmine\n", encoding="utf-8")
 
+        preview = _executor(repo).execute("T-01", _previewable(FIX), dry_run=True)
         result = _executor(repo).execute("T-01", _previewable(FIX), dry_run=False)
 
         assert (repo / "a.txt").read_text(encoding="utf-8") == "old\nmine\n"
@@ -279,6 +293,9 @@ class TestApply:
         assert result.success is False
         assert FileChange(path="a.txt", action="none", reason="user_changes_present") in result.file_changes
         assert "a.txt" in result.details["handlers"][0]["message"]
+        assert [(c.path, c.action, c.reason) for c in preview.file_changes] == [
+            (c.path, c.action, c.reason) for c in result.file_changes
+        ]
 
     def test_changed_file_with_user_changes_is_a_conflict_and_nothing_is_recorded(self, repo: Path) -> None:
         (repo / "d.txt").write_text("committed\nmine\n", encoding="utf-8")

@@ -1,6 +1,303 @@
 {
   "wtf-frontend": {
-    "pass_after": 18,
-    "pass_before": 17
+    "controls": {
+      "OSPS-AC-01.01": {
+        "after": "ERROR",
+        "before": "ERROR"
+      },
+      "OSPS-AC-02.01": {
+        "after": "ERROR",
+        "before": "ERROR"
+      },
+      "OSPS-AC-03.01": {
+        "after": "ERROR",
+        "before": "ERROR"
+      },
+      "OSPS-AC-03.02": {
+        "after": "ERROR",
+        "before": "ERROR"
+      },
+      "OSPS-AC-04.01": {
+        "after": "ERROR",
+        "before": "ERROR"
+      },
+      "OSPS-AC-04.02": {
+        "after": "PASS",
+        "before": "PASS"
+      },
+      "OSPS-BR-01.01": {
+        "after": "PASS",
+        "before": "FAIL",
+        "outcome": "fixed"
+      },
+      "OSPS-BR-01.02": {
+        "after": "WARN",
+        "before": "WARN"
+      },
+      "OSPS-BR-01.03": {
+        "after": "WARN",
+        "before": "WARN"
+      },
+      "OSPS-BR-01.04": {
+        "after": "WARN",
+        "before": "WARN"
+      },
+      "OSPS-BR-02.01": {
+        "after": "ERROR",
+        "before": "ERROR"
+      },
+      "OSPS-BR-02.02": {
+        "after": "ERROR",
+        "before": "ERROR"
+      },
+      "OSPS-BR-03.01": {
+        "after": "ERROR",
+        "before": "ERROR"
+      },
+      "OSPS-BR-03.02": {
+        "after": "WARN",
+        "before": "WARN"
+      },
+      "OSPS-BR-04.01": {
+        "after": "ERROR",
+        "before": "ERROR"
+      },
+      "OSPS-BR-05.01": {
+        "after": "WARN",
+        "before": "WARN"
+      },
+      "OSPS-BR-06.01": {
+        "after": "WARN",
+        "before": "WARN"
+      },
+      "OSPS-BR-07.01": {
+        "after": "WARN",
+        "before": "WARN"
+      },
+      "OSPS-BR-07.02": {
+        "after": "PENDING",
+        "before": "PENDING"
+      },
+      "OSPS-DO-01.01": {
+        "after": "PENDING",
+        "before": "PENDING"
+      },
+      "OSPS-DO-02.01": {
+        "after": "PENDING",
+        "before": "PENDING"
+      },
+      "OSPS-DO-03.01": {
+        "after": "PENDING",
+        "before": "FAIL",
+        "outcome": "changed_not_passing"
+      },
+      "OSPS-DO-03.02": {
+        "after": "PENDING",
+        "before": "FAIL",
+        "outcome": "changed_not_passing"
+      },
+      "OSPS-DO-04.01": {
+        "after": "PENDING",
+        "before": "FAIL",
+        "outcome": "unchanged"
+      },
+      "OSPS-DO-05.01": {
+        "after": "PENDING",
+        "before": "FAIL",
+        "outcome": "unchanged"
+      },
+      "OSPS-DO-06.01": {
+        "after": "PENDING",
+        "before": "FAIL",
+        "outcome": "changed_not_passing"
+      },
+      "OSPS-DO-07.01": {
+        "after": "PENDING",
+        "before": "PENDING"
+      },
+      "OSPS-GV-01.01": {
+        "after": "PENDING",
+        "before": "FAIL",
+        "outcome": "changed_not_passing"
+      },
+      "OSPS-GV-01.02": {
+        "after": "PENDING",
+        "before": "PENDING"
+      },
+      "OSPS-GV-02.01": {
+        "after": "ERROR",
+        "before": "ERROR"
+      },
+      "OSPS-GV-03.01": {
+        "after": "PENDING",
+        "before": "FAIL",
+        "outcome": "changed_not_passing"
+      },
+      "OSPS-GV-03.02": {
+        "after": "PENDING",
+        "before": "PENDING"
+      },
+      "OSPS-GV-04.01": {
+        "after": "PENDING",
+        "before": "FAIL",
+        "outcome": "changed_not_passing"
+      },
+      "OSPS-LE-01.01": {
+        "after": "WARN",
+        "before": "WARN"
+      },
+      "OSPS-LE-02.01": {
+        "after": "ERROR",
+        "before": "ERROR"
+      },
+      "OSPS-LE-02.02": {
+        "after": "ERROR",
+        "before": "ERROR"
+      },
+      "OSPS-LE-03.01": {
+        "after": "PASS",
+        "before": "PASS"
+      },
+      "OSPS-LE-03.02": {
+        "after": "PASS",
+        "before": "PASS"
+      },
+      "OSPS-QA-01.01": {
+        "after": "ERROR",
+        "before": "ERROR"
+      },
+      "OSPS-QA-01.02": {
+        "after": "ERROR",
+        "before": "ERROR"
+      },
+      "OSPS-QA-02.01": {
+        "after": "PASS",
+        "before": "PASS"
+      },
+      "OSPS-QA-02.02": {
+        "after": "N/A",
+        "before": "WARN"
+      },
+      "OSPS-QA-03.01": {
+        "after": "ERROR",
+        "before": "ERROR"
+      },
+      "OSPS-QA-04.01": {
+        "after": "N/A",
+        "before": "PENDING"
+      },
+      "OSPS-QA-04.02": {
+        "after": "N/A",
+        "before": "WARN"
+      },
+      "OSPS-QA-05.01": {
+        "after": "PASS",
+        "before": "PASS"
+      },
+      "OSPS-QA-05.02": {
+        "after": "PASS",
+        "before": "PASS"
+      },
+      "OSPS-QA-06.01": {
+        "after": "WARN",
+        "before": "WARN"
+      },
+      "OSPS-QA-06.02": {
+        "after": "PENDING",
+        "before": "FAIL",
+        "outcome": "changed_not_passing"
+      },
+      "OSPS-QA-06.03": {
+        "after": "PENDING",
+        "before": "PENDING"
+      },
+      "OSPS-QA-07.01": {
+        "after": "ERROR",
+        "before": "ERROR"
+      },
+      "OSPS-SA-01.01": {
+        "after": "PENDING",
+        "before": "FAIL",
+        "outcome": "changed_not_passing"
+      },
+      "OSPS-SA-02.01": {
+        "after": "PENDING",
+        "before": "PENDING"
+      },
+      "OSPS-SA-03.01": {
+        "after": "PENDING",
+        "before": "PENDING"
+      },
+      "OSPS-SA-03.02": {
+        "after": "PENDING",
+        "before": "FAIL",
+        "outcome": "changed_not_passing"
+      },
+      "OSPS-VM-01.01": {
+        "after": "PENDING",
+        "before": "PENDING"
+      },
+      "OSPS-VM-02.01": {
+        "after": "PENDING",
+        "before": "FAIL",
+        "outcome": "changed_not_passing"
+      },
+      "OSPS-VM-03.01": {
+        "after": "ERROR",
+        "before": "ERROR"
+      },
+      "OSPS-VM-04.01": {
+        "after": "ERROR",
+        "before": "ERROR"
+      },
+      "OSPS-VM-04.02": {
+        "after": "PENDING",
+        "before": "PENDING"
+      },
+      "OSPS-VM-05.01": {
+        "after": "PENDING",
+        "before": "PENDING"
+      },
+      "OSPS-VM-05.02": {
+        "after": "PENDING",
+        "before": "PENDING"
+      },
+      "OSPS-VM-05.03": {
+        "after": "WARN",
+        "before": "FAIL",
+        "outcome": "changed_not_passing"
+      },
+      "OSPS-VM-06.01": {
+        "after": "PENDING",
+        "before": "PENDING"
+      },
+      "OSPS-VM-06.02": {
+        "after": "WARN",
+        "before": "WARN"
+      }
+    },
+    "files": [
+      ".github/dependabot.yml",
+      ".github/workflows/OSPS-AC-03.01-check-branch-protection.yaml",
+      ".github/workflows/OSPS-access-control.yaml",
+      ".github/workflows/OSPS-summary-report.yaml",
+      ".github/workflows/OSPS-vulnerability-management.yaml",
+      ".github/workflows/deploy-to-pages.yaml",
+      ".project/darnit.yaml",
+      ".project/project.yaml",
+      "ARCHITECTURE.md",
+      "CODEOWNERS",
+      "CONTRIBUTING.md",
+      "GOVERNANCE.md",
+      "SECURITY.md",
+      "SUPPORT.md",
+      "docs/DEPENDENCIES.md",
+      "docs/RELEASE-VERIFICATION.md",
+      "docs/TESTING.md",
+      "docs/threatmodel/SUMMARY.md",
+      "docs/threatmodel/data-flow.md",
+      "docs/threatmodel/raw-findings.json"
+    ],
+    "zizmor": "1.32.0"
   }
 }

@@ -369,6 +369,14 @@ detect = [
     { handler = "file_exists", files = [".github"], value_if_pass = "github" },
 ]
 
+# Confirmed values take precedence over detection under the context trust model.
+[context.github_owner_type]
+prompt = "What type of account owns the GitHub repository?"
+type = "enum"
+values = ["User", "Organization"]
+auto_detect = true
+detect = [{ handler = "github_repository_owner_type" }]
+
 [context.license_type]
 type = "enum"
 prompt = "Which license should darnit use when it creates a LICENSE file?"
@@ -386,24 +394,6 @@ presentation_hint = "[mit/apache-2.0/bsd-3-clause/other]"
 # (collect_auto_context) without prompting. It does NOT need a TOML
 # [context.*] definition because it never goes through get_pending_data /
 # confirm_project_data.
-
-# =============================================================================
-# Shared Handlers (cached across controls within a single audit run)
-# =============================================================================
-
-# gh_api (feature 041): a referencing step declares fail_on_status and
-# concludes itself; `gh api` exit 1 is never read as FAIL.
-[shared_handlers.branch_protection_api]
-handler = "gh_api"
-endpoint = "/repos/$OWNER/$REPO/branches/$BRANCH/protection"
-
-[shared_handlers.repo_info_api]
-handler = "gh_api"
-endpoint = "/repos/$OWNER/$REPO"
-
-[shared_handlers.release_list_api]
-handler = "gh_api"
-endpoint = "/repos/$OWNER/$REPO/releases?per_page=5"
 
 # =============================================================================
 # Level 1 Controls - Access Control (AC)
@@ -443,21 +433,25 @@ enforcement when the repository sits inside an organization.
 
 location_hint = ".github/settings.yml"
 
-# gh_api (feature 041): 404 (a user, not an org) and 401/403 are ERROR,
-# never FAIL. No has() guard: the field is only visible to org owners, so
-# an absent field is an evaluation ERROR (unmeasured), not a FAIL.
+# A confirmed or detected user owner skips the organization lookup.
+# If detection fails, the missing key leaves this step eligible, preserving
+# the API error for 404/401/403. No has() guard: only org owners can read
+# the 2FA requirement, and a hidden field must surface an evaluation error.
 [[controls."OSPS-AC-01.01".passes]]
+when = { github_owner_type = "Organization" }
 handler = "gh_api"
 endpoint = "/orgs/$OWNER"
 expr = 'response.body.two_factor_requirement_enabled == true'
 
-# Evidence only: /user describes the account running the audit, not the
-# project. It also runs when an org hides its 2FA field from this token,
-# where concluding PASS from the auditor's own 2FA would be a false PASS.
-# Requires `gh auth refresh -s read:user` to see the field. Only the fields
-# the check reads are kept, so the auditor's profile never reaches reports
-# or attestations (feature 044).
+# /user describes the signed-in auditor, who may not be the repository owner.
+# Keep concludes = [] so the auditor's MFA cannot produce a PASS (feature 041).
+# The MFA field may be hidden without read:user. A missing field is unreadable and produces an
+# evaluation error. With GitHub CLI, use
+# gh auth refresh -s read:user to request that scope.
+# Keep evidence_fields limited to login and MFA status so unrelated profile
+# data stays out of audit reports and attestations (feature 044).
 [[controls."OSPS-AC-01.01".passes]]
+when = { github_owner_type = "User" }
 handler = "gh_api"
 endpoint = "/user"
 expr = 'response.body.two_factor_authentication == true'
@@ -465,11 +459,16 @@ evidence_fields = ["login", "two_factor_authentication"]
 concludes = []
 
 [[controls."OSPS-AC-01.01".passes]]
+when = { github_owner_type = "Organization" }
+handler = "manual"
+steps = ["In Organization Settings → Authentication security, verify that MFA is required."]
+
+[[controls."OSPS-AC-01.01".passes]]
+when = { github_owner_type = "User" }
 handler = "manual"
 steps = [
-    "Navigate to Organization Settings → Security",
-    "Verify 'Require two-factor authentication' is enabled",
-    "(For user-owned repos) Verify the maintainer has 2FA enabled on their account: Settings → Password and authentication",
+    "This repository is user-owned. Verify that the owner has MFA enabled under GitHub Settings → Password and authentication.",
+    "If the signed-in account's MFA field is unavailable, check the setting directly or grant gh the read:user scope.",
 ]
 
 # Manual under every remediation policy (feature 043): GitHub offers no API
@@ -1359,7 +1358,6 @@ help_md = """Create a guide for reporting bugs and defects.
 """
 
 [controls."OSPS-DO-02.01".locator]
-project_path = "security.policy"
 discover = [
   ".github/ISSUE_TEMPLATE/bug*.md",
   ".github/ISSUE_TEMPLATE/bug*.yml",
@@ -1461,7 +1459,7 @@ look_for_urls = false
 [[controls."OSPS-DO-06.01".passes]]
 handler = "pattern"
 fail_on_miss = true  # missing from every file listed: FAIL, so remediation plans it (#665)
-files = ["README.md", "README.rst", "README.txt", "README", "CONTRIBUTING.md", "docs/dependencies.md", "docs/DEPENDENCIES.md", "DEPENDENCIES.md"]
+files = ["README.*", "README", ".github/README.*", "docs/README.*", "CONTRIBUTING.*", ".github/CONTRIBUTING.*", "docs/CONTRIBUTING.*", "DEPENDENCIES.*", "docs/dependencies.*", "docs/DEPENDENCIES.*", "docs/dependency-policy.*"]
 
 [controls."OSPS-DO-06.01".passes.pattern.patterns]
 dependency_docs = "(dependenc|package|library).*(select|obtain|track|manage|update|policy)"
@@ -2097,6 +2095,10 @@ steps = [
 name = "DependencyManifest"
 description = "Project has dependency manifest files"
 tags = { level = 1, domain = "QA", quality = true, dependencies = true }
+# The requirement applies only when the project's package management system
+# supports a dependency list. Skipped (N/A) for script-only projects such as
+# shell tools; when darnit cannot tell, the key is absent and the control runs.
+when = { package_manager_support = "supported" }
 
 docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-QA-02.01"
 location_hint = "package.json"
@@ -3347,10 +3349,10 @@ help_md = """Document testing process.
 [[controls."OSPS-QA-06.02".passes]]
 handler = "pattern"
 fail_on_miss = true  # missing from every file listed: FAIL, so remediation plans it (#665)
-files = ["README.md", "README.rst", "README.txt", "README", "CONTRIBUTING.md", "docs/testing.md", "docs/TESTING.md"]
+files = ["README.*", "README", ".github/README.*", "docs/README.*", "CONTRIBUTING.*", ".github/CONTRIBUTING.*", "docs/CONTRIBUTING.*", "docs/testing.*", "docs/TESTING.*"]
 
 [controls."OSPS-QA-06.02".passes.pattern.patterns]
-test_docs = "(run.*test|test.*instruction|how to test)"
+test_docs = "(run.*test|test.*run|test.*instruction|how to test)"
 
 [[controls."OSPS-QA-06.02".passes]]
 handler = "llm_eval"
@@ -3997,7 +3999,7 @@ fail_on_miss = true  # missing from every file listed: FAIL, so remediation plan
 # rst/txt/no-ext README variants added so this pass can PASS/FAIL
 # deterministically on projects that don't ship .md-based READMEs
 # (Python/Sphinx projects like tqdm surfaced the gap; see issue #402).
-files = ["SECURITY.md", "README.md", "README.rst", "README.txt", "README", "docs/releases.md", "CONTRIBUTING.md", "docs/RELEASE-VERIFICATION.md"]
+files = ["SECURITY.*", ".github/SECURITY.*", "docs/SECURITY.*", "README.*", "README", ".github/README.*", "docs/README.*", "CONTRIBUTING.*", ".github/CONTRIBUTING.*", "docs/CONTRIBUTING.*", "docs/releases.*", "docs/RELEASE-VERIFICATION.*"]
 
 [controls."OSPS-DO-03.02".passes.pattern.patterns]
 verify_author = "(verify|verif|signature|sign|GPG|Sigstore).*(author|release|identity)"
@@ -4011,7 +4013,7 @@ keyserver references, or other cryptographic identity verification methods.
 A general mention of 'signed releases' without verification instructions is insufficient."""
 # Issue #402: mirror the sibling pattern's file list. Adds README.rst
 # so llm_eval sees real content on rst-based repos.
-files_to_include = ["SECURITY.md", "README.md", "README.rst", "docs/releases.md", "CONTRIBUTING.md"]
+files_to_include = ["$RESOLVED_FILES"]
 confidence_threshold = 0.7
 analysis_hints = [
     "Look for specific verification commands or tools (gpg --verify, cosign verify)",
@@ -4055,7 +4057,7 @@ help_md = """Document support policy.
 handler = "pattern"
 fail_on_miss = true  # missing from every file listed: FAIL, so remediation plans it (#665)
 # rst/txt/no-ext README variants added (see #402 sibling change).
-files = ["SUPPORT.md", "SECURITY.md", "README.md", "README.rst", "README.txt", "README", "docs/support.md"]
+files = ["SUPPORT.*", ".github/SUPPORT.*", "docs/SUPPORT.*", "SECURITY.*", ".github/SECURITY.*", "docs/SECURITY.*", "README.*", "README", ".github/README.*", "docs/README.*", "docs/support.*"]
 
 [controls."OSPS-DO-04.01".passes.pattern.patterns]
 support_scope = "(support.*(scope|duration|period|timeline)|version.*(support|maintenance))"
@@ -4067,7 +4069,7 @@ prompt = """Evaluate whether this document defines the scope and expected durati
 Look for: which versions are supported, how long support lasts, what kind of support
 is provided (security fixes, bug fixes, feature development), and maintenance windows."""
 # Issue #402: mirror the sibling pattern's file list + rst variant.
-files_to_include = ["SUPPORT.md", "SECURITY.md", "README.md", "README.rst", "docs/support.md"]
+files_to_include = ["$RESOLVED_FILES"]
 confidence_threshold = 0.7
 analysis_hints = [
     "Look for version support matrices or timelines",
@@ -4121,7 +4123,7 @@ help_md = """Document end-of-life policy.
 handler = "pattern"
 fail_on_miss = true  # missing from every file listed: FAIL, so remediation plans it (#665)
 # rst/txt/no-ext README variants added (see #402 sibling change).
-files = ["SUPPORT.md", "SECURITY.md", "README.md", "README.rst", "README.txt", "README", "CONTRIBUTING.md"]
+files = ["SUPPORT.*", ".github/SUPPORT.*", "docs/SUPPORT.*", "SECURITY.*", ".github/SECURITY.*", "docs/SECURITY.*", "README.*", "README", ".github/README.*", "docs/README.*", "CONTRIBUTING.*", ".github/CONTRIBUTING.*", "docs/CONTRIBUTING.*"]
 
 [controls."OSPS-DO-05.01".passes.pattern.patterns]
 eol_policy = "(end.of.(life|support)|EOL|deprecat|sunset)"
@@ -4133,7 +4135,7 @@ prompt = """Evaluate whether this document describes the end-of-support policy a
 Look for: deprecation timelines, sunset procedures, migration guidance,
 end-of-life announcements, or version retirement policies."""
 # Issue #402: mirror the sibling pattern's file list + rst variant.
-files_to_include = ["SUPPORT.md", "SECURITY.md", "README.md", "README.rst", "CONTRIBUTING.md"]
+files_to_include = ["$RESOLVED_FILES"]
 confidence_threshold = 0.7
 analysis_hints = [
     "Look for explicit deprecation timelines or sunset dates",
@@ -4277,7 +4279,7 @@ handler = "pattern"
 fail_on_miss = true  # missing from every file listed: FAIL, so remediation plans it (#665)
 # rst variants added; ARCHITECTURE/DESIGN commonly live as .rst
 # in Sphinx-based Python projects.
-files = ["ARCHITECTURE.md", "ARCHITECTURE.rst", "docs/ARCHITECTURE.md", "docs/ARCHITECTURE.rst", "docs/architecture.md", "docs/architecture.rst", "docs/design.md", "docs/design.rst", "DESIGN.md", "DESIGN.rst", "README.md", "README.rst", "README.txt", "README"]
+files = ["ARCHITECTURE.*", "docs/ARCHITECTURE.*", "docs/architecture.*", "docs/design.*", "DESIGN.*", "README.*", "README", ".github/README.*", "docs/README.*"]
 pass_if_any = true
 
 [controls."OSPS-SA-01.01".passes.pattern.patterns]
@@ -4538,57 +4540,9 @@ safe = true
 [[controls."OSPS-SA-03.02".remediation.handlers]]
 handler = "generate_threat_model"
 path = "docs/threatmodel/SUMMARY.md"
+project_reference = "security.threat_model"
 template = "threat_model_basic"
 overwrite = false
-
-[controls."OSPS-SA-03.02".remediation.project_update]
-set = { "security.threat_model.path" = "docs/threatmodel/SUMMARY.md" }
-
-# =============================================================================
-# RFC-0001 Stage 1 Reference Control (feature 025 T044)
-# =============================================================================
-# STAGE1-REF-SECURITY-01 exercises the full Check/Collect/Remediate flow
-# with all three authority levels: dispositive file_exists, suggestive
-# llm_extract, asserted manual confirmation. See
-# specs/025-rfc0001-stage1/research.md R5 for the design rationale.
-#
-# Kept as a distinct STAGE1-REF-* id (rather than adapting an existing
-# OSPS-* control) so the Stage 1 acceptance gate is decoupled from
-# baseline evolution and can be removed cleanly if Stage 2 replaces it.
-
-[controls."STAGE1-REF-SECURITY-01"]
-name = "SecurityPolicyReference"
-level = 1
-domain = "VM"
-description = "RFC-0001 Stage 1 reference control: SECURITY.md discovery + LLM-suggested contact + confirmation"
-tags = { level = 1, domain = "VM", "stage1-ref" = true }
-
-# Dispositive file_exists FIRST so a repo with SECURITY.md concludes PASS
-# without ever calling the LLM. Under the harness's `stop_on_llm=True`
-# semantics, an ll m_extract-first ordering returns PENDING_LLM and the
-# sieve never continues to file_exists -- the control lands on WARN,
-# never PASS. Reviewer flagged this on PR #365 as a level-1 control
-# that could never PASS.
-#
-# NOTE: this ordering sacrifices the "suggestive proposes a candidate
-# contact even when file_exists concludes FAIL" property. A future
-# feature can add a "suggestive-runs-after-termination" semantic to the
-# orchestrator so both properties hold; documented for follow-up.
-[[controls."STAGE1-REF-SECURITY-01".passes]]
-handler = "file_exists"
-files = [
-    "SECURITY.md", "security.md",
-    ".github/SECURITY.md", ".github/security.md",
-    "docs/SECURITY.md", "docs/security.md",
-]
-authority = "dispositive"
-
-[[controls."STAGE1-REF-SECURITY-01".passes]]
-handler = "llm_extract"
-prompt = "Scan the repository's README and documentation for security-contact information. Propose a contact string suitable for a SECURITY.md."
-files = ["README.md", "README", "docs/**/*.md"]
-target_key = "security_contact"
-authority = "suggestive"
 
 # =============================================================================
 # MCP Server Configuration

@@ -11,19 +11,15 @@ The Implementation Guide SHALL document that a sieve handler is a Python functio
 #### Scenario: Author understands config pass-through
 - **WHEN** an implementation author reads about the config parameter
 - **THEN** they SHALL understand that TOML fields like `files`, `command`, `timeout` are passed as dict keys
-- **AND** that their handler receives only its own fields (the framework strips `handler` and `shared`)
+- **AND** that their handler receives only its own fields (the framework strips `handler`)
 
 ### Requirement: Documentation SHALL describe all HandlerContext fields
-The Implementation Guide SHALL document each field of `HandlerContext` with its type, purpose, and when it is populated. Fields: `local_path` (str), `owner` (str), `repo` (str), `default_branch` (str), `control_id` (str), `project_context` (dict), `gathered_evidence` (dict), `shared_cache` (dict), `dependency_results` (dict).
+The Implementation Guide SHALL document each field of `HandlerContext` with its type, purpose, and when it is populated. Fields: `local_path` (str), `owner` (str), `repo` (str), `default_branch` (str), `control_id` (str), `project_context` (dict), `gathered_evidence` (dict), `dependency_results` (dict).
 
 #### Scenario: Author uses gathered_evidence for pipeline chaining
 - **WHEN** an implementation author reads the `gathered_evidence` documentation
 - **THEN** they SHALL understand that evidence from earlier handlers in the same control's pipeline is accumulated here
 - **AND** that their handler can read keys like `found_file` set by a preceding `file_exists` handler
-
-#### Scenario: Author uses shared_cache for cross-control sharing
-- **WHEN** an implementation author reads the `shared_cache` documentation
-- **THEN** they SHALL understand that shared handler results are cached by name and available to all controls referencing the same shared handler
 
 ### Requirement: Documentation SHALL explain HandlerResult construction
 The Implementation Guide SHALL document how to construct a `HandlerResult` with appropriate `status`, `message`, `confidence`, `evidence`, and `details` fields. It SHALL explain the semantics of each `HandlerResultStatus` value (PASS, FAIL, INCONCLUSIVE, ERROR) and when to use each.

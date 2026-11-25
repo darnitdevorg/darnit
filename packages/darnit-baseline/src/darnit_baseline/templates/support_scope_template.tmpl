@@ -15,7 +15,11 @@
 ## What Is Supported
 
 - Bug reports for supported versions
-- Security vulnerability reports (see [SECURITY.md](SECURITY.md))
+<% if scan.security_policy_link %>
+- Security vulnerability reports (see << scan.security_policy_link >>)
+<% else %>
+- TODO: No SECURITY.md was found. Document a security policy before linking to it.
+<% endif %>
 - Feature requests via GitHub Issues
 
 ## What Is Not Supported

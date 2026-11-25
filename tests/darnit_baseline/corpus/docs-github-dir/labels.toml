@@ -1,0 +1,22 @@
+[fixture]
+description = "Community files under .github/ and the dependency policy in docs/dependency-policy.md (#702)"
+
+[labels."OSPS-DO-03.02"]
+expected = "PASS"
+why = ".github/SECURITY.md shows how to verify that a release was signed by the project's release workflow identity."
+
+[labels."OSPS-DO-04.01"]
+expected = "PASS"
+why = ".github/SECURITY.md states which releases are supported, for how long, and what support covers."
+
+[labels."OSPS-DO-05.01"]
+expected = "PASS"
+why = ".github/SECURITY.md states that a minor release receives no security updates after its end-of-life date."
+
+[labels."OSPS-DO-06.01"]
+expected = "PASS"
+why = "docs/dependency-policy.md describes how dependencies are selected, obtained, and tracked."
+
+[labels."OSPS-QA-06.02"]
+expected = "PASS"
+why = ".github/CONTRIBUTING.md says when tests run and how to run them."

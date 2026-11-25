@@ -22,6 +22,7 @@ from darnit.core.composition import (
     CompositionCycleError,
     CompositionMissingSourceError,
     CompositionOrphanOverrideError,
+    CompositionUnknownControlError,
     CompositionUnknownFieldError,
     CompositionVersionMismatchError,
     _apply_override,
@@ -100,6 +101,28 @@ def test_include_controls_filter(composite_fixtures_dir, fixture_source_loader):
     result = _resolve(composite_fixtures_dir, fixture_source_loader, "include-controls")
 
     assert set(result.controls.keys()) == {"MOCK-AC-01.01", "MOCK-QA-01.01"}
+
+
+@pytest.mark.unit
+def test_unknown_include_control_names_source_and_id(composite_fixtures_dir, fixture_source_loader):
+    cfg = _parse_framework_only(_composite_path(composite_fixtures_dir, "include-controls"))
+    cfg.compose[0].include_controls.append("MOCK-TYPO")
+
+    with pytest.raises(CompositionUnknownControlError, match="mock-source-a.*MOCK-TYPO"):
+        resolve_composition(cfg, source_loader=fixture_source_loader)
+
+
+@pytest.mark.unit
+def test_local_control_can_be_left_out_of_include_controls(composite_fixtures_dir, fixture_source_loader):
+    cfg = _parse_framework_only(_composite_path(composite_fixtures_dir, "include-controls"))
+    local_id = "MOCK-AC-01.01"
+    cfg.compose[0].include_controls.remove(local_id)
+    cfg.controls[local_id] = ControlConfig(name="Local control", description="Custom check")
+
+    result = resolve_composition(cfg, source_loader=fixture_source_loader)
+
+    assert set(result.controls) == {local_id, "MOCK-QA-01.01"}
+    assert result.controls[local_id].name == "Local control"
 
 
 # ---------------------------------------------------------------------------
@@ -326,6 +349,19 @@ def test_overrides_sync_tags_level_and_validate():
     invalid_override = OverrideBlock(tags={"level": "L3"})
     with pytest.raises(ValidationError):
         _apply_override("TEST-01", base_ctrl, invalid_override)
+
+
+@pytest.mark.unit
+def test_overrides_invalid_level_rejected():
+    """Composite overrides setting level outside 1-3 are rejected by validation (fixes #701)."""
+    base_ctrl = ControlConfig(name="Base", description="base desc", level=2, tags={"level": 2})
+
+    for invalid_level in [0, -1, 4]:
+        with pytest.raises(ValidationError, match="Invalid control level"):
+            _apply_override("TEST-01", base_ctrl, OverrideBlock(tags={"level": invalid_level}))
+
+        with pytest.raises(ValidationError, match="Invalid control level"):
+            _apply_override("TEST-01", base_ctrl, OverrideBlock(level=invalid_level))
 
 
 @pytest.mark.unit

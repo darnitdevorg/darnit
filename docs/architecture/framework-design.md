@@ -1,8 +1,8 @@
 # Darnit Framework Design Specification
 
-> **Version**: 1.0.0-alpha.19
+> **Version**: 1.0.0-alpha.30
 > **Status**: Authoritative
-> **Last Updated**: 2026-10-23
+> **Last Updated**: 2026-11-24
 
 This specification defines the authoritative design of the Darnit framework, including the sieve orchestrator, TOML schema, built-in pass types, remediation actions, and plugin protocol.
 
@@ -89,6 +89,10 @@ url = "https://..."               # OPTIONAL: Spec URL
 # Control definitions (main content)
 ```
 
+Each ID in a `[[compose]]` block's `include_controls` list must exist in that block's source framework.
+An unknown ID fails framework loading and the error names the source and the missing ID.
+Other filters can still narrow a valid selection to zero controls.
+
 ### 2.2 Control Definition
 
 Each control is defined under `[controls."CONTROL-ID"]`:
@@ -171,6 +175,7 @@ steps = ["Verify branch protection in repository settings"]
 - **THEN** top-level control attributes are canonical; when present in only one place, values are synchronized to both the attribute and `tags`
 - **AND** declaring conflicting values between top-level attributes and `tags` (e.g. `level = 1` with `tags = { level = 2 }`) MUST fail loading with an error
 - **AND** non-integer `tags.level` values (e.g. `"L1"`, `1.5`, or `true`) MUST fail loading with an error
+- **AND** non-integer top-level control levels (including `"1"` and `1.0`) or levels outside the valid maturity range 1-3 (e.g. 0, negative integers, or integers above 3) MUST fail loading with an error
 - **AND** controls without a declared maturity level MUST have `level = None`
 - **AND** commands grouping or sorting by level (`darnit plan`, `darnit validate`) MUST sort controls with `level = None` last without error (displaying as "No level" in plan, while audit and harness compliance count an unleveled result as L1)
 
@@ -196,7 +201,7 @@ A handler returns one of five outcomes. INCONCLUSIVE and ERROR never conclude; P
 | `FAIL` | The control is not satisfied. | Yes, when `fail` is in the step's effective set |
 | `WARN` | The handler read the evidence, understood it, and determined it is insufficient to pass. | Yes, when `fail` is in the step's effective set |
 | `INCONCLUSIVE` | The handler determined nothing. | No -- the pipeline continues |
-| `ERROR` | The handler could not measure (platform or API error, missing tool, evaluation error). | No -- the error is recorded and the pipeline continues; if no later step concludes, the control ends ERROR with the first recorded cause |
+| `ERROR` | The handler could not measure (platform or API error, missing tool, evaluation error, CLI usage error). | No -- the error is recorded and the pipeline continues; if no later step concludes, the control ends ERROR with the first recorded cause |
 
 `WARN` differs from `INCONCLUSIVE` in kind, not in degree. INCONCLUSIVE means a later pass may still determine something. WARN means the answer has been determined and the answer is "not enough". A handler MUST NOT return WARN to mean "I am unsure".
 
@@ -320,7 +325,7 @@ registry.register(
 | `settings` | `None` | The step keys this step type reads, beyond the common step fields. `None` means not declared, which only a plugin step type may leave: it loads with one warning per step type that its settings are not checked. Every core step type, check and remediation, declares its settings. |
 | `expression_names` | `{}` | The top-level names an `expr` on this step type may reference (section 3.7). Empty means the step type does not accept `expr`. |
 
-**Common step fields**, accepted on every step: `handler`, `when`, `shared`, `use_locator`, `authority`, `existence`, `concludes`, `fail_on_miss`, `fail_on_status`, `promotion` (3.0.1), `description` (documentation only), `expr` (only when the step type declares expression names), and `expr_decides` (only with `expr`, on a step type whose expression the orchestrator evaluates, section 3.7).
+**Common step fields**, accepted on every step: `handler`, `when`, `use_locator`, `authority`, `existence`, `concludes`, `fail_on_miss`, `fail_on_status`, `promotion` (3.0.1), `description` (documentation only), `expr` (only when the step type declares expression names), and `expr_decides` (only with `expr`, on a step type whose expression the orchestrator evaluates, section 3.7).
 
 **Name collisions.** Core step types register before any plugin. A registration is refused, logged at WARNING naming both registrants, and recorded in the registry's `refused_registrations` when the following apply. `darnit list` shows every refusal; an audit's warnings show those attempted by a plugin of the audited framework or of a framework it composes, since only those change what the audit runs:
 
@@ -468,7 +473,7 @@ env = { "TOOL_VERBOSE" = "true" }
 | `expr` | `str` | CEL expression over `output` and `project` (section 3.7) |
 | `expr_decides` | `bool` | Common step field: on a handler PASS, `expr` alone decides, true PASS and false FAIL (section 3.7) |
 | `timeout` | `int` | Timeout in seconds (default: 300) |
-| `env` | `dict` | Additional environment variables |
+| `env` | `dict` | Additional environment variables, applied before the child-environment rule below |
 | `cwd` | `str` | Working directory (default: the repository) |
 | `effects`, `offline` | | Remediation steps only: preview declarations (section 4.4) |
 
@@ -478,9 +483,11 @@ These are the step type's declared `settings` (section 3.0.3); any other key fai
 - Commands are executed as a list (no shell interpolation)
 - Variable substitution only replaces whole tokens or substrings safely
 
+**Child environment** (#752): the command receives a copy of the parent environment, then the step's `env` overrides. After those overrides, `GH_TOKEN` and `GITHUB_TOKEN` are omitted when the value is exactly `""`. Any other value is kept. The parent environment is not modified. An exec remediation uses this same handler, including its scratch-copy preview and its apply (section 4.4).
+
 **Broken measurements**: a command whose binary is not installed is ERROR, class `missing_tool`; a timeout is ERROR, class `timeout`. Neither is FAIL.
 
-**Undeclared exit codes**: an exit code in neither `pass_exit_codes` nor `fail_exit_codes` concludes nothing; the step is evidence only and carries a class taken from the command's exit code and stderr, first match wins (#562):
+**Undeclared exit codes**: an exit code in neither `pass_exit_codes` nor `fail_exit_codes` is not PASS or FAIL. Its class comes from the command's exit code and stderr, first match wins (#562, #752):
 
 | Evidence | Class |
 |----------|-------|
@@ -488,9 +495,14 @@ These are the step type's declared `settings` (section 3.0.3); any other key fai
 | An authentication message (`http 401`, `bad credentials`, `requires authentication`, `gh auth login`, `authentication token`, `not logged in`) | `auth` |
 | Exit code 127, or stderr says the command was not found | `missing_tool` |
 | A connection error: name resolution, connection refused, reset, or timed out, network or host unreachable, a TLS or certificate failure, or git's `unable to access` | `network` |
+| A CLI argument rejection: clap's `invalid value '<value>' for '--<flag>'`, or the phrases `unexpected argument`, `unrecognized subcommand`, `a value is required`, or `the following required arguments were not provided` | `usage` |
 | Anything else | `unexpected_exit` |
 
-The step's message names the command, the exit code, and the start of stderr, so an operator can act on an `unexpected_exit` without rerunning the command.
+Matching is a case-insensitive substring, except the invalid-value row, which is only that clap shape. A bare `error:`, a bare `invalid`, exit code 2 by itself, and help text do not select `usage`. `error: no inputs collected` and `error: unrecognized input` are about what the tool was given to read, not its arguments, and stay `unexpected_exit`.
+
+Every class in the table except `usage` leaves the step INCONCLUSIVE. `usage` means the check did not run: the step is ERROR. In both cases the message names the command, the exit code, and the start of stderr. Later steps still run; when none of them concludes, a `usage` step makes the control ERROR and `error.cause` is that message (#752).
+
+An exit code listed in `pass_exit_codes` or `fail_exit_codes` stays PASS or FAIL with no `error_class`, including when stderr contains one of the `usage` phrases.
 
 #### Scenario: CEL expression evaluated
 - **WHEN** an `exec` step has an `expr` field and the exit code gives PASS or FAIL
@@ -502,10 +514,24 @@ The step's message names the command, the exit code, and the start of stderr, so
 - **THEN** the handler MUST evaluate the exit code against `pass_exit_codes` and `fail_exit_codes`
 - **AND** an exit code in neither list MUST NOT give PASS or FAIL
 
+#### Scenario: Empty GitHub token is omitted from the child environment
+- **WHEN** an `exec` step or an exec remediation runs, including a scratch-copy preview and an apply
+- **AND** `GH_TOKEN` or `GITHUB_TOKEN` is exactly `""` after the step's `env` overrides
+- **THEN** that name MUST be absent from the child environment
+- **AND** a non-empty value MUST be passed through unchanged
+- **AND** the parent environment MUST be unchanged
+
 #### Scenario: Undeclared exit code with no identified cause
-- **WHEN** an `exec` command exits with a code in neither list and its stderr shows no rate limit, authentication failure, missing command, or connection error (for example `grep` exiting 2 on a missing directory, or `git` exiting 128 outside a repository)
-- **THEN** the step MUST carry class `unexpected_exit`, not `network`
+- **WHEN** an `exec` command exits with a code in neither list and its stderr shows no rate limit, authentication failure, missing command, connection error, or CLI argument rejection (for example `grep` exiting 2 on a missing directory, `git` exiting 2 with `error: No such remote`, or zizmor exiting 3 with `error: no inputs collected`)
+- **THEN** the step MUST carry class `unexpected_exit`, not `network` or `usage`
 - **AND** its message MUST name the command, the exit code, and an excerpt of stderr
+- **AND** the step MUST be INCONCLUSIVE
+
+#### Scenario: Undeclared exit is a CLI argument rejection
+- **WHEN** an `exec` command exits with a code in neither list and its stderr matches a `usage` phrase in the table above (for example zizmor exiting 2 with `error: invalid value '' for '--gh-token <GH_TOKEN>'`)
+- **THEN** the step MUST be ERROR with class `usage`
+- **AND** its message MUST name the command, the exit code, and an excerpt of stderr
+- **AND** when no later step concludes, the control MUST be ERROR and `error.cause` MUST be that message
 
 ### 3.4 regex Handler
 
@@ -686,7 +712,7 @@ expr = 'output.json.status == "pass" && size(output.json.issues) == 0'
 | `gh_api` | `response` (`status_code`, `body`) | the handler (section 3.8) |
 | `mcp` | `result` (the tool's response) | the handler |
 
-`project` holds the usable project context values the driver resolved (section 7.4): confirmed values, plus values concluded by detection only when the driver ran detection, which an audit does not, keyed by canonical name (for example `project.ci_provider`), and nothing else. It is not the context `when` clauses read: that context also holds this run's detections and the values read from `.project/project.yaml`, which have their own trust rules (section 14) and are not usable values. Reading a key that is not usable, such as an unconfirmed candidate or a raw `.project/project.yaml` value, is an evaluation error, never an absent value that happens to make the expression true. A driver that supplies no usable values binds `project` to an empty mapping.
+`project` holds the usable project context values the driver resolved (section 7.4): confirmed values, plus values concluded by detection. In an audit, detection runs only for auto-detectable keys with detectors referenced by selected verification steps' `when` clauses. These usable values are keyed by canonical name (for example `project.ci_provider`). It is not the context `when` clauses read: that context also holds this run's detections and the values read from `.project/project.yaml`, which have their own trust rules (section 14) and are not usable values. Reading a key that is not usable, such as an unconfirmed candidate or a raw `.project/project.yaml` value, is an evaluation error, never an absent value that happens to make the expression true. A driver that supplies no usable values binds `project` to an empty mapping.
 
 **Functions**:
 
@@ -979,7 +1005,7 @@ Parent directories of `path` are always created; there is no setting for it (the
 
 **Plan output**: one `FileChange`: `create` (or `modify` with `overwrite = true`) with the rendered content, or `none` with `already_exists`.
 
-**Project references.** A reference to a created file is recorded in project data only from a `project_reference` declared on the `file_create` step that creates it; no control-to-field table exists outside the framework TOML. After apply, the executor records the reference only if the file was created in this run (it is in the run manifest) and the field is empty or already holds the same path, through the round-trip writer (section 7.9). Otherwise the field is unchanged and the outcome says why. A remediation that creates no file records no reference. An implementation validates each declared `project_reference` against the field's known file locations, so a reference field always describes the kind of file created (a bug report template is never recorded as the security policy).
+**Project references.** A reference to a created file is recorded in project data only from a `project_reference` declared on the step that creates it: a `file_create` step, or a plugin handler that accepts the setting, such as the Baseline's `generate_threat_model`, which records only the file at the step's `path` and not its companion files; no control-to-field table exists outside the framework TOML. After apply, the executor records the reference only if the file was created in this run (it is in the run manifest) and the field is empty or already holds the same path, through the round-trip writer (section 7.9). Otherwise the field is unchanged and the outcome says why. A remediation that creates no file records no reference. An implementation validates each declared `project_reference` against the field's known file locations, so a reference field always describes the kind of file created (a bug report template is never recorded as the security policy).
 
 #### Scenario: file_create with llm_enhance
 - **WHEN** a `file_create` handler succeeds
@@ -1028,7 +1054,7 @@ offline = true
 | `command` | `list[str]` | Command and arguments (variables as in section 3.3) |
 | `pass_exit_codes` | `list[int]` | Exit codes that indicate success (default: `[0]`) |
 | `timeout` | `int` | Timeout in seconds |
-| `env` | `dict` | Additional environment variables |
+| `env` | `dict` | Additional environment variables. The child environment is the one in section 3.3, for both the scratch-copy preview and the apply |
 | `effects` | `"working_tree"` | Declares that the command changes only files in the working tree. Required for the step to be previewable |
 | `offline` | `bool` | Declares that the command needs no network. `true` is required for a scratch-copy preview |
 
@@ -1038,7 +1064,7 @@ offline = true
 
 A step is not run in a scratch copy when any file it would see is a symbolic link whose target is absolute, or is or passes through a symbolic link and resolves outside the repository. Each path is resolved as the operating system resolves it (`realpath`), so a chain of links is followed (for example `sub/inner/d -> ../..` and `a -> sub/inner/d/../x`, which reads as inside the repository but is not): a command writing through such a link would change files outside the scratch copy. Because a relative link can resolve inside the checkout yet outside the copy (for example `../<checkout folder>/SECURITY.md` when the copy is made beside the checkout), the same check is repeated on the scratch copy after copying and before the command runs. The preview is then an error, the step is `previewable = False`, and it requires individual approval (15.3). A relative link that stays inside the repository is copied as a link.
 
-A file the command creates that the checkout's ignore rules exclude is not part of the preview (and is not recorded at apply). A preview whose run does not succeed (an exit code outside `pass_exit_codes`, a missing binary, a timeout), or whose difference a `FileChange` cannot express (a deleted file, a non-text file), is an error, and the step is `previewable = False`.
+A file the command creates that the checkout's ignore rules exclude is not part of the preview (and is not recorded at apply). A preview whose run does not succeed (an exit code outside `pass_exit_codes`, a missing binary, a timeout), or whose difference a `FileChange` cannot express (a deleted file, a non-text file), is an error, and the step is `previewable = False`. If a file the command would change has uncommitted user changes in the checkout, the preview marks the conflict with `action = "none"` and `reason = "user_changes_present"`, reports that the command will not run, and omits files the command will not touch, matching what the apply does (FR-021).
 
 **Apply.** The command runs in the checkout. The executor compares what the command created or modified with the preview, and records those files in the run manifest only when the step succeeded cleanly: the exit code is in `pass_exit_codes`, the result equals the preview (for a previewable step), no changed file had uncommitted user changes, and the command deleted no file and wrote no non-text file. Otherwise the step is an error, nothing it changed is recorded (so the git tools never commit it), the files stay in the working tree as the command left them, and the outcome (`error`) lists every file the step changed, as written but not recorded, for a person to review by hand; the audit cache is invalidated as for any write. A file the step changed that an earlier step of the same run recorded no longer holds what remediation wrote: it is removed from the run manifest and the outcome says so, so the commit tool commits the run's other files and leaves that one in the working tree. A previewed path that has uncommitted user changes is a conflict: the command is not run and the outcome names the path. A file the command changed that had uncommitted user changes before the step is reported as a conflict. An exit code outside `pass_exit_codes` is an error; a missing binary is ERROR, class `missing_tool`; a timeout is ERROR, class `timeout`.
 
@@ -1337,7 +1363,7 @@ A control's `when` decides whether the control applies (false: `N/A`). A step's 
 | `N/A` | Not applicable (control `when` false, or an honored not-applicable claim, feature 040) | Excluded |
 | `FAIL` | Control verified non-compliant, or a negative model finding | No |
 | `WARN` | Needs verification: no step concluded, or a step concluded the evidence is insufficient | No |
-| `ERROR` | Broken measurement: platform or API error, missing tool, evaluation error | No |
+| `ERROR` | Broken measurement: platform or API error, missing tool, evaluation error, CLI usage error | No |
 | `PENDING` | Awaiting a model judgment (`pending.kind = "llm_judgment"`) or an operator confirmation of a PASS candidate (`pending.kind = "confirmation"`) | No |
 
 `PENDING` replaces the former `PENDING_LLM` status.
@@ -1348,7 +1374,7 @@ Result fields beyond `status`:
 |-------|-------------|
 | `authority` | `dispositive` (a step concluded within its effective set), `suggestive` (no step concluded, or a model finding), `asserted` (a person confirmed it) |
 | `concluded_by` | Step handler name, `llm_judgment`, `confirmation`, `inferred_from`, or `none` |
-| `error` | `{class, cause}`; present on every ERROR. Classes include `auth`, `rate_limit`, `unavailable`, `missing_tool`, `evaluation`, `unexpected_exit` (#562), and the feature 036 classes |
+| `error` | `{class, cause}`; present on every ERROR. Classes include `auth`, `rate_limit`, `unavailable`, `missing_tool`, `evaluation`, `usage` (#752), `unexpected_exit` (#562), and the feature 036 classes |
 | `pending` | `{kind}`; present on every PENDING |
 | `candidate` | Present with `pending.kind = "confirmation"`: `verdict = "pass"`, `reasoning`, `cited_evidence`, `model`, `model_version`, `evidence_digest`, `source` (`harness` or `mcp_agent`) |
 | `confirmation` | Present on a PASS from a confirmed candidate: `confirmed_by`, `confirmed_at`, `expires_at` |
@@ -1602,7 +1628,7 @@ Every place that turns such a string into an import SHALL resolve it through one
 
 **Resolution policy**:
 - The path SHALL have the form `a.b.c:attr`: exactly one `:`, every dotted module part and the attribute a Python identifier. A relative path (leading `.`), an empty part, a dotted attribute, or any other form is refused.
-- The module's top-level package SHALL be `darnit`, or the top-level package of an implementation that discovery loaded from the `darnit.implementations` entry point group (Section 6.2). The set is read from the entry points' module names (`darnit_csl:register` gives `darnit_csl`), not from a list in code, so an installed third-party implementation is covered and an uninstalled one is not. It is computed once per process with the implementation cache and recomputed when that cache is cleared.
+- The module's top-level package SHALL be `darnit`, or the top-level package of an implementation that discovery loaded from the `darnit.implementations` entry point group (Section 6.2). An implementation `[plugins] allowed` leaves out is not loaded (Section 6.6). The set is read from the entry points' module names (`darnit_csl:register` gives `darnit_csl`), not from a list in code, so an installed third-party implementation is covered and an uninstalled one is not. It is computed once per process with the implementation cache and recomputed when that cache is cleared.
 - The policy is checked before any import. A refused module is never imported.
 
 **Failure behavior**:
@@ -1620,40 +1646,36 @@ This policy limits which installed code a configured string can reach. It is not
 - **WHEN** an `[mcp.tools]` entry names `os:system`, or a module of a package that is not an installed implementation
 - **THEN** the module SHALL NOT be imported, the tool SHALL NOT be registered, and server start SHALL report the refusal at ERROR
 
-### 6.6 Plugin Verification with Sigstore
+### 6.6 Plugin Trust
 
-Plugins can be verified using Sigstore-based attestations. Plugin trust is operator configuration (Section 14); it is never read from the audited repository:
+darnit does not verify plugin signatures or provenance. Installing a package into the environment darnit runs from is the decision to trust its code. Verifying a package before it is installed is the installer's job, for example pip or uv checking PEP 740 attestations, or Sigstore verification of the distribution file.
+
+Operator configuration (Section 14.1) restricts which installed plugins darnit uses with `[plugins] allowed`. It is never read from the audited repository:
 
 ```toml
 # operator configuration (e.g. ~/.config/darnit/config.toml)
 [plugins]
-allow_unsigned = false
-trusted_publishers = [
-    "https://github.com/kusari-oss",
-    "https://github.com/openssf",
-]
-
-[plugins."darnit-baseline"]
-version = ">=1.0.0"
+allowed = ["openssf-baseline", "reproducibility"]
 ```
 
-**Configuration Fields**:
+- Names are entry point names in the `darnit.implementations` and `darnit.frameworks` groups (Section 6.2), which are the implementation and framework names. An empty or absent list allows every installed plugin. The list does not apply to other entry point groups.
+- An entry point whose name is not listed SHALL NOT be loaded, so nothing is imported for it. No implementation is registered from it, so its handlers and step types are not registered. Its framework does not resolve by name, including as a composition source, and its package is not an allowed module package (Section 6.5). A package is still imported when one of its other entry points is listed.
+- An audit of a framework that is not listed SHALL be refused before the framework's implementation is loaded.
+- The list is applied when operator configuration is loaded and again at the start of each audit, so `darnit audit`, `darnit run`, `darnit harness`, `darnit serve`, and the MCP tools honor it. `darnit plan`, `darnit list`, `darnit profiles`, `darnit init`, and `darnit validate` do not read operator configuration and load every installed plugin.
+- `allowed` selects plugins by name. It does not authenticate them: any installed package can declare any entry point name.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `allow_unsigned` | `bool` | Allow plugins without Sigstore signatures (default: false in production) |
-| `trusted_publishers` | `list[str]` | OIDC identities to trust (GitHub org URLs, email addresses) |
+#### Scenario: Plugin left out of the allow-list
+- **WHEN** operator configuration sets `[plugins] allowed = ["hello"]` and another plugin is installed
+- **THEN** an audit of `hello` MUST NOT load the other plugin's entry points or register its step types
+- **AND** an audit of the other plugin's framework MUST be refused
 
-**Default Trusted Publishers**:
-- `https://github.com/kusari-oss`
-- `https://github.com/kusaridev`
+#### Scenario: Composition source left out of the allow-list
+- **WHEN** a framework composes a framework that `[plugins] allowed` leaves out
+- **THEN** loading it MUST fail as for a source that is not installed
 
-**Verification Flow**:
-1. Plugin loaded via entry point
-2. Check for Sigstore attestation on PyPI
-3. Verify signature against trusted publishers
-4. Cache verification result (24h TTL)
-5. If unsigned and `allow_unsigned = false`, reject plugin
+#### Scenario: Signature settings in operator configuration
+- **WHEN** operator configuration sets `[plugins] allow_unsigned` or `[plugins] trusted_publishers`
+- **THEN** loading it MUST fail with a message that the key was removed and plugin signatures are not verified (Appendix C)
 
 ---
 
@@ -1784,7 +1806,7 @@ Each context key has one canonical name and one vocabulary, taken from the frame
 - Auditing (every driver), listing pending data, report generation, a remediation preview (plan mode, section 4.2), the remediation context guard in every mode, and the harness collect phase SHALL NOT create, modify, or delete any file in the audited repository.
 - `darnit.config.context_writes` is the only code that writes context values and in-repository confirmation records. It writes only `.project/darnit.yaml` (never `.project/project.yaml`), preserves sections and comments it does not change (including feature 040 `controls:` claims), and refuses every write, returning the errors, when `.project/project.yaml` or `.project/darnit.yaml` is present but unparseable or invalid. The loader distinguishes absent, valid, and invalid files (`load_project_config_checked`).
 - `init_project_config` (MCP) creates only an empty `.project/darnit.yaml` when `.project/` is absent, and reports instead of overwriting when it is present.
-- An applied remediation's `project_update` (written by the remediation executor, section 4.2) and the file-reference sync after a remediation creates a file (`render_reference_update`) write only the dotted paths they target, through the loader's round-trip rendering (`render_project_config_update`): CNCF fields to `.project/project.yaml`, other fields to `.project/darnit.yaml`, preserving comments, ordering, indentation, and fields darnit does not own. An absent `.project/project.yaml` is created with `name` and the targeted fields only. No darnit code replaces a whole project file. The file-reference sync after remediation records only a `project_reference` declared on the `file_create` step, only for a file created in this run, and only when the field is empty or already equal (section 4.3). When either file is present but invalid they write nothing: planning the update (`plan_project_update`, used by the `project_update` handler and the remediation's `project_update`) raises with the validation errors (an applied remediation reports `project_update: failed: <errors>`), and the file-reference sync records nothing and reports why.
+- An applied remediation's `project_update` (written by the remediation executor, section 4.2) and the file-reference sync after a remediation creates a file (`render_reference_update`) write only the dotted paths they target, through the loader's round-trip rendering (`render_project_config_update`): CNCF fields to `.project/project.yaml`, other fields to `.project/darnit.yaml`, preserving comments, ordering, indentation, and fields darnit does not own. An absent `.project/project.yaml` is created with `name` and the targeted fields only. No darnit code replaces a whole project file. The file-reference sync after remediation records only a `project_reference` declared on the step that created the file, only for a file created in this run, and only when the field is empty or already equal (section 4.3). When either file is present but invalid they write nothing: planning the update (`plan_project_update`, used by the `project_update` handler and the remediation's `project_update`) raises with the validation errors (an applied remediation reports `project_update: failed: <errors>`), and the file-reference sync records nothing and reports why.
 - An audit reads nothing from a present-but-invalid `.project/` file and reports each validation error in the report's `warnings` (JSON) and as a warning line (Markdown).
 
 ### 7.10 Confirmation Tool Contract
@@ -1794,13 +1816,13 @@ The observable payloads of `get_pending_data` and `confirm_project_data` are def
 - `get_pending_data` is read-only. Each question carries its candidate as data (`candidate: {value, origin, digest, label}`, where `digest` is the value digest (7.5) and `label` marks it unconfirmed); the candidate's value appears nowhere else in the response. `command_template` holds placeholders only (`<the person's answer>`, `<candidate digest if the person accepts it>`, `owner=..., repo=...`), never a candidate value or a configuration example. `answer_mapping.value_map["Yes"]` for a candidate is `{"accept_candidates": {"<key>": "<candidate.digest>"}}`, a placeholder the agent fills from the question's `candidate.digest` only after the person answered yes. Every question carries a selector (`ask_user`), so one batch is asked in one round of the client's question tool, which offers at most 4 options and adds a free-text "Other". Enum questions list every allowed value in `allowed_values`; when there are more than 4, the selector offers the first 4 and its question names them all, and any of them can be typed under Other (every allowed value stays reachable). A free-text question's selector offers "Skip for now" and "Answer in chat" and never a value; the answer is typed under Other. A yes/no question's options carry neutral descriptions, and its hint is part of the question. A selector header is at most 12 characters, cut at a word boundary. `examples` appear only as `format_hint`, never as an option. Every question in the batch is returned under `questions`. The response lists `stored_unconfirmed` values with their locations. The response also carries `procedure`: the ordered steps for collecting the data (show each candidate with its origin, labelled unconfirmed; ask every question, passing `ask_user_batch` verbatim in one round; per-question skip; one `confirm_project_data` call per batch, mapping each answer by `answer_mapping` (Yes/No on a yes/no question is a boolean; No on a candidate, or Other, is the value the person typed), with `accept_candidates` filled only after a yes; call `get_pending_data` again, with the caller's `control_ids`, until `complete`; review `stored_unconfirmed`; summarize). Its calls name only the `owner` and `repo` the caller passed, never ones detected from the checkout's remote (placeholders otherwise), and hold no candidate or detected value. `get_pending_data` takes no `host`, so its `confirm_project_data` call names `host` as a placeholder to fill when the repository is not on github.com (7.10). A `confirm_project_data` result that handled context values on a server with `get_pending_data` ends with the next `get_pending_data` call, named the same way.
 - `confirm_project_data` takes a parameter for every context key that the server's bound framework defines, and no other framework's keys (generated from the definitions; an enum parameter accepts only its `values`), plus `accept_candidates` (`{key: candidate digest}`: detection runs again and the current candidate, or a value concluded in this run, is confirmed only if its digest still matches, recording its value and origin as the basis; a mismatch, a key with no candidate, or a key given both an answer and a digest is refused and nothing is written for it), `confirm_stored` and `reject_stored` (review of stored values: a rejected `.project/darnit.yaml` value is deleted; a rejected `.project/project.yaml` value is reported with its file and field and the file is left unchanged), `expires_at` (`{key: date}`), and `owner`, `repo`, `host`, which are required and decide the record location (7.5). `confirm_stored` records a confirmation of the value currently stored for each key (basis: that value, origin `stored_unconfirmed` or `expired_confirmation`). Like a confirmation, a rejection writes to `.project/darnit.yaml` only when the operator trusts the named repository; otherwise it is refused and names the file and field for the person to edit. A value that is one of the free-text selector's labels ("Skip for now", "Answer in chat") or an `answer_mapping` marker (`"SKIP"`, `"ASK_USER_FOR_VALUE"`), alone or inside a list, is not an answer and is refused, since an agent may forward the label its question tool returned. The result names, per key, `confirmed (in-repository)` with the file written or `confirmed (operator-side)`, `rejected`, `edit required: <file>:<field>`, or `refused: <reason>`.
 - **Which server exposes it**: each server's `confirm_project_data` covers only the keys of the framework the server is bound to. The OpenSSF Baseline server defines its own (which also carries `confirm_not_applicable` and `confirm_pass_candidate`). Every other framework server that defines context keys and whose TOML does not define a tool named `confirm_project_data` gets a framework-neutral builtin `confirm_project_data` (a framework with no context keys gets none), registered by the factory the same way as `submit_judgment` and `confirm_pass_candidate` (5.4) and bound to that framework's context definitions. It records context values only: the per-key parameters, `accept_candidates`, `confirm_stored`, `reject_stored`, `expires_at`, `owner`, `repo`, `host`, and `local_path`. Claim confirmations and PASS candidates stay on their existing tools.
-- Remediation prompts (the preflight and `format_context_prompt`) show a candidate as labelled, unconfirmed data with its origin and digest, name the key's hint source files that exist without parsing values out of them, and hold placeholders only in their commands.
+- Remediation prompts (the preflight and `format_context_prompt`) show a candidate as labelled, unconfirmed data with its origin and digest, name the key's hint source files that exist without parsing values out of them, and hold placeholders only in their commands. The preflight check blocks the run only when every remediable control lacks usable context; otherwise the run proceeds for confirmed controls.
 
 ### 7.11 Consumers of Context Values
 
 Every consumer reads context values from the resolver's usable mapping (7.4) and nothing else:
 
-- **Audit applicability** (`when` clauses): this run's filesystem detections of keys that are not judgment keys, then `.project/project.yaml` mapper values, then usable values. The audit resolves without running the framework's detection pipelines; its only detections are those filesystem detections. Only usable values confirmed in the repository count as repository data for not-applicable claims (14.3). Values the detection pipelines would conclude (for example `has_releases`) are therefore used by the audit only once confirmed: a missing key leaves its control applicable, so a concluded positive changes nothing, and the only effect a concluded negative could have is to make controls not applicable from a network answer (an empty `gh release list` does not show that a project makes no official releases, which it may publish elsewhere). Pending-data questions do run the pipelines, and a person can confirm the proposed value.
+- **Audit applicability** (`when` clauses): this run's filesystem detections of keys that are not judgment keys, then `.project/project.yaml` mapper values, then usable values. The audit runs framework detection only for auto-detectable keys with detection pipelines referenced by selected verification steps' `when` clauses. Concluded values also reach `project.*` in step expressions. Only usable values confirmed in the repository count as repository data for not-applicable claims (14.3).
 - **Remediation**: templates and remediation `when` clauses see this run's detections of keys that are not judgment keys, overlaid with usable values. The `context` namespace is guarded: reading a defined context key that has no usable value (by attribute, index, `get`, or membership test) raises `ConfirmationRequired`, so a template `default()` cannot stand in for it, and the same applies to a key named in a handler's `when`. Templates and `when` clauses are evaluated for every handler before any handler runs; a `ConfirmationRequired` becomes that control's result, `confirmation required: <key>`, and nothing is written. This applies whether or not the control lists the key in `requires_context`. Keys that are not context keys render as empty.
 - **Tool parameters that are judgment values** have no default. An omitted parameter is taken from confirmed context only; otherwise the tool writes nothing and reports `confirmation required: <key>` (for example `remediate_community_spec`, whose parameters map to the CSL `csl_*` keys).
 - **Attestations** carry no context values.
@@ -1809,6 +1831,24 @@ Every consumer reads context values from the resolver's usable mapping (7.4) and
 #### Scenario: Unconfirmed security contact in a remediation template
 - **WHEN** a remediation template reads `<< context.security_contact | default('security@example.org') >>` and `security_contact` has no usable value
 - **THEN** that control's remediation returns `confirmation required: security_contact` and writes nothing
+
+### 7.12 OpenSSF Security Insights
+
+An OpenSSF Security Insights file is evidence for project context, never a source of it. The context sieve reads the first of `security-insights.yml`, `SECURITY-INSIGHTS.yml`, `.github/security-insights.yml`, and `.gitlab/security-insights.yml` that exists in the repository (read inside the repository, 3.0.4) and proposes `security_contact` from it:
+
+- schema 1.x: the primary `security-contacts` entry of type `email` or `url`, else the first such entry, else `vulnerability-reporting.email-contact`;
+- schema 2.x: `project.vulnerability-reporting.contact.email`;
+- any other schema version, an unreadable file, or a contact with no email or URL proposes nothing.
+
+The value is a sieve hint for a judgment key, so it is a `candidate` (7.4) whose origin method names the file by its repository-relative path, and the key's `detect_filter` applies to it. It is never written into the loaded project configuration, never replaces a value stored in `.project/`, and is never usable until a person confirms it. A Security Insights policy link is not imported: `security.policy` names a file in the repository, and the file gives a URL.
+
+#### Scenario: Security Insights contact is proposed
+- **WHEN** a repository has no stored `security_contact` and `.github/security-insights.yml` (schema 2.0.0) names `project.vulnerability-reporting.contact.email: security@foobar.dev`
+- **THEN** `get_pending_data` offers `security@foobar.dev` as an unconfirmed candidate with origin `sieve_hint` and method `context_sieve (1 signals) from .github/security-insights.yml`, and `security_contact` is absent from the usable mapping
+
+#### Scenario: Stored value is kept
+- **WHEN** `.project/project.yaml` has `security.contact` and the repository also has a Security Insights file naming a different contact
+- **THEN** `security_contact` resolves to the stored value (`confirmed` with a matching record, else `candidate` with origin `stored_unconfirmed`), and the Security Insights contact is not offered
 
 ---
 
@@ -1917,30 +1957,12 @@ require = { require_pull_request = true }
 
 ---
 
-## Appendix B: Migration from Rules Catalog
+## Appendix B: Rules Catalog (removed)
 
-The `rules/catalog.py` file is deprecated. Migrate metadata to TOML:
-
-```python
-# OLD: rules/catalog.py
-OSPS_RULES = {
-    "OSPS-AC-01.01": {
-        "name": "MFARequired",
-        "short": "MFA required",
-        "help_md": "...",
-        "security_severity": 9.0,
-    }
-}
-```
-
-```toml
-# NEW: openssf-baseline.toml
-[controls."OSPS-AC-01.01"]
-name = "MFARequired"
-description = "MFA required for repository access"
-security_severity = 9.0
-help_md = "..."
-```
+The Python rules catalog (`rules/catalog.py`) that once held SARIF rule
+metadata was removed. Control metadata (`name`, `description`,
+`security_severity`, `help_md`, `docs_url`) is defined only in the framework
+TOML, and the SARIF formatter reads it from there (Section 8.1).
 
 ---
 
@@ -2044,6 +2066,7 @@ The darnit framework package SHALL NOT contain code, modules, or string literals
 - **THEN** they SHALL use `get_implementation(name)` with an explicit name
 - **AND** the name SHALL come from an explicit parameter (the `--framework` option or a tool's framework argument), or `discover_implementations()` to list available options
 - **AND** nothing in the audited repository selects the framework (Section 14.4)
+- **AND** a framework named by an MCP client, agent or harness state, or tool argument SHALL be a registered name, never a path (Section 14.5)
 
 ---
 
@@ -2129,12 +2152,23 @@ Design principle: **the audited repository is untrusted input in its entirety, i
 - There is no environment variable that grants trust to repository content.
 - Every report records the operator configuration source and a digest of its content.
 - The `[remediation]` section sets the remediation policy for platform changes (section 15.1).
+- The `[plugins]` section restricts which installed plugins darnit loads (section 6.6).
+- The `[llm]` section selects the model the harness calls for `llm_eval` steps. `provider` is `anthropic` (default) or `openai`; any other value is a setup error. `model` is the provider's model name; `openai` has no default model, so `provider = "openai"` without `model` is a setup error. The API key comes only from the environment variable for the configured provider (`ANTHROPIC_API_KEY` or `OPENAI_API_KEY`), checked before the audit starts after `[llm]` is applied, and again when the model is first called. The report (`llm_calls.provider`) and every model judgment result, whatever its outcome, record the model as `<provider>:<model>` (evidence `llm_model`, with the provider's `llm_model_version` when it returns one). The provider does not change what a model judgment can conclude (section 3.0.1). `max_cost_usd_per_run` is accepted and not enforced.
+
+#### Scenario: OpenAI provider
+- **WHEN** operator configuration has `[llm] provider = "openai"` and `model = "gpt-5"`, `OPENAI_API_KEY` is set and `ANTHROPIC_API_KEY` is not
+- **THEN** the harness starts, calls `openai:gpt-5` for model judgments, and records `openai:gpt-5` in the report and in each judgment's evidence
+
+#### Scenario: Missing key for the configured provider
+- **WHEN** operator configuration has `[llm] provider = "openai"` and `OPENAI_API_KEY` is not set
+- **THEN** the harness stops before the audit with a setup error naming `OPENAI_API_KEY` and the provider, even if `ANTHROPIC_API_KEY` is set
 
 ### 14.2 Trusted repositories and CI
 
 - The operator lists trusted repositories by canonical identity (`host/namespace/name`). The identity used for a trust decision comes from the operator's audit target or CI metadata, never solely from the checkout's own version-control configuration.
 - CI trust is opt-in per rule; the initial rule trusts pushes to the default branch of a listed repository. Pull requests from forks and unrecognized events are never trusted.
 - Remediation follows the same rule. `remediate_audit_findings` takes its trust identity from the repository the caller names (`owner`, `repo`, and `host` when not github.com) or from CI metadata, and uses it for the run, its context reads, the pending-context guard (15.4), and the re-check (15.5). Owner and repository detected from the checkout's remote may still address platform calls and label the report; they never decide trust.
+- The audit report's pending-context step ("Confirm project context") reads with the identity the audit was given, so answers a person confirmed operator-side for the named repository are not asked for again. An audit that names no repository reads no operator-side answers.
 
 #### Scenario: Remediation of a checkout whose remote names a trusted repository
 - **WHEN** the operator trusts a repository, a checkout's origin remote names it, and remediation is called without naming a repository
@@ -2154,7 +2188,7 @@ Design principle: **the audited repository is untrusted input in its entirety, i
 
 ### 14.4 Repository-level .baseline.toml
 
-darnit does not read a repository's `.baseline.toml` for anything: no per-control status or reason, no `extends`, no settings, no custom controls, and no other key. Not-applicable claims come only from `.project/` (14.3), the framework is selected only by the `--framework` option or a tool's framework argument, and tool settings come only from operator configuration (14.1).
+darnit does not read a repository's `.baseline.toml` for anything: no per-control status or reason, no `extends`, no settings, no custom controls, and no other key. Not-applicable claims come only from `.project/` (14.3), the framework is selected only by the `--framework` option or a tool's framework argument (14.5), and tool settings come only from operator configuration (14.1).
 
 - When the file exists in an audited repository, the audit SHALL record exactly one notice, logged at WARNING and listed in the report's `warnings`: the file is ignored, and `darnit config migrate` moves its claims to `.project/darnit.yaml` and prints an operator configuration fragment for its tool settings. Its keys are not listed in `ignored_repository_settings`.
 - `darnit config migrate [REPO]` reads the file itself. It writes the per-control status and reason to `.project/darnit.yaml` (keeping an existing claim for the same control unless `--force` is given), prints a proposed operator configuration fragment for the other settings, never writes operator configuration, and never deletes the file.
@@ -2167,6 +2201,28 @@ darnit does not read a repository's `.baseline.toml` for anything: no per-contro
 #### Scenario: extends in .baseline.toml
 - **WHEN** `.baseline.toml` sets `extends` to a registered framework and the run names no framework
 - **THEN** the audit MUST NOT use the framework the file names
+
+### 14.5 Framework Selection
+
+A framework is a set of steps darnit runs, so only the operator chooses where one comes from.
+
+- A framework named by an MCP client, agent or harness state (`HarnessState.framework_name`), or a tool argument SHALL be the name of a registered framework (a `darnit.frameworks` entry point, as listed by `darnit list`). A value that reads as a path (it contains `/` or `\`, ends in `.toml`, starts with `.` or `~`, or is absolute) or a name that is not registered SHALL be refused with an error naming the value, before any framework is loaded or any step runs. `run_next_action` and `submit_action_result` refuse such a state as invalid (`Invalid HarnessState: framework_name: ...`), and the audit pipeline refuses a framework name that reads as a path.
+- A framework file given by path is accepted only from the operator at launch: `darnit audit --framework PATH`, `darnit plan --framework PATH`, `darnit serve PATH`, and `darnit validate PATH`.
+- `darnit audit` and `darnit plan` SHALL refuse a framework file given by path whose resolved location (symbolic links followed) lies inside the repository they audit, as operator configuration there is refused (14.1). `refuse_framework_inside_checkout` is the check; any other caller that loads a framework file by path for an audit applies it first.
+- A registered framework is loaded from where its package is installed. Registering one is an installation the operator performs; nothing in the audited repository registers a framework.
+
+#### Scenario: Client names a framework file by path
+- **WHEN** `run_next_action` or `submit_action_result` receives a state whose `framework_name` is a path, including one inside the audited repository
+- **THEN** the call MUST fail with an error naming `framework_name`
+- **AND** no framework file is read and no step runs
+
+#### Scenario: Client names an unregistered framework
+- **WHEN** a state's `framework_name` is a name no installed package registers
+- **THEN** the call MUST fail with an error listing the registered frameworks
+
+#### Scenario: Operator names a framework file inside the audited repository
+- **WHEN** `darnit audit --framework PATH REPO` names a file inside `REPO`
+- **THEN** the audit MUST refuse to load it and exit with an error
 
 ## 15. Remediation Safety
 
@@ -2299,7 +2355,7 @@ plan -> [confirmation missing]            -> needs_confirmation
 - Only a definite success with a non-empty change counts as changed. INCONCLUSIVE, ERROR, a step that did not run, and `action = "none"` never count as success.
 - The run summary (counts per `kind`) is derived from the outcomes. The Markdown and JSON reports, and every downstream decision (whether to commit or open a pull request), are derived from the outcomes, never from matching symbols or words in output text.
 - A `changed_not_passing` outcome whose re-check is `PENDING` carries `pending_kind`, equal to the re-check's `pending.kind`: `llm_judgment` (the changed content awaits a model judgment) or `confirmation` (it is a PASS candidate awaiting the operator's confirmation). No other outcome carries it, and a re-check FAIL or WARN carries none. `pending_kind` is information about what the control awaits: the outcome stays non-compliant, counts as changed for the gates (15.7), and the set of kinds is unchanged.
-- If the check for unconfirmed project context cannot complete, remediation does not run and the call returns the error.
+- If the check for unconfirmed project context cannot complete, remediation does not run and the call returns the error. The preflight check and tool guard allow ready remediations to proceed: ready controls preview and apply with platform requests planned for them, while controls requiring unconfirmed context report `needs_confirmation`; the run blocks only when every failing control lacks context (#767).
 - The check for unconfirmed project context reads confirmations for the repository the caller named (14.2), including operator-side ones, so an untrusted repository whose context the operator confirmed can be remediated. With no repository named, operator-side confirmations are not read.
 
 **`RemediationRun`** (one per preview or apply):
@@ -2317,7 +2373,7 @@ plan -> [confirmation missing]            -> needs_confirmation
 | `summary` | Counts per outcome kind, derived from `outcomes` |
 | `awaiting` | `{"llm_judgment": [...], "confirmation": [...]}`: control ids of outcomes by `pending_kind`, sorted, derived from `outcomes`; a key with no ids is omitted, and a preview has `{}` |
 
-**Reports** (Markdown and JSON) show, per control: the outcome `kind`, the files changed, platform fields `before -> after`, the re-check status, and the reason and error; per run: the policy, the operator configuration digest, the approvals (digest, by, at), the run id, and the summary counts. A preview of a high-impact change lists its impact notes. `remediate_audit_findings` returns the Markdown report followed by a fenced JSON block holding the `RemediationRun` (a preview carries `plan` with every digest, `previewable`, and `requires_individual_approval`; an apply carries `outcomes`, `summary`, and `awaiting`). An outcome with `pending_kind` adds an "Awaiting" line (a model judgment, or the operator's confirmation of a PASS candidate). When `awaiting` is not empty, the Markdown report ends with a "Next steps" section that names those control ids and the tools to call (section 15.9); its text comes from `darnit.server.procedures` and holds no evidence.
+**Reports** (Markdown and JSON) show, per control: the outcome `kind`, the files changed, platform fields `before -> after`, the re-check status, and the reason and error; per run: the policy, the operator configuration digest, the approvals (digest, by, at), the run id, and the summary counts. A preview of a high-impact change lists its impact notes. `remediate_audit_findings` returns the Markdown report followed by a fenced JSON block holding the `RemediationRun` (a preview carries `plan` with every digest, `previewable`, and `requires_individual_approval`; an apply carries `outcomes`, `summary`, and `awaiting`). To keep the output within MCP client limits, file contents in `file_changes` are omitted from the fenced JSON block (keeping `path`, `action`, `reason`, `ignored`, `before_digest`, and `after_digest`). An outcome with `pending_kind` adds an "Awaiting" line (a model judgment, or the operator's confirmation of a PASS candidate). When `awaiting` is not empty, the Markdown report ends with a "Next steps" section that names those control ids and the tools to call (section 15.9); its text comes from `darnit.server.procedures` and holds no evidence.
 
 #### Scenario: File already exists
 - **WHEN** the only step of a control's remediation is a `file_create` whose file already exists
@@ -2492,7 +2548,7 @@ The final report lists separately: controls that pass; controls awaiting the per
 
 ## Appendix C: Removed Requirements
 
-The following requirements have been superseded: by the handler dispatch architecture, by the feature 043 remediation design (the `api_call` and `requires_confirmation` entries), by the operator configuration and trust boundary (the `.baseline.toml` entry, Section 14), and by the removal of unused subsystems (the adapter, `UnifiedLocator`, and plugin protocol method entries, #487).
+The following requirements have been superseded: by the handler dispatch architecture, by the feature 043 remediation design (the `api_call` and `requires_confirmation` entries), by the operator configuration and trust boundary (the `.baseline.toml` entry, Section 14), by the removal of unused subsystems (the adapter, `UnifiedLocator`, and plugin protocol method entries, #487), by the removal of shared handlers, and by the removal of plugin signature verification, which never verified anything (Section 6.6).
 
 ### Removed: VerificationPassProtocol
 **Reason**: Replaced by handler dispatch architecture. Pass classes that implemented this protocol (`DeterministicPass`, `PatternPass`, `LLMPass`, `ManualPass`, `ExecPass`) are superseded by handler functions registered in `SieveHandlerRegistry`.
@@ -2585,12 +2641,44 @@ The following requirements have been superseded: by the handler dispatch archite
 **Reason**: No production path called `get_all_controls()`, `get_controls_by_level()`, `get_rules_catalog()`, or `get_remediation_registry()`, and `register_controls()` was required to be a no-op (#487). Controls, SARIF rule metadata, and remediation configuration all come from the framework TOML (section 6.3). The five methods are no longer members of `ComplianceImplementation`, and the framework no longer calls `register_controls()`.
 **Migration**: Delete the methods. A plugin that keeps them is still discovered; they are not called. Code that read controls from an implementation loads its framework TOML instead (`load_framework_by_name`, `load_controls_from_framework`). `FrameworkConfig.get_controls_by_level()` and `EffectiveConfig.get_controls_by_level()` are unaffected.
 
+### Removed: Shared handlers
+**Reason**: A step referencing a `[shared_handlers]` entry (`shared = "<name>"`) cached its result after its own control's `expr` was applied, so every later control referencing the same entry received that verdict and its own `expr` never ran: a false PASS. The effective configuration, which the CLI and MCP audits load, never resolved the references at all. No shipped framework used them. The `[shared_handlers]` table, the `shared` step key, and `HandlerContext.shared_cache` are removed.
+**Migration**: Declare the step's full configuration on each control that needs it. Each step runs for its own control and evaluates its own `expr`.
+
+#### Scenario: Framework declares shared handlers
+- **WHEN** a framework TOML has a `[shared_handlers]` table
+- **THEN** loading MUST fail with an error saying shared handlers were removed
+
+#### Scenario: Step references a shared handler
+- **WHEN** a verification or remediation step declares `shared`
+- **THEN** loading MUST fail with an error saying the `shared` step key was removed, on every control-loading path
+
+### Removed: Plugin signature verification
+**Reason**: darnit never verified a plugin. Discovery always ran with `allow_unsigned = true`, so every plugin loaded. It looked each plugin up by entry point name rather than distribution name, so the lookup failed and logged a warning on every run. The verifier made no cryptographic check: it trusted a package whose self-declared author or maintainer email contained a trusted publisher name, and cached that decision for 24 hours under `~/.darnit/verification_cache`. The operator configuration keys `plugins.allow_unsigned` and `plugins.trusted_publishers`, and the framework TOML `[plugins]` table, had no reader. Removed: `darnit.core.verification` (`PluginVerifier`, `VerificationConfig`, `VerificationResult`, `VerificationCache`, `AttestationInfo`, `verify_plugin`, `DEFAULT_TRUSTED_PUBLISHERS`) and its `darnit.core` re-exports, the verification cache, the two operator configuration keys, and the framework TOML `[plugins]` models (`PluginsConfig`, `PluginConfig`, `FrameworkConfig.plugins`).
+**Migration**: Delete `allow_unsigned` and `trusted_publishers` from operator configuration; operator configuration that sets them fails to load. Restrict plugins with `[plugins] allowed` (Section 6.6), and verify packages when installing them. A framework TOML `[plugins]` table can be deleted. `~/.darnit/verification_cache` can be deleted.
+
+#### Scenario: Framework declares a plugins table
+- **WHEN** a framework TOML has a `[plugins]` table
+- **THEN** the framework MUST load
+- **AND** no key in it MUST affect which plugins load or an audit
+
 ---
 
 ## Version History
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.0.0-alpha.30 | 2026-11-24 | An `exec` remediation step previewed in a scratch copy marks files that have uncommitted user changes in the checkout with `action = "none"` and `reason = "user_changes_present"`, reports that the command will not run, and omits files the command will not touch, matching what the apply does (Section 4.4; #543) |
+| 1.0.0-alpha.29 | 2026-11-22 | `project_reference` is accepted on any step whose handler declares it in its settings, not only `file_create`; on a handler other than `file_create` it records only the file at the step's `path`. OSPS-SA-03.02 records `security.threat_model` through `project_reference` on `generate_threat_model` instead of an unconditional `project_update` (Sections 4.3, 7.9; #545) |
+| 1.0.0-alpha.28 | 2026-11-22 | Fenced JSON block returned by `remediate_audit_findings` omits file contents in `file_changes` in the plan and outcomes (keeping `path`, `action`, `reason`, `ignored`, `before_digest`, and `after_digest`) to keep report output within client limits (Section 15.4; #725) |
+| 1.0.0-alpha.27 | 2026-11-20 | Operator `[llm] provider = "openai"` selects OpenAI for the harness's model judgments: `model` is required for it, the key is read from `OPENAI_API_KEY`, the credential check runs after `[llm]` is applied, and every model judgment result records the model as `<provider>:<model>` in `llm_model` (Section 14.1; #764) |
+| 1.0.0-alpha.26 | 2026-11-20 | Preflight context check and tool guard allow ready remediations to proceed: ready controls preview and apply with platform requests planned for them, while controls requiring unconfirmed context report `needs_confirmation`; the run blocks only when every failing control lacks context (Sections 7.10, 15.4; #767) |
+| 1.0.0-alpha.25 | 2026-11-19 | OpenSSF Security Insights (schema 1.x and 2.x) proposes `security_contact` as a sieve-hint candidate with the file's repository-relative path as its origin; it never writes the loaded configuration, never replaces a stored value, and its policy link is not imported (Section 7.12; #497) |
+| 1.0.0-alpha.24 | 2026-11-17 | Composite framework loading fails when `include_controls` lists an ID absent from its source (Section 2.1; feature 013; #723) |
+| 1.0.0-alpha.23 | 2026-11-17 | `exec` omits `GH_TOKEN` and `GITHUB_TOKEN` from the child environment when the value is exactly `""` (Sections 3.3, 4.4; #752). An undeclared CLI argument rejection is ERROR, class `usage`; other undeclared exits stay INCONCLUSIVE with `unexpected_exit`; a code in `pass_exit_codes` or `fail_exit_codes` stays PASS or FAIL with no class (Sections 3.3, 5.2; #752) |
+| 1.0.0-alpha.22 | 2026-10-25 | Plugin signature verification removed: it made no cryptographic check and never refused a plugin; `[plugins] allowed` is applied before a plugin left out is loaded; operator `plugins.allow_unsigned` and `plugins.trusted_publishers` fail loading; the framework TOML `[plugins]` table is not read (Sections 6.5, 6.6, 14.1; Appendix C) |
+| 1.0.0-alpha.21 | 2026-10-29 | Removed shared handlers (`[shared_handlers]`, the `shared` step key): a second control referencing a shared step got the first control's verdict without evaluating its own `expr`, and the effective configuration never resolved them; declaring either now fails loading (Section 3.0.3; Appendix C) |
+| 1.0.0-alpha.20 | 2026-10-29 | Framework selection: MCP, agent and harness state, and tool arguments name a registered framework only, never a path; a framework file given by path is refused inside the audited repository (Sections 10.5, 14.5) |
 | 1.0.0-alpha.19 | 2026-10-23 | `generate_threat_model` registers plan support: its files record the UTC scan date, not a time, so the preview equals the apply. Changed outcomes also list files kept because of uncommitted user changes (Sections 4.2, 12, 15.4; #673) |
 | 1.0.0-alpha.18 | 2026-10-23 | `generate_threat_model` writes only through the remediation executor and the run manifest: the remediation handler returns `FileChange`s and has ceiling `{}`, and the MCP tool writes only to a validated repository path (Sections 3.0.1, 4.2, 12, 15.8) |
 | 1.0.0-alpha.17 | 2026-10-18 | Reads of the audited repository resolve symbolic links and stay inside it: a path that resolves outside is never read, never counts as present, and is recorded in `skipped_outside_repository`; CEL `file_exists` follows the same rule (Sections 3.0.4, 3.5, 3.7) |

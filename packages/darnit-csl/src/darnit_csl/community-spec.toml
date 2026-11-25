@@ -140,17 +140,17 @@ required = false
 
 [context.csl_coc_policy]
 type = "enum"
-values = ["csl", "umbrella"]
-prompt = "For the Code of Conduct, ship the Community Specification CoC, or reference an umbrella project's CoC (e.g. CNCF)?"
-hint = "'csl' = use the CoC that ships with Community Specification. 'umbrella' = cite an existing CoC such as the CNCF Code of Conduct."
+values = ["csl", "umbrella", "org"]
+prompt = "For the Code of Conduct, ship the Community Specification CoC, cite an umbrella project's CoC alongside named contacts, or point at the project's existing CoC?"
+hint = "'csl' = use the CoC that ships with Community Specification, with named contacts. 'umbrella' = cite an existing CoC such as the CNCF Code of Conduct, and still list named contacts. 'org' = the project already has a Code of Conduct (its own file, its org's community repo, or a foundation CoC); the notices link it and name no individuals, so csl_coc_reference is required."
 affects = ["CSL-03.01"]
 store_as = "legal.csl.coc_policy"
 required = false
 
 [context.csl_coc_reference]
 type = "string"
-prompt = "If referencing an umbrella Code of Conduct, name and link it."
-hint = "Only needed when the CoC policy is 'umbrella'."
+prompt = "If citing an existing Code of Conduct, name and link it."
+hint = "Required when the CoC policy is 'org': one markdown sentence linking the project's Code of Conduct, used as the notice's Code of Conduct section. With 'umbrella', the name and link of the umbrella CoC. Not used with 'csl'."
 examples = ["CNCF Code of Conduct (https://github.com/cncf/foundation/blob/main/code-of-conduct.md)"]
 affects = ["CSL-03.01"]
 store_as = "legal.csl.coc_reference"
@@ -616,7 +616,7 @@ in the README."""
 handler = "regex"
 # A miss proves failure; a match is evidence only, not a PASS (feature 041).
 fail_on_miss = true
-files = ["README.md", "readme.md", "README.rst"]
+files = ["README.md", "readme.md", "README.rst", "README.adoc", "README.txt", "README"]
 pass_if_any = false
 
 [controls."CSL-06.01".passes.pattern.patterns]

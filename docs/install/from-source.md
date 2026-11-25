@@ -4,6 +4,26 @@ For users who want to **try an unreleased feature**, contribute to darnit, or ru
 
 There are two routes: install straight from the git URL with `uv tool install` (no clone), or clone the repository and work in the checkout.
 
+## One-command setup
+
+`scripts/quickstart.sh` does the steps on this page for you. It checks for git, offers to install uv and zizmor if they are missing, installs darnit with the dependency versions pinned in `uv.lock`, runs an OpenSSF Baseline level 1 audit on a repository, and offers to register the MCP server with Claude Code. It changes nothing in the audited repository.
+
+From a checkout:
+
+```bash
+./scripts/quickstart.sh /path/to/your/repo
+```
+
+Without a checkout (the script clones darnit into `~/.local/share/darnit`):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/darnitdevorg/darnit/main/scripts/quickstart.sh -o quickstart.sh
+less quickstart.sh    # read it before you run it
+bash quickstart.sh /path/to/your/repo
+```
+
+Options: `--yes` answers yes to every prompt, `--all-levels` audits all Baseline levels, `--no-mcp` skips the Claude Code registration, and `--dir DIR` sets where darnit is cloned. `--help` lists them.
+
 ## Install from the git URL
 
 ```bash

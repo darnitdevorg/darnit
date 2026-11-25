@@ -2,9 +2,11 @@
 
 ## Scanning Triggers
 
-- **Every push to main**: Full SAST scan
-- **Every pull request**: Incremental SAST scan
-- **Weekly schedule**: Comprehensive scan with updated rules
+<% if scan.ci_sast_tools %>
+Detected SAST tools: << scan.ci_sast_tools >>. The workflow file, when present, is the source for which events run the scan. This document does not add a trigger the workflow does not show.
+<% else %>
+TODO: No SAST tool was detected. Do not state that scans run on push or pull request until a workflow shows that.
+<% endif %>
 
 ## Severity Handling
 
@@ -16,8 +18,17 @@
 
 ## Tools
 
-SAST scanning is performed by << scan.ci_sast_tools | default('CodeQL') >>. See
-[`.github/workflows/sast.yml`](../.github/workflows/sast.yml) for configuration.
+<% if scan.ci_sast_tools %>
+Detected SAST tools: << scan.ci_sast_tools >>.
+<% if scan.sast_workflow_path %>
+See [`<< scan.sast_workflow_path >>`](../<< scan.sast_workflow_path >>) for configuration.
+<% endif %>
+<% else %>
+TODO: No SAST tool was detected. Do not describe a scanner as configured until the repository shows one.
+<% if scan.sast_workflow_path %>
+A workflow file exists at `<< scan.sast_workflow_path >>`, and no supported SAST action was identified in it.
+<% endif %>
+<% endif %>
 
 ## Exception Process
 

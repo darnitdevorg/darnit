@@ -175,3 +175,68 @@ class TestHarnessLlmSettings:
         run = self._run(tmp_path, 'provider = "other"\nmodel = "m"')
         with pytest.raises(HarnessSetupError, match="llm.provider"):
             run._apply_operator_llm_settings()
+
+    # #764: OpenAI as a provider.
+
+    @pytest.mark.unit
+    def test_openai_model_from_operator_config(self, tmp_path: Path) -> None:
+        run = self._run(tmp_path, 'provider = "openai"\nmodel = "gpt-5"')
+        run._apply_operator_llm_settings()
+        assert run.llm_step.model == "openai:gpt-5"
+        assert run.llm_provider == "openai:gpt-5"
+
+    @pytest.mark.unit
+    def test_openai_without_model_is_a_setup_error(self, tmp_path: Path) -> None:
+        from darnit.harness.driver import HarnessSetupError
+
+        run = self._run(tmp_path, 'provider = "openai"')
+        with pytest.raises(HarnessSetupError, match="needs llm.model"):
+            run._apply_operator_llm_settings()
+
+    @pytest.mark.unit
+    def test_openai_checks_openai_key(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "not-the-right-key")
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        run = self._run(tmp_path, 'provider = "openai"\nmodel = "gpt-5"')
+        run._apply_operator_llm_settings()
+
+        error = run._check_credentials()
+
+        assert error is not None
+        assert "OPENAI_API_KEY" in error
+        assert "'openai'" in error
+
+    @pytest.mark.unit
+    def test_openai_does_not_need_anthropic_key(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.setenv("OPENAI_API_KEY", "test-key-not-real")
+        run = self._run(tmp_path, 'provider = "openai"\nmodel = "gpt-5"')
+        run._apply_operator_llm_settings()
+
+        assert run._check_credentials() is None
+
+    @pytest.mark.unit
+    def test_anthropic_still_checks_anthropic_key(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.setenv("OPENAI_API_KEY", "not-the-right-key")
+        run = self._run(tmp_path, 'provider = "anthropic"\nmodel = "claude-opus-5"')
+        run._apply_operator_llm_settings()
+
+        error = run._check_credentials()
+
+        assert error is not None
+        assert "ANTHROPIC_API_KEY" in error
+
+    @pytest.mark.unit
+    def test_run_checks_the_configured_providers_key(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The operator's [llm] settings are applied before the credential check."""
+        import asyncio
+
+        from darnit.harness.driver import HarnessSetupError
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "not-the-right-key")
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        run = self._run(tmp_path, 'provider = "openai"\nmodel = "gpt-5"')
+
+        with pytest.raises(HarnessSetupError, match="OPENAI_API_KEY"):
+            asyncio.new_event_loop().run_until_complete(run.run())

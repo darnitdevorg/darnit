@@ -297,7 +297,9 @@ def cmd_audit(args: argparse.Namespace) -> int:
         load_effective_config,
         load_effective_config_auto,
         load_effective_config_by_name,
+        refuse_framework_inside_checkout,
     )
+    from darnit.core.composition import CompositionError
     from darnit.filtering import filter_controls, parse_tags_arg
 
     # Warn about limited functionality in terminal mode
@@ -324,13 +326,14 @@ def cmd_audit(args: argparse.Namespace) -> int:
         if args.framework:
             framework_path = Path(args.framework)
             if framework_path.exists():
+                refuse_framework_inside_checkout(framework_path, repo_path)
                 config = load_effective_config(framework_path, operator=operator)
             else:
                 # Try as framework name
                 config = load_effective_config_by_name(args.framework, operator=operator)
         else:
             config = load_effective_config_auto(operator=operator)
-    except ValueError as e:
+    except (ValueError, CompositionError) as e:
         logger.error(f"Failed to load framework: {e}")
         return 1
     except FileNotFoundError as e:
@@ -433,7 +436,9 @@ def cmd_plan(args: argparse.Namespace) -> int:
         load_effective_config,
         load_effective_config_auto,
         load_effective_config_by_name,
+        refuse_framework_inside_checkout,
     )
+    from darnit.core.composition import CompositionError
     from darnit.filtering import matches_filters, parse_tags_arg
 
     repo_path = Path(args.repo_path).resolve()
@@ -443,12 +448,13 @@ def cmd_plan(args: argparse.Namespace) -> int:
         if args.framework:
             framework_path = Path(args.framework)
             if framework_path.exists():
+                refuse_framework_inside_checkout(framework_path, repo_path)
                 config = load_effective_config(framework_path)
             else:
                 config = load_effective_config_by_name(args.framework)
         else:
             config = load_effective_config_auto()
-    except (ValueError, FileNotFoundError) as e:
+    except (ValueError, FileNotFoundError, CompositionError) as e:
         logger.error(f"Failed to load framework: {e}")
         return 1
 
@@ -1066,7 +1072,8 @@ def cmd_run(args: argparse.Namespace) -> int:
 def cmd_harness(args: argparse.Namespace) -> int:
     """Run the harness: end-to-end audit with in-band LLM dispatch.
 
-    Feature 026. Non-interactive by default; consumes ANTHROPIC_API_KEY
+    Feature 026. Non-interactive by default; consumes the configured
+    provider's API key (ANTHROPIC_API_KEY, or OPENAI_API_KEY; #764)
     from env; dispatches LLM steps via PydanticAILLMStep; produces a
     Markdown or JSON report; exits with a documented code.
     """
@@ -1285,11 +1292,17 @@ def cmd_serve(args: argparse.Namespace) -> int:
         from darnit.config import list_available_frameworks, resolve_framework_path
 
         framework_name = getattr(args, "framework", None)
-        if not framework_name:
+        if framework_name:
+            from darnit.config.merger import ensure_framework_allowed
+
+            try:
+                ensure_framework_allowed(framework_name, operator_config.config)
+            except ValueError as e:
+                logger.error(str(e))
+                return 1
+        else:
+            # Lists only frameworks plugins.allowed permits (framework-design 6.6).
             frameworks = list_available_frameworks()
-            allowed = operator_config.config.plugins.allowed
-            if allowed:
-                frameworks = [f for f in frameworks if f in allowed]
             if not frameworks:
                 logger.error(
                     "No framework specified and none found. "
@@ -1742,7 +1755,8 @@ def create_parser() -> argparse.ArgumentParser:
         help="Run end-to-end audit with in-band LLM dispatch (fleet-operator driver).",
         description=(
             "End-to-end audit driver with in-band LLM dispatch. Reads "
-            "ANTHROPIC_API_KEY from env; dispatches LLM steps itself so "
+            'ANTHROPIC_API_KEY (or OPENAI_API_KEY with [llm] provider = "openai" '
+            "in operator configuration) from env; dispatches LLM steps itself so "
             "no control ends up awaiting a model judgment in the report. Non-interactive; "
             "batch answers via --answers or auto-discovered .project/project.yaml."
         ),

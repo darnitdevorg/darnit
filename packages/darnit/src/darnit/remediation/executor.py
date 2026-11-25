@@ -852,6 +852,11 @@ class RemediationExecutor:
         from darnit.sieve.handler_registry import HandlerResultStatus
 
         entry: dict[str, Any] = {"handler": handler_config["handler"]}
+        planned_conflicts = (
+            [c.path for c in planned.file_changes if c.reason == "user_changes_present"]
+            if planned and planned.previewable
+            else []
+        )
         previewed = [c for c in planned.file_changes if c.changes] if planned and planned.previewable else []
 
         def failed(message: str, changes: list[FileChange] | None = None) -> _ExecOutcome:
@@ -866,7 +871,7 @@ class RemediationExecutor:
                 for p in working_tree.user_changed(self.local_path)
                 if p not in recorded or before.get(p) != recorded[p]
             }
-            conflicts = sorted(c.path for c in previewed if c.path in dirty)
+            conflicts = sorted({c.path for c in previewed if c.path in dirty} | set(planned_conflicts))
             if conflicts:
                 return failed(
                     f"Not run: uncommitted user changes in previewed path(s) {conflicts}",
@@ -1139,10 +1144,12 @@ class RemediationExecutor:
                 result_entry["message"] = f"Invalid file changes from handler '{invocation.handler}': {e}"
                 all_success = False
                 changes = []
-            reference = handler_config.get("project_reference") if invocation.handler == "file_create" else None
+            reference = handler_config.get("project_reference")
             if reference:
                 changes = [
-                    c.model_copy(update={"project_reference": reference}) if c.action == "create" else c
+                    c.model_copy(update={"project_reference": reference})
+                    if c.action == "create" and _is_referenced_file(invocation.handler, handler_config, c)
+                    else c
                     for c in changes
                 ]
 
@@ -1155,6 +1162,16 @@ class RemediationExecutor:
                 try:
                     if not _is_exec(handler_info):
                         changes = [self._planned_write(c) for c in changes]
+                    else:
+                        planned_changes = [self._planned_write(c) for c in changes]
+                        conflicts = sorted(c.path for c in planned_changes if c.reason == "user_changes_present")
+                        if conflicts:
+                            result_entry["status"] = "error"
+                            result_entry["message"] = (
+                                f"Not run: uncommitted user changes in previewed path(s) {conflicts}"
+                            )
+                            all_success = False
+                            changes = [c for c in planned_changes if c.reason == "user_changes_present"]
                     changes = changes + self._planned_references(changes, result_entry)
                 except WriteRefused as e:
                     result_entry["status"] = "error"
@@ -1269,6 +1286,22 @@ def _file_changes(evidence: Mapping[str, Any]) -> list[FileChange]:
     if not isinstance(raw, list):
         raise ValueError("file_changes must be a list")
     return [item if isinstance(item, FileChange) else FileChange.model_validate(item) for item in raw]
+
+
+def _is_referenced_file(handler: str, handler_config: Mapping[str, Any], change: FileChange) -> bool:
+    """Whether ``change`` is the file a step's ``project_reference`` names (framework-design 4.3).
+
+    ``file_create`` creates only its own file. Another handler may create
+    companion files as well (``generate_threat_model`` writes the data flow,
+    the raw findings and one file per finding group next to its summary), so
+    only the file at the step's ``path`` is referenced.
+    """
+    if handler == "file_create":
+        return True
+    try:
+        return change.path == normalize_repo_path(str(handler_config.get("path", "")))
+    except ValueError:
+        return False
 
 
 def _reference_note(change: FileChange, kept: str | None) -> dict[str, Any]:

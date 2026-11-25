@@ -26,6 +26,7 @@ from darnit.sieve.handler_registry import (
     HandlerResult,
     HandlerResultStatus,
 )
+from darnit.sieve.orchestrator import _apply_cel_expr
 
 
 def _ctx(local_path: Path) -> HandlerContext:
@@ -37,7 +38,6 @@ def _ctx(local_path: Path) -> HandlerContext:
         control_id="TEST-01.01",
         project_context={},
         gathered_evidence={},
-        shared_cache={},
         dependency_results={},
     )
 
@@ -283,6 +283,102 @@ class TestExecHandlerClassification:
         assert result.status == HandlerResultStatus.FAIL
         assert result.error_class is None
 
+    @pytest.mark.unit
+    def test_cli_usage_rejection_is_error(self, tmp_path: Path) -> None:
+        """#752: an undeclared argument rejection is ERROR, with the stderr cause."""
+        stderr = "error: invalid value '' for '--gh-token <GH_TOKEN>': GitHub token cannot be empty\n"
+        with patch(
+            "darnit.sieve.builtin_handlers.subprocess.run",
+            return_value=_proc(2, stderr=stderr),
+        ):
+            result = exec_handler(
+                {"handler": "exec", "command": ["zizmor", "--format", "json", "--offline", "."]},
+                _ctx(tmp_path),
+            )
+        assert result.status == HandlerResultStatus.ERROR
+        assert result.error_class == "usage"
+        assert "code 2" in result.message
+        assert "zizmor --format json --offline ." in result.message
+        assert "GitHub token cannot be empty" in result.message
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        ("command", "exit_code", "stderr"),
+        [
+            (["grep", "-r", "uses:", ".github/workflows/"], 2, "grep: .github/workflows/: No such file or directory"),
+            (["git", "remote", "get-url", "upstream"], 2, "error: No such remote 'upstream'"),
+            (["zizmor", "--offline", "."], 3, "fatal: no audit was performed\nerror: no inputs collected\n"),
+            (["zizmor", "--offline", "."], 2, "error: unrecognized input"),
+        ],
+    )
+    def test_undeclared_non_usage_exits_stay_inconclusive(
+        self, tmp_path: Path, command: list[str], exit_code: int, stderr: str
+    ) -> None:
+        with patch(
+            "darnit.sieve.builtin_handlers.subprocess.run",
+            return_value=_proc(exit_code, stderr=stderr),
+        ):
+            result = exec_handler({"handler": "exec", "command": command}, _ctx(tmp_path))
+        assert result.status == HandlerResultStatus.INCONCLUSIVE
+        assert result.error_class == "unexpected_exit"
+
+    @pytest.mark.unit
+    def test_declared_fail_exit_ignores_usage_stderr(self, tmp_path: Path) -> None:
+        """A code the step declares is a finding, even when stderr looks like a usage error."""
+        with patch(
+            "darnit.sieve.builtin_handlers.subprocess.run",
+            return_value=_proc(
+                2,
+                stderr="error: invalid value '' for '--gh-token <GH_TOKEN>': GitHub token cannot be empty",
+            ),
+        ):
+            result = exec_handler(
+                {
+                    "handler": "exec",
+                    "command": ["zizmor"],
+                    "pass_exit_codes": [0],
+                    "fail_exit_codes": [2],
+                },
+                _ctx(tmp_path),
+            )
+        assert result.status == HandlerResultStatus.FAIL
+        assert result.error_class is None
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("exit_code", [10, 11, 12, 13, 14])
+    def test_declared_finding_exit_stays_pass_despite_usage_stderr(self, tmp_path: Path, exit_code: int) -> None:
+        """pass_exit_codes win before classification, so CEL still sees the handler PASS."""
+        with patch(
+            "darnit.sieve.builtin_handlers.subprocess.run",
+            return_value=_proc(
+                exit_code,
+                stdout='[{"ident": "unpinned-uses"}]',
+                stderr="error: invalid value '' for '--gh-token <GH_TOKEN>': GitHub token cannot be empty",
+            ),
+        ):
+            result = exec_handler(
+                {
+                    "handler": "exec",
+                    "command": ["zizmor"],
+                    "pass_exit_codes": [0, 10, 11, 12, 13, 14],
+                    "output_format": "json",
+                },
+                _ctx(tmp_path),
+            )
+        assert result.status == HandlerResultStatus.PASS
+        assert result.error_class is None
+        assert result.evidence["json"] == [{"ident": "unpinned-uses"}]
+        decided = _apply_cel_expr(
+            {
+                "handler": "exec",
+                "expr": '!output.json.exists(f, f.ident == "template-injection")',
+            },
+            result,
+            decides=True,
+        )
+        assert decided.status == HandlerResultStatus.PASS
+        assert decided.evidence["expr"].startswith("!output.json.exists")
+
 
 class TestClassifyExecFailure:
     """#562: the undeclared-exit decision table, first match wins."""
@@ -336,6 +432,24 @@ class TestClassifyExecFailure:
             ("gh: Not Found (HTTP 404)", 1, "unexpected_exit"),
             ("", 1, "unexpected_exit"),
             ("", None, "unexpected_exit"),
+            ("error: unrecognized input", 2, "unexpected_exit"),
+            ("fatal: no audit was performed\nerror: no inputs collected\n", 3, "unexpected_exit"),
+            ("invalid value in the workflow file", 2, "unexpected_exit"),
+            ("error: For more information, try '--help'.", 2, "unexpected_exit"),
+            (
+                "error: invalid value '' for '--gh-token <GH_TOKEN>': GitHub token cannot be empty",
+                2,
+                "usage",
+            ),
+            ("error: unexpected argument '--offline' found", 2, "usage"),
+            ("error: unrecognized subcommand 'frob'", 2, "usage"),
+            ("error: a value is required for '--format <FORMAT>' but none was supplied", 2, "usage"),
+            ("error: the following required arguments were not provided:\n  <INPUTS>", 2, "usage"),
+            (
+                "api rate limit exceeded\nerror: invalid value '' for '--gh-token <GH_TOKEN>'",
+                2,
+                "rate_limit",
+            ),
         ],
     )
     def test_table(self, stderr: str, exit_code: int | None, expected: str) -> None:

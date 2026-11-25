@@ -123,6 +123,43 @@ class TestMergeControl:
                     tags={"security_severity": invalid_sev},
                 )
 
+    def test_invalid_level_type_raises_error(self):
+        """Non-integer level values (strings, floats, booleans) reject loading."""
+        for invalid_level in ["L1", 1.5, True, False]:
+            with pytest.raises(ValidationError, match="level must be an integer"):
+                ControlConfig(
+                    name="InvalidLevel",
+                    description="desc",
+                    level=invalid_level,
+                )
+
+    def test_invalid_control_level_range_raises_error(self):
+        """Control levels outside 1-3 (0, negative, >3) reject loading (fixes #701)."""
+        for invalid_level in [0, -1, 4, 10]:
+            with pytest.raises(ValidationError, match="Invalid control level"):
+                ControlConfig(
+                    name="InvalidRangeAttr",
+                    description="desc",
+                    level=invalid_level,
+                )
+            with pytest.raises(ValidationError, match="Invalid control level"):
+                ControlConfig(
+                    name="InvalidRangeTag",
+                    description="desc",
+                    tags={"level": invalid_level},
+                )
+
+    def test_valid_control_level_range_accepted(self):
+        """Control levels 1, 2, and 3 are accepted as attributes and tags."""
+        for valid_level in [1, 2, 3]:
+            ctrl_attr = ControlConfig(name="ValidAttr", description="desc", level=valid_level)
+            assert ctrl_attr.level == valid_level
+            assert ctrl_attr.tags["level"] == valid_level
+
+            ctrl_tag = ControlConfig(name="ValidTag", description="desc", tags={"level": valid_level})
+            assert ctrl_tag.level == valid_level
+            assert ctrl_tag.tags["level"] == valid_level
+
     def test_get_controls_by_level_with_tags_level(self):
         """get_controls_by_level returns controls whose level was declared in tags."""
         ctrl1 = ControlConfig(

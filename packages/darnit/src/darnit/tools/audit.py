@@ -426,12 +426,18 @@ def _resolve_audit_context(
     target: str | None = None,
     operator: "OperatorConfig | None" = None,
     definitions: dict[str, Any] | None = None,
+    owner: str | None = None,
+    repo: str | None = None,
+    detect_keys: set[str] | None = None,
 ) -> Any:
     """The context resolver's view for an audit, or None when it cannot be read (non-fatal)."""
     try:
         from darnit.config.context_resolve import resolve_context
 
-        return resolve_context(local_path, definitions, target=target, operator=operator, detect=False)
+        return resolve_context(
+            local_path, definitions, target=target, operator=operator, owner=owner, repo=repo,
+            detect=bool(detect_keys), detect_keys=detect_keys,
+        )
     except Exception as e:  # noqa: BLE001 - context must not break an audit
         logger.debug("Context resolution failed (non-fatal): %s", e)
         return None
@@ -936,11 +942,18 @@ def run_sieve_audit(
         operator_config = resolve_operator_config(local_path)
     operator = operator_config.config
 
+    # A plugin the operator's plugins.allowed leaves out is not loaded
+    # (framework-design 6.6), including for a configuration passed in.
+    from darnit.core.discovery import set_allowed_plugins
+
+    set_allowed_plugins(operator.plugins.allowed)
+
     resolved_fw = framework_name
 
     if resolved_fw:
-        from darnit.config.merger import ensure_framework_allowed
+        from darnit.config.merger import ensure_framework_allowed, require_framework_name
 
+        require_framework_name(resolved_fw)
         ensure_framework_allowed(resolved_fw, operator)
 
     # Register the framework's custom sieve handlers (issue #427). This runs
@@ -1031,7 +1044,18 @@ def run_sieve_audit(
     from darnit.config.context_storage import framework_definitions
 
     definitions = framework_definitions(framework) if framework is not None else None
-    resolved_context = _resolve_audit_context(local_path, target=target, operator=operator, definitions=definitions)
+    # Resolve auto-detectable keys used by selected verification steps.
+    detect_keys = {
+        key
+        for spec in all_controls
+        for step in spec.metadata.get("handler_invocations", [])
+        for key in (step.when or {})
+        if definitions and key in definitions and definitions[key].auto_detect and definitions[key].detect
+    }
+    resolved_context = _resolve_audit_context(
+        local_path, target=target, operator=operator, definitions=definitions,
+        owner=owner, repo=repo, detect_keys=detect_keys,
+    )
     usable_project = resolved_context.usable() if resolved_context is not None else {}
     project_context, detected_context, repository_values = _applicability_context(
         local_path,
@@ -1296,6 +1320,7 @@ def format_results_markdown(
     remediation_map: dict[str, Any] | None = None,
     framework_name: str | None = None,
     audit_metadata: dict[str, Any] | None = None,
+    target: str | None = None,
 ) -> str:
     """Format audit results as Markdown.
 
@@ -1307,6 +1332,8 @@ def format_results_markdown(
         compliance: Level compliance
         level: Maximum level checked
         local_path: Path to the repository (for pending context)
+        target: Repository identity the caller named, so pending context
+            reads operator-side confirmations for an untrusted repository
         report_title: Title for the report H1 heading.
         framework_name: Framework name used to resolve the framework TOML
             for per-control help text on failures.
@@ -1335,8 +1362,8 @@ def format_results_markdown(
         )
     if meta.get("spec_version"):
         header_lines.append(f"**Spec Version:** {meta['spec_version']}")
-    if meta.get("generated_at"):
-        header_lines.append(f"**Generated At:** {meta['generated_at']}")
+    # No wall-clock time in the report: the same results must render to the
+    # same bytes (#436). The JSON and SARIF metadata still carry generated_at.
     lines = [
         *header_lines,
         f"**Repository:** {owner}/{repo}",
@@ -1632,7 +1659,7 @@ def format_results_markdown(
         lines.append("")
 
     # Add "Next Steps" section with ordered agent directives
-    next_steps_lines = _get_next_steps_section(local_path, summary)
+    next_steps_lines = _get_next_steps_section(local_path, summary, target=target)
     if next_steps_lines:
         lines.extend(next_steps_lines)
 
@@ -1758,6 +1785,8 @@ def _format_assertion_markdown(assertion: dict[str, Any]) -> list[str]:
 def _get_next_steps_section(
     local_path: str | None,
     summary: dict[str, int],
+    *,
+    target: str | None = None,
 ) -> list[str]:
     """Get the "Next Steps" section with ordered agent directives.
 
@@ -1771,6 +1800,8 @@ def _get_next_steps_section(
     Args:
         local_path: Path to the repository
         summary: Status summary dict with FAIL, WARN counts etc.
+        target: Repository identity the caller named; without it, answers
+            confirmed operator-side for an untrusted repository are not seen
 
     Returns:
         List of markdown lines, or empty list when no steps apply
@@ -1785,7 +1816,7 @@ def _get_next_steps_section(
         try:
             from darnit.config.context_storage import get_pending_context
 
-            pending_context = get_pending_context(local_path)
+            pending_context = get_pending_context(local_path, target=target)
         except ImportError:
             logger.debug("Context storage not available for next steps section")
         except Exception as e:

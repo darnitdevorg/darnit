@@ -40,14 +40,8 @@ class TestEndToEndDispatch:
         """SC-001 + SC-004: harness runs to completion; no result ends up
         PENDING in the final report.
 
-        Prior to PR #365 fix this test also asserted >=1 LLM dispatch via
-        STAGE1-REF-SECURITY-01's llm_extract step. That ordering
-        (llm_extract first) made the control unable to ever PASS -- see
-        openssf-baseline.toml comment on STAGE1-REF-SECURITY-01. The
-        reorder puts dispositive file_exists first; llm_extract is now
-        unreachable on this fixture, so we no longer assert LLM dispatch
-        via this control. Whether LLM dispatch continues past a
-        suggestive result is tracked as a follow-up.
+        LLM dispatch itself is covered by
+        test_llm_suggestive_cannot_conclude_pass.
         """
         run = harness_run_factory(str(minimal_llm_repo_tree))
         report = _run(run.run())
@@ -66,17 +60,21 @@ class TestEndToEndDispatch:
         harness_run_factory: Callable[..., HarnessRun],
     ) -> None:
         """SC-008: even a MockLLMStep returning yes/high-confidence cannot
-        cause the LLM-related control to conclude PASS. The dispositive
-        file_exists step (missing SECURITY.md) FAILs the reference control."""
+        cause a control to conclude PASS. Model judgments are dispatched on
+        this fixture, and no PASS carries suggestive authority. The
+        dispositive file_exists step (missing SECURITY.md) FAILs
+        OSPS-VM-02.01."""
         run = harness_run_factory(str(minimal_llm_repo_tree))
         report = _run(run.run())
 
-        ref_control = next(
-            (c for c in report.controls if c.get("id") == "STAGE1-REF-SECURITY-01"),
-            None,
-        )
-        assert ref_control is not None, "STAGE1-REF-SECURITY-01 not in results"
-        assert ref_control["status"] != "PASS", f"LLM-suggested PASS leaked through: got {ref_control['status']}"
+        assert report.llm_calls["total"] >= 1, "fixture no longer exercises LLM dispatch"
+        leaked = [c["id"] for c in report.controls if c.get("status") == "PASS" and c.get("authority") == "suggestive"]
+        assert not leaked, f"LLM-suggested PASS leaked through: {leaked}"
+
+        vm_02 = next((c for c in report.controls if c.get("id") == "OSPS-VM-02.01"), None)
+        assert vm_02 is not None, "OSPS-VM-02.01 not in results"
+        assert vm_02["status"] == "FAIL"
+        assert vm_02["authority"] == "dispositive"
 
     def test_report_every_result_has_authority(
         self,
@@ -231,13 +229,13 @@ class TestNoReauditAfterCollect:
 
         fake_results = [
             {
-                "id": "STAGE1-REF-SECURITY-01",
+                "id": "OSPS-VM-02.01",
                 "status": "FAIL",
                 "authority": "dispositive",
                 "level": 1,
                 "feedback_questions": [
                     {
-                        "control_id": "STAGE1-REF-SECURITY-01",
+                        "control_id": "OSPS-VM-02.01",
                         "context_key": "security_contact",
                         "question": "Who is the security contact?",
                         "answered": False,
@@ -270,7 +268,7 @@ class TestNoReauditAfterCollect:
         ]
         assert len(answered_for_security_contact) == 1
         entry = answered_for_security_contact[0]
-        assert entry.control_id == "STAGE1-REF-SECURITY-01"
+        assert entry.control_id == "OSPS-VM-02.01"
         assert entry.answer == "sec@example.com"
         assert entry.origin == "mock"
         assert entry.authority == "asserted"
@@ -716,3 +714,20 @@ class TestSecretRedaction:
             assert secret not in record.getMessage(), (
                 f"secret leaked into log record: {record.getMessage()!r}"
             )
+
+
+class TestModelOnErrorResponses:
+    """framework-design.md 14.1: a failed model call still names the configured model."""
+
+    def test_failed_call_records_the_configured_model(self, tmp_path: Path) -> None:
+        class FailingLLMStep:
+            async def evaluate(self, request: ConsultationRequest) -> LLMJudgment:
+                raise RuntimeError("HTTP 500")
+
+        run = HarnessRun(local_path=str(tmp_path), llm_step=FailingLLMStep())
+        run.llm_provider = "openai:gpt-5"
+
+        response = _run(run._dispatch_llm_step({"control_id": "X", "prompt": "Q"}))
+
+        assert response.error_class == "unavailable"
+        assert response.model == "openai:gpt-5"

@@ -1,0 +1,1881 @@
+[
+  {
+    "description": "Run OpenSSF Baseline audit on a repository.\n\nSupports filtering by:\n- level: Maximum maturity level (1, 2, or 3). Default: 3\n- tags: Filter by domain, tags, or custom attributes (e.g., \"domain=AC\", \"security\", \"severity>=7.0\")\n\nOutput formats:\n- \"markdown\" (default): Human-readable report with remediation guidance\n- \"json\": Full JSON with all evidence and pass history (large; use get_judgment_requests for what a judgment needs)\n- \"summary\": Compact JSON with id/status/level/details, plus pending.kind on PENDING rows\n- \"sarif\": SARIF format for tool integration\n\nExamples:\n- Level 1 only: level=1\n- AC domain controls: tags=\"domain=AC\"\n- Security-tagged level 2: level=2, tags=\"security\"\n- Compact output: output_format=\"summary\"\n",
+    "inputSchema": {
+      "properties": {
+        "attest": {
+          "default": false,
+          "title": "Attest",
+          "type": "boolean"
+        },
+        "host": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Host"
+        },
+        "level": {
+          "default": 3,
+          "title": "Level",
+          "type": "integer"
+        },
+        "local_path": {
+          "default": ".",
+          "title": "Local Path",
+          "type": "string"
+        },
+        "output_format": {
+          "default": "markdown",
+          "title": "Output Format",
+          "type": "string"
+        },
+        "owner": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Owner"
+        },
+        "prefer_upstream": {
+          "default": false,
+          "title": "Prefer Upstream",
+          "type": "boolean"
+        },
+        "profile": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Profile"
+        },
+        "project_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Url"
+        },
+        "repo": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Repo"
+        },
+        "sign_attestation": {
+          "default": true,
+          "title": "Sign Attestation",
+          "type": "boolean"
+        },
+        "staging": {
+          "default": false,
+          "title": "Staging",
+          "type": "boolean"
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tags"
+        }
+      },
+      "title": "audit_openssf_baselineArguments",
+      "type": "object"
+    },
+    "name": "audit_openssf_baseline",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "audit_openssf_baselineOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Audit a single repository from a GitHub org by cloning it and running the OpenSSF Baseline audit.\n\nClones the repo to a temp directory, runs the full audit pipeline, and returns\nthe report for that one repo. Use `list_org_repos` first to discover repos.\n\nRequires the `gh` CLI to be installed and authenticated.\n\nParameters:\n- owner (required): GitHub org or user name (e.g., \"kusari-oss\")\n- repo (required): Repository name to audit (e.g., \"my-repo\")\n- level: Maximum maturity level (1, 2, or 3). Default: 3\n- tags: Filter controls by tags (e.g., \"domain=AC\", \"security\")\n- output_format: \"markdown\" or \"json\". Default: \"markdown\"\n\nExamples:\n- audit_org(owner=\"my-org\", repo=\"my-repo\")\n- audit_org(owner=\"my-org\", repo=\"my-repo\", level=1)\n- audit_org(owner=\"my-org\", repo=\"my-repo\", output_format=\"json\")\n",
+    "inputSchema": {
+      "properties": {
+        "level": {
+          "default": 3,
+          "title": "Level",
+          "type": "integer"
+        },
+        "output_format": {
+          "default": "markdown",
+          "title": "Output Format",
+          "type": "string"
+        },
+        "owner": {
+          "title": "Owner",
+          "type": "string"
+        },
+        "repo": {
+          "title": "Repo",
+          "type": "string"
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tags"
+        }
+      },
+      "required": [
+        "owner",
+        "repo"
+      ],
+      "title": "audit_orgArguments",
+      "type": "object"
+    },
+    "name": "audit_org",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "audit_orgOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Commit remediation changes with a descriptive message",
+    "inputSchema": {
+      "properties": {
+        "host": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Host"
+        },
+        "local_path": {
+          "default": ".",
+          "title": "Local Path",
+          "type": "string"
+        },
+        "message": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Message"
+        },
+        "owner": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Owner"
+        },
+        "repo": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Repo"
+        },
+        "run_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Run Id"
+        }
+      },
+      "title": "commit_remediation_changesArguments",
+      "type": "object"
+    },
+    "name": "commit_remediation_changes",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "commit_remediation_changesOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Confirm stored PASS candidates (PENDING, pending.kind = confirmation) for the named repository. Call ONLY on the operator's explicit instruction; never on your own judgment. Confirms only a candidate for the current evidence; the confirmation lapses on expiry or when the judged content or rubric changes.",
+    "inputSchema": {
+      "properties": {
+        "control_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Control Ids",
+          "type": "array"
+        },
+        "host": {
+          "default": "github.com",
+          "title": "Host",
+          "type": "string"
+        },
+        "local_path": {
+          "default": ".",
+          "title": "Local Path",
+          "type": "string"
+        },
+        "owner": {
+          "title": "Owner",
+          "type": "string"
+        },
+        "repo": {
+          "title": "Repo",
+          "type": "string"
+        }
+      },
+      "required": [
+        "control_ids",
+        "owner",
+        "repo"
+      ],
+      "title": "confirm_pass_candidateArguments",
+      "type": "object"
+    },
+    "name": "confirm_pass_candidate",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "confirm_pass_candidateOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Record a person's confirmation of project context values. Only on the person's\nexplicit instruction; never pass a detected value the person has not confirmed, and never\ntype a candidate's value as an answer.\n\n`owner` and `repo` (and `host` when not github.com) are required with context values:\nthey name the repository. Values are recorded in .project/darnit.yaml when the operator\ntrusts that repository, otherwise operator-side with nothing written to the repository.\n\n**IMPORTANT**: This is the ONLY way to set project context. DO NOT directly edit\n.project/ files - always use this tool instead.\n\n**Parameters:**\n- `local_path`: Path to repository (default: \".\")\n- `owner`, `repo`, `host`: The repository the values or claims are for\n- One parameter per context key OpenSSF Baseline defines (for example `maintainers`,\n  `security_contact`, `governance_model`, `ci_provider`, `platform`): the person's answer.\n  Each parameter's schema names what it asks; an enum key accepts only its listed values.\n  Other frameworks' keys are confirmed on their own server's confirm_project_data.\n- `accept_candidates`: {key: candidate digest} for a candidate get_pending_data showed\n  the person and the person accepted. Fill in the question's `candidate.digest` only\n  after the person answered yes. The candidate is confirmed only if its digest still\n  matches (detection runs again); its value and origin are recorded as the basis.\n  A mismatch is refused and nothing is written.\n- `confirm_stored` / `reject_stored`: keys from get_pending_data's `stored_unconfirmed`\n  list whose stored value the person confirms or rejects, any number in one call. A\n  rejected .project/darnit.yaml value is deleted (trusted repository only); a rejected\n  .project/project.yaml value is reported as `edit required: <file>:<field>` and the file\n  is left unchanged.\n- `expires_at`: {key: date} optional expiry recorded with a key's confirmation.\n- `confirm_not_applicable`: Control IDs whose pending not-applicable claim the\n  operator confirms, with `owner`, `repo` (and `host` when not github.com)\n  naming the repository. Recorded operator-side. Only on the operator's\n  explicit instruction; never confirm a claim on your own judgment.\n- `confirm_pass_candidate`: Control IDs whose PASS candidate (a positive model\n  judgment, status PENDING with pending.kind = \"confirmation\") the operator\n  confirms for the current evidence, with `owner`, `repo` (and `host`).\n  Recorded operator-side. Only on the operator's explicit instruction; never\n  confirm a candidate on your own judgment or because it would improve the result.\n\n**Call forms (placeholders only):**\n```\nconfirm_project_data(<key>=<the person's answer>, owner=..., repo=...)\nconfirm_project_data(accept_candidates={\"<key>\": \"<candidate digest if the person accepts it>\"}, owner=..., repo=...)\nconfirm_project_data(confirm_stored=[\"<key the person confirms>\"], reject_stored=[\"<key the person rejects>\"], owner=..., repo=...)\nconfirm_project_data(confirm_not_applicable=[\"<control id the operator named>\"], owner=..., repo=...)\nconfirm_project_data(confirm_pass_candidate=[\"<control id the operator named>\"], owner=..., repo=...)\n```\n",
+    "inputSchema": {
+      "properties": {
+        "accept_candidates": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Accept Candidates"
+        },
+        "ci_provider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What CI/CD system does this project use? One of: github, gitlab, jenkins, circleci, azure, travis, none, other.",
+          "title": "Ci Provider"
+        },
+        "confirm_not_applicable": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confirm Not Applicable"
+        },
+        "confirm_pass_candidate": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confirm Pass Candidate"
+        },
+        "confirm_stored": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confirm Stored"
+        },
+        "expires_at": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expires At"
+        },
+        "github_owner_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What type of account owns the GitHub repository? One of: User, Organization.",
+          "title": "Github Owner Type"
+        },
+        "governance_model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What governance model does this project use? One of: bdfl, meritocracy, democracy, corporate, foundation, committee, other.",
+          "title": "Governance Model"
+        },
+        "has_compiled_assets": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Does this project release compiled binaries or build artifacts?",
+          "title": "Has Compiled Assets"
+        },
+        "has_releases": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Does this project make official releases?",
+          "title": "Has Releases"
+        },
+        "has_subprojects": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Does this project have subprojects or related repositories?",
+          "title": "Has Subprojects"
+        },
+        "host": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Host"
+        },
+        "is_library": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Is this a library or framework consumed by other projects?",
+          "title": "Is Library"
+        },
+        "license_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Which license should darnit use when it creates a LICENSE file? One of: mit, apache-2.0, bsd-3-clause, other.",
+          "title": "License Type"
+        },
+        "local_path": {
+          "default": ".",
+          "title": "Local Path",
+          "type": "string"
+        },
+        "maintainers": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Who are the project maintainers?",
+          "title": "Maintainers"
+        },
+        "owner": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Owner"
+        },
+        "platform": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What hosting platform does this project use? One of: github, gitlab, bitbucket, other.",
+          "title": "Platform"
+        },
+        "reject_stored": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reject Stored"
+        },
+        "repo": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Repo"
+        },
+        "security_contact": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What is the security contact for vulnerability reports?",
+          "title": "Security Contact"
+        }
+      },
+      "title": "confirm_project_dataArguments",
+      "type": "object"
+    },
+    "name": "confirm_project_data",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "confirm_project_dataOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Create a new branch for remediation work",
+    "inputSchema": {
+      "properties": {
+        "base_branch": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Base Branch"
+        },
+        "branch_name": {
+          "default": "fix/openssf-baseline-compliance",
+          "title": "Branch Name",
+          "type": "string"
+        },
+        "host": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Host"
+        },
+        "local_path": {
+          "default": ".",
+          "title": "Local Path",
+          "type": "string"
+        },
+        "owner": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Owner"
+        },
+        "repo": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Repo"
+        },
+        "run_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Run Id"
+        }
+      },
+      "title": "create_remediation_branchArguments",
+      "type": "object"
+    },
+    "name": "create_remediation_branch",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "create_remediation_branchOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Create a pull request for remediation changes",
+    "inputSchema": {
+      "properties": {
+        "base_branch": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Base Branch"
+        },
+        "body": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Body"
+        },
+        "draft": {
+          "default": false,
+          "title": "Draft",
+          "type": "boolean"
+        },
+        "host": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Host"
+        },
+        "local_path": {
+          "default": ".",
+          "title": "Local Path",
+          "type": "string"
+        },
+        "owner": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Owner"
+        },
+        "repo": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Repo"
+        },
+        "run_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Run Id"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        }
+      },
+      "title": "create_remediation_prArguments",
+      "type": "object"
+    },
+    "name": "create_remediation_pr",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "create_remediation_prOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Create SECURITY.md file for vulnerability reporting",
+    "inputSchema": {
+      "properties": {
+        "local_path": {
+          "default": ".",
+          "title": "Local Path",
+          "type": "string"
+        },
+        "owner": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Owner"
+        },
+        "repo": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Repo"
+        }
+      },
+      "title": "create_security_policyArguments",
+      "type": "object"
+    },
+    "name": "create_security_policy",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "create_security_policyOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Create a minimal test repository that fails all OpenSSF Baseline controls",
+    "inputSchema": {
+      "properties": {
+        "create_github": {
+          "default": true,
+          "title": "Create Github",
+          "type": "boolean"
+        },
+        "github_org": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Github Org"
+        },
+        "make_template": {
+          "default": false,
+          "title": "Make Template",
+          "type": "boolean"
+        },
+        "parent_dir": {
+          "default": ".",
+          "title": "Parent Dir",
+          "type": "string"
+        },
+        "repo_name": {
+          "default": "baseline-test-repo",
+          "title": "Repo Name",
+          "type": "string"
+        }
+      },
+      "title": "create_test_repositoryArguments",
+      "type": "object"
+    },
+    "name": "create_test_repository",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "create_test_repositoryOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Enable branch protection rules on GitHub repository",
+    "inputSchema": {
+      "properties": {
+        "approve": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Approve"
+        },
+        "branch": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Branch"
+        },
+        "dry_run": {
+          "default": true,
+          "title": "Dry Run",
+          "type": "boolean"
+        },
+        "enforce_admins": {
+          "default": true,
+          "title": "Enforce Admins",
+          "type": "boolean"
+        },
+        "local_path": {
+          "default": ".",
+          "title": "Local Path",
+          "type": "string"
+        },
+        "owner": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Owner"
+        },
+        "prevent_deletion": {
+          "default": true,
+          "title": "Prevent Deletion",
+          "type": "boolean"
+        },
+        "prevent_force_push": {
+          "default": true,
+          "title": "Prevent Force Push",
+          "type": "boolean"
+        },
+        "repo": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Repo"
+        },
+        "require_pull_request": {
+          "default": true,
+          "title": "Require Pull Request",
+          "type": "boolean"
+        },
+        "require_status_checks": {
+          "default": false,
+          "title": "Require Status Checks",
+          "type": "boolean"
+        },
+        "required_approvals": {
+          "default": 1,
+          "title": "Required Approvals",
+          "type": "integer"
+        },
+        "status_checks": {
+          "anyOf": [
+            {
+              "items": {},
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status Checks"
+        }
+      },
+      "title": "enable_branch_protectionArguments",
+      "type": "object"
+    },
+    "name": "enable_branch_protection",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "enable_branch_protectionOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Generate an in-toto attestation for OpenSSF Baseline compliance",
+    "inputSchema": {
+      "properties": {
+        "host": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Host"
+        },
+        "level": {
+          "default": 3,
+          "title": "Level",
+          "type": "integer"
+        },
+        "local_path": {
+          "default": ".",
+          "title": "Local Path",
+          "type": "string"
+        },
+        "output_dir": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Dir"
+        },
+        "output_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Path"
+        },
+        "owner": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Owner"
+        },
+        "repo": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Repo"
+        },
+        "sign": {
+          "default": true,
+          "title": "Sign",
+          "type": "boolean"
+        },
+        "staging": {
+          "default": false,
+          "title": "Staging",
+          "type": "boolean"
+        }
+      },
+      "title": "generate_attestationArguments",
+      "type": "object"
+    },
+    "name": "generate_attestation",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "generate_attestationOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Generate a STRIDE-based threat model for a repository",
+    "inputSchema": {
+      "properties": {
+        "detail_level": {
+          "default": "detailed",
+          "title": "Detail Level",
+          "type": "string"
+        },
+        "local_path": {
+          "default": ".",
+          "title": "Local Path",
+          "type": "string"
+        },
+        "output_format": {
+          "default": "markdown",
+          "title": "Output Format",
+          "type": "string"
+        },
+        "output_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Path"
+        },
+        "owner": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Owner"
+        },
+        "repo": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Repo"
+        }
+      },
+      "title": "generate_threat_modelArguments",
+      "type": "object"
+    },
+    "name": "generate_threat_model",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "generate_threat_modelOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Get what you need to judge the controls awaiting a judgment (PENDING, pending.kind = llm_judgment): each control's prompt, analysis hints, and the keys of its files in a shared files map holding exactly the content submit_judgment checks citations against. Pages stay under 40,000 bytes; call again with control_ids set to 'remaining' until it is empty. Controls with a stored PASS candidate are left out unless include_judged is true. Records nothing.",
+    "inputSchema": {
+      "properties": {
+        "control_ids": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Control Ids"
+        },
+        "host": {
+          "default": "github.com",
+          "title": "Host",
+          "type": "string"
+        },
+        "include_judged": {
+          "default": false,
+          "title": "Include Judged",
+          "type": "boolean"
+        },
+        "local_path": {
+          "default": ".",
+          "title": "Local Path",
+          "type": "string"
+        },
+        "owner": {
+          "title": "Owner",
+          "type": "string"
+        },
+        "repo": {
+          "title": "Repo",
+          "type": "string"
+        }
+      },
+      "required": [
+        "owner",
+        "repo"
+      ],
+      "title": "get_judgment_requestsArguments",
+      "type": "object"
+    },
+    "name": "get_judgment_requests"
+  },
+  {
+    "description": "Get the PASS candidates awaiting the operator's confirmation (PENDING, pending.kind = confirmation) that match the current evidence: each control's title, requirement, files, the judgment's reasoning, and its cited passages, and, with run_id, whether remediation wrote the document. Follow the returned procedure: show every candidate, ask about each, and pass to confirm_pass_candidate only the controls the operator confirms. Records nothing.",
+    "inputSchema": {
+      "properties": {
+        "control_ids": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Control Ids"
+        },
+        "host": {
+          "default": "github.com",
+          "title": "Host",
+          "type": "string"
+        },
+        "local_path": {
+          "default": ".",
+          "title": "Local Path",
+          "type": "string"
+        },
+        "owner": {
+          "title": "Owner",
+          "type": "string"
+        },
+        "repo": {
+          "title": "Repo",
+          "type": "string"
+        },
+        "run_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Run Id"
+        }
+      },
+      "required": [
+        "owner",
+        "repo"
+      ],
+      "title": "get_pass_candidatesArguments",
+      "type": "object"
+    },
+    "name": "get_pass_candidates"
+  },
+  {
+    "description": "Batch context collection wizard. Writes nothing. Returns up to 4 questions at a time.\n\nEach question carries its candidate, if any, as data: `candidate: {value, origin, digest, label}`,\nlabelled UNCONFIRMED. Command templates and answer mappings hold placeholders only;\n`allowed_values` lists every allowed value of an enum; `format_hint` is a format, never an answer.\n\nThe result's `procedure` lists the steps to follow, in order: show candidates, ask the\nquestions (`ask_user_batch` is AskUserQuestion-compatible; pass it verbatim), record the answers\nwith confirm_project_data, call this tool again until status is \"complete\", review\n`stored_unconfirmed` values, and summarize. Your next action after calling this tool MUST be\nasking the person the questions.\n\nDo NOT pre-fill or suggest answers. Never type a detected value as an answer.\n",
+    "inputSchema": {
+      "properties": {
+        "control_ids": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Control Ids"
+        },
+        "limit": {
+          "default": 4,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "local_path": {
+          "default": ".",
+          "title": "Local Path",
+          "type": "string"
+        },
+        "owner": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Owner"
+        },
+        "repo": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Repo"
+        }
+      },
+      "title": "get_pending_dataArguments",
+      "type": "object"
+    },
+    "name": "get_pending_data",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "get_pending_dataOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Get the current project configuration for OpenSSF Baseline",
+    "inputSchema": {
+      "properties": {
+        "local_path": {
+          "default": ".",
+          "title": "Local Path",
+          "type": "string"
+        }
+      },
+      "title": "get_project_configArguments",
+      "type": "object"
+    },
+    "name": "get_project_config",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "get_project_configOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Get the current git status for remediation work",
+    "inputSchema": {
+      "properties": {
+        "local_path": {
+          "default": ".",
+          "title": "Local Path",
+          "type": "string"
+        }
+      },
+      "title": "get_remediation_statusArguments",
+      "type": "object"
+    },
+    "name": "get_remediation_status",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "get_remediation_statusOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Create an empty .project/darnit.yaml when the repository has no .project/ directory. Detects and pre-fills nothing; an existing .project/ is reported, never overwritten.",
+    "inputSchema": {
+      "properties": {
+        "local_path": {
+          "default": ".",
+          "title": "Local Path",
+          "type": "string"
+        }
+      },
+      "title": "init_project_configArguments",
+      "type": "object"
+    },
+    "name": "init_project_config",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "init_project_configOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "List all available OpenSSF Baseline checks organized by level",
+    "inputSchema": {
+      "properties": {
+        "profile": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Profile"
+        }
+      },
+      "title": "list_available_checksArguments",
+      "type": "object"
+    },
+    "name": "list_available_checks",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "list_available_checksOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "List all repositories in a GitHub org or user account.\n\nReturns a JSON object with the list of repo names. Use this first to discover\nrepos, then audit them individually with `audit_org`.\n\nRequires the `gh` CLI to be installed and authenticated.\n\nParameters:\n- owner (required): GitHub org or user name (e.g., \"kusari-oss\")\n- include_archived: Include archived repositories. Default: false\n\nExample workflow:\n1. list_org_repos(owner=\"my-org\") \u2192 {\"repos\": [\"repo-a\", \"repo-b\", ...], \"count\": 5}\n2. audit_org(owner=\"my-org\", repo=\"repo-a\") \u2192 single-repo audit report\n3. audit_org(owner=\"my-org\", repo=\"repo-b\") \u2192 single-repo audit report\n",
+    "inputSchema": {
+      "properties": {
+        "include_archived": {
+          "default": false,
+          "title": "Include Archived",
+          "type": "boolean"
+        },
+        "owner": {
+          "title": "Owner",
+          "type": "string"
+        }
+      },
+      "required": [
+        "owner"
+      ],
+      "title": "list_org_reposArguments",
+      "type": "object"
+    },
+    "name": "list_org_repos",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "list_org_reposOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Apply automated remediations for failed audit controls.\n\n**IMPORTANT**: Before running remediation, ALWAYS call get_pending_data() first to gather any\nmissing project context (maintainers, security contact, governance model, etc.). Some remediations\nrequire confirmed context to generate correct files (e.g., CODEOWNERS needs maintainers).\nGather all context before remediating.\n\nSupports optional git workflow (ignored when dry_run=True):\n- branch_name: Create/switch to this branch before applying (e.g., \"fix/compliance\")\n- auto_commit: Commit changes after applying (requires dry_run=false)\n- create_pr: Create a pull request after committing (requires auto_commit=true)\n",
+    "inputSchema": {
+      "properties": {
+        "approve": {
+          "anyOf": [
+            {
+              "items": {},
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Approve"
+        },
+        "auto_commit": {
+          "default": false,
+          "title": "Auto Commit",
+          "type": "boolean"
+        },
+        "branch_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Branch Name"
+        },
+        "categories": {
+          "anyOf": [
+            {
+              "items": {},
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Categories"
+        },
+        "create_pr": {
+          "default": false,
+          "title": "Create Pr",
+          "type": "boolean"
+        },
+        "dry_run": {
+          "default": true,
+          "title": "Dry Run",
+          "type": "boolean"
+        },
+        "enhance_with_llm": {
+          "default": false,
+          "title": "Enhance With Llm",
+          "type": "boolean"
+        },
+        "host": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Host"
+        },
+        "local_path": {
+          "default": ".",
+          "title": "Local Path",
+          "type": "string"
+        },
+        "owner": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Owner"
+        },
+        "profile": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Profile"
+        },
+        "repo": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Repo"
+        }
+      },
+      "title": "remediate_audit_findingsArguments",
+      "type": "object"
+    },
+    "name": "remediate_audit_findings",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "remediate_audit_findingsOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Return the next ActionPlan step for a HarnessState, or None if the audit/collect/remediate loop has terminated. Pure function; the server retains no per-run state (per Q1 clarification).",
+    "inputSchema": {
+      "properties": {
+        "state": {
+          "additionalProperties": true,
+          "title": "State",
+          "type": "object"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "title": "run_next_action_toolArguments",
+      "type": "object"
+    },
+    "name": "run_next_action",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Result"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "run_next_action_toolOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Apply the result of an executed step to a HarnessState and return the new state. For the audit step pass result={}: the server runs the audit and records only its own results; submit model judgments with submit_judgment. Raises OutOfOrderSubmission when step_id doesn't match the expected next step, and ResultSchemaMismatch when the result violates a declared result_schema. Context answers are used for this run only; nothing is written to the repository.",
+    "inputSchema": {
+      "properties": {
+        "result": {
+          "additionalProperties": true,
+          "title": "Result",
+          "type": "object"
+        },
+        "state": {
+          "additionalProperties": true,
+          "title": "State",
+          "type": "object"
+        },
+        "step_id": {
+          "title": "Step Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "state",
+        "step_id",
+        "result"
+      ],
+      "title": "submit_action_result_toolArguments",
+      "type": "object"
+    },
+    "name": "submit_action_result",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "submit_action_result_toolDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Submit a judgment for a control awaiting one (PENDING, pending.kind = llm_judgment). Never makes a control PASS: a 'pass' verdict whose cited_evidence excerpts all appear verbatim in the files the control's model step read becomes a PASS candidate, non-compliant until the operator confirms it; a 'fail' verdict is a suggestive FAIL finding; unverifiable citations are rejected. Never state your verdict as the audit result.",
+    "inputSchema": {
+      "properties": {
+        "cited_evidence": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Cited Evidence",
+          "type": "array"
+        },
+        "control_id": {
+          "title": "Control Id",
+          "type": "string"
+        },
+        "host": {
+          "default": "github.com",
+          "title": "Host",
+          "type": "string"
+        },
+        "local_path": {
+          "default": ".",
+          "title": "Local Path",
+          "type": "string"
+        },
+        "model": {
+          "title": "Model",
+          "type": "string"
+        },
+        "model_version": {
+          "title": "Model Version",
+          "type": "string"
+        },
+        "owner": {
+          "title": "Owner",
+          "type": "string"
+        },
+        "reasoning": {
+          "title": "Reasoning",
+          "type": "string"
+        },
+        "repo": {
+          "title": "Repo",
+          "type": "string"
+        },
+        "verdict": {
+          "enum": [
+            "pass",
+            "fail"
+          ],
+          "title": "Verdict",
+          "type": "string"
+        }
+      },
+      "required": [
+        "control_id",
+        "verdict",
+        "reasoning",
+        "cited_evidence",
+        "model",
+        "model_version",
+        "owner",
+        "repo"
+      ],
+      "title": "submit_judgmentArguments",
+      "type": "object"
+    },
+    "name": "submit_judgment",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "submit_judgmentDictOutput",
+      "type": "object"
+    }
+  }
+]

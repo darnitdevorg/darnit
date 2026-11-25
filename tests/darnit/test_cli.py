@@ -426,7 +426,9 @@ level = 1
 """
     )
 
-    code, shown = _run_plan(["plan", "-f", str(framework), "--profile", "nothing", str(tmp_path)], caplog)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    code, shown = _run_plan(["plan", "-f", str(framework), "--profile", "nothing", str(repo)], caplog)
 
     assert code == 1
     assert shown == set()
@@ -590,8 +592,10 @@ description = "Control without a level"
 """
     )
 
+    repo = tmp_path / "repo"
+    repo.mkdir()
     code, shown = _run_plan(
-        ["plan", "-f", str(framework), "--profile", "only_unleveled", str(tmp_path)],
+        ["plan", "-f", str(framework), "--profile", "only_unleveled", str(repo)],
         caplog,
     )
 
@@ -954,7 +958,9 @@ description = "Control without a level"
 
     caplog.clear()
     with caplog.at_level(logging.INFO):
-        plan_exit = main(["plan", "-f", str(framework_file), str(tmp_path)])
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        plan_exit = main(["plan", "-f", str(framework_file), str(repo)])
     assert plan_exit == 0
     assert "Level 1 (1 controls):" in caplog.text
     assert "Level 2 (1 controls):" in caplog.text
@@ -964,3 +970,35 @@ description = "Control without a level"
     idx_l2 = caplog.text.index("Level 2")
     idx_none = caplog.text.index("No level")
     assert idx_l1 < idx_l2 < idx_none
+
+
+@pytest.mark.unit
+def test_audit_fails_closed_on_invalid_control_level(tmp_path, caplog):
+    """Audit rejects frameworks with control levels outside 1-3 instead of dropping them (fixes #701)."""
+    import logging
+
+    framework_file = tmp_path / "invalid_level.toml"
+    framework_file.write_text(
+        """[metadata]
+name = "invalid-level"
+display_name = "Invalid Level"
+version = "0.1.0"
+description = "Framework with invalid control level"
+
+[controls."INVALID-01"]
+name = "LevelFour"
+description = "Control declaring level 4"
+tags = { level = 4 }
+
+[[controls."INVALID-01".passes]]
+handler = "file_exists"
+files = ["nonexistent.txt"]
+"""
+    )
+
+    with caplog.at_level(logging.ERROR):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        exit_code = main(["audit", "-f", str(framework_file), "-o", "json", "--no-fail", str(repo)])
+    assert exit_code == 1
+    assert "Invalid control level 4" in caplog.text

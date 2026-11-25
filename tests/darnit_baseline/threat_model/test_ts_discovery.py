@@ -664,6 +664,61 @@ class TestOpengrepEnrichment:
         assert result.opengrep_available is True
         assert "rule-schema error" in (result.opengrep_degraded_reason or "")
 
+    def test_clean_opengrep_check_id_strips_install_path(self) -> None:
+        """Issue #776: Opengrep prefixes the --config path to check_id.
+        _clean_opengrep_check_id must strip install path and preserve clean rule id."""
+        from darnit_baseline.threat_model.ts_discovery import _clean_opengrep_check_id
+
+        # macOS / Linux dotted paths
+        mac_id = "Users.alice..local.share.virtualenvs.darnit-baseline.src.darnit_baseline.threat_model.opengrep_rules.darnit.entry.flask-route"
+        assert _clean_opengrep_check_id(mac_id) == "darnit.entry.flask-route"
+
+        linux_id = "home.bob..local.share.pipx.venvs.darnit.packages.darnit_baseline.threat_model.opengrep_rules.darnit.datastore.sqlite"
+        assert _clean_opengrep_check_id(linux_id) == "darnit.datastore.sqlite"
+
+        # Windows paths
+        win_id = "C:.Users.carol.AppData.Local.darnit.threat_model.opengrep_rules.darnit.taint.external-input-to-subprocess"
+        assert _clean_opengrep_check_id(win_id) == "darnit.taint.external-input-to-subprocess"
+
+        # Slash-separated paths
+        slash_id = "/home/dave/.local/share/darnit/opengrep_rules/darnit.entry.fastapi-route"
+        assert _clean_opengrep_check_id(slash_id) == "darnit.entry.fastapi-route"
+
+        # Dotted path with YAML filename intermediate
+        yaml_id = "Users.eve..local.share.opengrep_rules.entry_points.darnit.entry.flask-route"
+        assert _clean_opengrep_check_id(yaml_id) == "darnit.entry.flask-route"
+
+        # Already clean or custom rule id
+        assert _clean_opengrep_check_id("darnit.entry.flask-route") == "darnit.entry.flask-route"
+        assert _clean_opengrep_check_id("test.rule") == "test.rule"
+        assert _clean_opengrep_check_id("") == ""
+
+    def test_opengrep_finding_normalization_strips_install_path(self) -> None:
+        """Issue #776: Normalized CandidateFinding query_id and rationale
+        must not contain operator install paths."""
+        from darnit_baseline.threat_model.ts_discovery import _normalize_one_opengrep_finding
+
+        raw_entry = {
+            "check_id": "Users.alice..local.share.virtualenvs.darnit-baseline.opengrep_rules.darnit.entry.flask-route",
+            "path": "app.py",
+            "start": {"line": 10, "col": 1},
+            "end": {"line": 10, "col": 20},
+            "extra": {
+                "message": "Flask route: /api -> api_func",
+                "severity": "INFO",
+                "metadata": {"stride": "tampering"},
+                "lines": "@app.route('/api')",
+            },
+        }
+        finding = _normalize_one_opengrep_finding(raw_entry, [], {})
+        assert finding is not None
+        assert finding.query_id == "darnit.entry.flask-route"
+        assert "Users" not in finding.query_id
+        assert "alice" not in finding.query_id
+        assert "Users" not in finding.rationale
+        assert "alice" not in finding.rationale
+        assert "darnit.entry.flask-route" in finding.rationale
+
 
 class TestDiscoverAllOrchestrator:
     def test_reports_file_scan_stats(self, tmp_path: Path) -> None:

@@ -1,7 +1,6 @@
 """Regression tests for security policy file discovery (issue #717).
 
-OSPS-VM-01.01, OSPS-VM-02.01, OSPS-VM-03.01, and STAGE1-REF-SECURITY-01
-previously only looked for uppercase variants (SECURITY.md, .github/SECURITY.md,
+OSPS-VM-01.01, OSPS-VM-02.01, and OSPS-VM-03.01 previously only looked for uppercase variants (SECURITY.md, .github/SECURITY.md,
 docs/SECURITY.md), missing lowercase file names that GitHub recognizes (such
 as security.md, .github/security.md, and docs/security.md).
 """
@@ -19,7 +18,6 @@ SECURITY_POLICY_CONTROLS = (
     "OSPS-VM-01.01",
     "OSPS-VM-02.01",
     "OSPS-VM-03.01",
-    "STAGE1-REF-SECURITY-01",
 )
 
 SECURITY_FILENAMES = (
@@ -84,20 +82,6 @@ def test_vm_02_01_discovers_security_policy_variants(tmp_path: Path, filename: s
 
 
 @pytest.mark.parametrize("filename", SECURITY_FILENAMES)
-def test_stage1_ref_security_01_discovers_security_policy_variants(tmp_path: Path, filename: str) -> None:
-    """Issue #717: STAGE1-REF-SECURITY-01 dispositive file_exists finds all variants."""
-    file_path = tmp_path / filename
-    file_path.parent.mkdir(parents=True, exist_ok=True)
-    file_path.write_text(SECURITY_POLICY_TEXT, encoding="utf-8")
-
-    control = _load_control("STAGE1-REF-SECURITY-01")
-    result = SieveOrchestrator(stop_on_llm=False).verify(control, _make_ctx(tmp_path, "STAGE1-REF-SECURITY-01"))
-
-    assert "None of the required files found" not in (result.message or "")
-    assert result.status != "FAIL", f"STAGE1-REF-SECURITY-01 failed on {filename}: {result.message}"
-
-
-@pytest.mark.parametrize("filename", SECURITY_FILENAMES)
 def test_vm_01_01_pattern_and_discover_variants(tmp_path: Path, filename: str) -> None:
     """Issue #717: OSPS-VM-01.01 locator and pattern passes find all variants."""
     file_path = tmp_path / filename
@@ -130,7 +114,7 @@ def test_missing_security_policy_fails(tmp_path: Path) -> None:
     """A repository without a security policy must still fail."""
     (tmp_path / "README.md").write_text("# Test Repo\n", encoding="utf-8")
 
-    for control_id in ("OSPS-VM-02.01", "STAGE1-REF-SECURITY-01"):
+    for control_id in ("OSPS-VM-02.01",):
         control = _load_control(control_id)
         result = SieveOrchestrator(stop_on_llm=False).verify(control, _make_ctx(tmp_path, control_id))
         assert result.status == "FAIL", f"{control_id} should fail when no security policy exists"
@@ -152,7 +136,7 @@ def test_sindresorhus_slash_regression(tmp_path: Path) -> None:
 
     orchestrator = SieveOrchestrator(stop_on_llm=False)
 
-    for control_id in ("OSPS-LE-01.01", "OSPS-LE-03.01", "OSPS-VM-02.01", "STAGE1-REF-SECURITY-01"):
+    for control_id in ("OSPS-LE-01.01", "OSPS-LE-03.01", "OSPS-VM-02.01"):
         control = _load_control(control_id)
         result = orchestrator.verify(control, _make_ctx(tmp_path, control_id))
         assert "None of the required files found" not in (result.message or ""), (

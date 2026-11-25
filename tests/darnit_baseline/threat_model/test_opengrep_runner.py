@@ -235,3 +235,34 @@ def test_opengrep_result_is_frozen() -> None:
     result = OpengrepResult(available=True, findings=[], rule_errors=[])
     with pytest.raises((AttributeError, Exception)):
         result.available = False  # type: ignore[misc]
+
+
+def test_clean_opengrep_check_id() -> None:
+    """Issue #776: Opengrep prefixes the --config path to check_id.
+    clean_opengrep_check_id must strip install path and preserve clean rule id."""
+    from darnit_baseline.threat_model.opengrep_runner import clean_opengrep_check_id
+
+    # macOS / Linux dotted paths
+    mac_id = "Users.alice..local.share.virtualenvs.darnit-baseline.src.darnit_baseline.threat_model.opengrep_rules.darnit.entry.flask-route"
+    assert clean_opengrep_check_id(mac_id) == "darnit.entry.flask-route"
+
+    linux_id = "home.bob..local.share.pipx.venvs.darnit.packages.darnit_baseline.threat_model.opengrep_rules.darnit.datastore.sqlite"
+    assert clean_opengrep_check_id(linux_id) == "darnit.datastore.sqlite"
+
+    # Windows paths
+    win_id = "C:.Users.carol.AppData.Local.darnit.threat_model.opengrep_rules.darnit.taint.external-input-to-subprocess"
+    assert clean_opengrep_check_id(win_id) == "darnit.taint.external-input-to-subprocess"
+
+    # Slash-separated paths
+    slash_id = "/home/dave/.local/share/darnit/opengrep_rules/darnit.entry.fastapi-route"
+    assert clean_opengrep_check_id(slash_id) == "darnit.entry.fastapi-route"
+
+    # Dotted path with YAML filename intermediate
+    yaml_id = "Users.eve..local.share.opengrep_rules.entry_points.darnit.entry.flask-route"
+    assert clean_opengrep_check_id(yaml_id) == "darnit.entry.flask-route"
+
+    # Already clean or custom rule id
+    assert clean_opengrep_check_id("darnit.entry.flask-route") == "darnit.entry.flask-route"
+    assert clean_opengrep_check_id("test.rule") == "test.rule"
+    assert clean_opengrep_check_id("") == ""
+

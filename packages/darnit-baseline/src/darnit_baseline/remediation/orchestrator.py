@@ -317,6 +317,7 @@ def _apply_control_remediation(
     target: str | None = None,
     platform: Any | None = None,
     run_id: str | None = None,
+    scheduled_paths: Collection[str] | None = None,
 ) -> dict[str, Any]:
     """Apply remediation for a single control, driven entirely by TOML.
 
@@ -332,6 +333,9 @@ def _apply_control_remediation(
         platform: The run's platform session (policy, approvals, and every
             platform requirement of the run; feature 043)
         run_id: Remediation run whose manifest records this control's writes
+        scheduled_paths: Files this remediation run will create. Templates may
+            link to them; a path that is neither here nor already in the tree
+            is not linked.
 
     Returns:
         Dict with control_id, status, and result details
@@ -406,6 +410,7 @@ def _apply_control_remediation(
             target=target,
             platform=platform,
             run_id=run_id,
+            scheduled_paths=scheduled_paths,
         )
         # Tag unsafe remediations for review
         if not remediation_config.safe:
@@ -446,6 +451,7 @@ def _apply_declarative_remediation(
     target: str | None = None,
     platform: Any | None = None,
     run_id: str | None = None,
+    scheduled_paths: Collection[str] | None = None,
 ) -> dict[str, Any]:
     """Apply a declarative remediation from TOML config.
 
@@ -501,7 +507,7 @@ def _apply_declarative_remediation(
                 flatten_scan_context,
                 scan_repository,
             )
-            scan_ctx = scan_repository(local_path)
+            scan_ctx = scan_repository(local_path, scheduled_paths=scheduled_paths)
             scan_values = flatten_scan_context(scan_ctx)
         except Exception as exc:
             logger.warning(f"Repository scanning failed: {exc}")
@@ -857,8 +863,9 @@ def _preflight_context_check(
     """
     framework = _get_framework_config()
 
-    # Aggregate context requirements across all controls (deduplicate by key)
-    all_requirements: dict[str, tuple[str, Any]] = {}  # key -> (control_id, requirement)
+    # Aggregate context requirements across all controls
+    unique_requirements: dict[str, Any] = {}  # key -> requirement
+    key_to_controls: dict[str, list[str]] = {}  # key -> list of control_ids
 
     for control_id in control_ids:
         if not framework:
@@ -869,14 +876,18 @@ def _preflight_context_check(
             continue
 
         for req in control.remediation.requires_context:
-            if req.key not in all_requirements:
-                all_requirements[req.key] = (control_id, req)
+            if req.key not in unique_requirements:
+                unique_requirements[req.key] = req
+            if req.key not in key_to_controls:
+                key_to_controls[req.key] = []
+            if control_id not in key_to_controls[req.key]:
+                key_to_controls[req.key].append(control_id)
 
-    if not all_requirements:
-        return True, {"missing_context": [], "auto_detected": {}, "candidates": {}, "prompts": []}
+    if not unique_requirements:
+        return True, {"missing_context": [], "auto_detected": {}, "candidates": {}, "prompts": [], "key_to_controls": {}}
 
     # Check all requirements at once
-    requirements_list = [req for _, req in all_requirements.values()]
+    requirements_list = list(unique_requirements.values())
     check_result = check_context_requirements(
         requirements=requirements_list,
         local_path=local_path,
@@ -885,13 +896,6 @@ def _preflight_context_check(
         repo=repo,
         target=target,
     )
-
-    # Build control mapping for context keys
-    key_to_controls: dict[str, list[str]] = {}
-    for key, (control_id, _) in all_requirements.items():
-        if key not in key_to_controls:
-            key_to_controls[key] = []
-        key_to_controls[key].append(control_id)
 
     return check_result.ready, {
         "missing_context": check_result.missing_context,
@@ -1049,6 +1053,65 @@ def remediate_audit_findings(
         run_id=run_id,
         target=target_from_owner_repo(owner, repo),
     ).markdown
+
+
+def _handler_create_path(invocation: Any) -> str | None:
+    """Repository-relative ``file_create`` path, if this invocation declares one."""
+    extra = getattr(invocation, "model_extra", None) or {}
+    raw = extra.get("path")
+    if not isinstance(raw, str):
+        return None
+    path = raw.replace("\\", "/").strip()
+    while path.startswith("./"):
+        path = path[2:]
+    path = path.strip("/")
+    return path or None
+
+
+def _scheduled_file_create_paths(
+    framework: Any,
+    control_ids: Collection[str],
+    *,
+    skipped: Collection[str] = (),
+) -> set[str]:
+    """Files this run will create, predicted only when that prediction is certain.
+
+    ``skipped`` ids (honored not-applicable claims) are omitted before any
+    path is collected. A handler with ``when`` is not a guaranteed write.
+    On ``first_match``, only an unconditional ``file_create`` that is the
+    first handler is scheduled: a later create does not run when an earlier
+    handler matches, and a conditional first handler makes every later
+    create uncertain. On ``all``, every unconditional ``file_create`` runs,
+    so those paths are scheduled and conditional ones are not.
+    """
+    skipped_ids = set(skipped)
+    paths: set[str] = set()
+    controls = getattr(framework, "controls", None) or {}
+    for control_id in control_ids:
+        if control_id in skipped_ids:
+            continue
+        control = controls.get(control_id)
+        remediation = getattr(control, "remediation", None) if control else None
+        if remediation is None:
+            continue
+        handlers = list(getattr(remediation, "handlers", None) or [])
+        if not handlers:
+            continue
+        if getattr(remediation, "strategy", "all") == "first_match":
+            first = handlers[0]
+            if not getattr(first, "when", None) and getattr(first, "handler", None) == "file_create":
+                path = _handler_create_path(first)
+                if path:
+                    paths.add(path)
+            continue
+        for invocation in handlers:
+            if getattr(invocation, "when", None):
+                continue
+            if getattr(invocation, "handler", None) == "file_create":
+                path = _handler_create_path(invocation)
+                if path:
+                    paths.add(path)
+    return paths
 
 
 def run_remediation(
@@ -1222,16 +1285,27 @@ def run_remediation(
     # ------------------------------------------------------------------
     # Pre-flight context check (prompt for ALL missing context upfront)
     # ------------------------------------------------------------------
+    active_remediable_ids = [c for c in remediable_ids if c not in honored_claims]
     context_ready, context_info = _preflight_context_check(
-        control_ids=remediable_ids,
+        control_ids=active_remediable_ids,
         local_path=local_path,
         owner=owner,
         repo=repo,
         target=target,
     )
 
+    ready_control_ids = active_remediable_ids
     if not context_ready:
-        return RemediationReport(_format_preflight_prompt(context_info, local_path))
+        missing_keys = set(context_info.get("missing_context", []))
+        key_to_controls = context_info.get("key_to_controls", {})
+        blocked_control_ids = {
+            cid
+            for key in missing_keys
+            for cid in key_to_controls.get(key, [])
+        }
+        ready_control_ids = [c for c in active_remediable_ids if c not in blocked_control_ids]
+        if not ready_control_ids:
+            return RemediationReport(_format_preflight_prompt(context_info, local_path))
 
     # ------------------------------------------------------------------
     # Platform session: one policy, one set of approvals, and every
@@ -1252,7 +1326,7 @@ def run_remediation(
     )
     session = PlatformSession(
         repository,
-        platform_requests(framework, [c for c in remediable_ids if c not in honored_claims]),
+        platform_requests(framework, [c for c in ready_control_ids if c not in honored_claims]),
         policy=policy,
         approvals=approve or [],
     )
@@ -1260,6 +1334,7 @@ def run_remediation(
     # ------------------------------------------------------------------
     # Apply remediations
     # ------------------------------------------------------------------
+    scheduled_paths = _scheduled_file_create_paths(framework, remediable_ids, skipped=honored_claims)
     results = []
     for control_id in remediable_ids:
         if control_id in honored_claims:
@@ -1280,6 +1355,7 @@ def run_remediation(
             target=target,
             platform=session,
             run_id=None if dry_run else run_id,
+            scheduled_paths=scheduled_paths,
         )
         results.append(result)
 
@@ -1812,6 +1888,17 @@ def _consultation_lines(results: list[dict[str, Any]]) -> list[str]:
     return md
 
 
+def _strip_file_contents(data: dict[str, Any]) -> dict[str, Any]:
+    """Strip full file contents from plan items and outcomes to keep fenced JSON compact (fixes #725)."""
+    for item in data.get("plan", []):
+        for fc in item.get("file_changes", []):
+            fc.pop("content", None)
+    for outcome in data.get("outcomes", []):
+        for fc in outcome.get("file_changes", []):
+            fc.pop("content", None)
+    return data
+
+
 def _format_remediation_output(
     results: list[dict[str, Any]],
     local_path: str,
@@ -1834,7 +1921,8 @@ def _format_remediation_output(
     if not dry_run:
         md += _consultation_lines(results)
         md += _next_steps_lines(run, local_path, target)
-    md += ["```json", json.dumps(run.model_dump(mode="json"), indent=2), "```", ""]
+    fenced_data = _strip_file_contents(run.model_dump(mode="json"))
+    md += ["```json", json.dumps(fenced_data, indent=2), "```", ""]
     return "\n".join(md)
 
 

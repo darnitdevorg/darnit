@@ -314,6 +314,24 @@ class TestKnownResultsWithWorkflows:
 
         assert (result.status, result.error_class) == ("WARN", "unexpected_exit")
 
+    @pytest.mark.parametrize("control_id", ["OSPS-BR-01.01", "OSPS-AC-04.02"])
+    def test_zizmor_usage_error_is_not_hidden_by_evidence_only_fallback(self, control_id, tmp_path, tools) -> None:
+        """#752: a CLI argument rejection stays ERROR when later steps cannot conclude."""
+        stderr = "error: invalid value '' for '--gh-token <GH_TOKEN>': GitHub token cannot be empty\n"
+        tools.outcomes.update({"zizmor": (2, "", stderr), "grep": (1, "", ""), "sh": (0, "", "")})
+
+        result = _verify(_shipped(control_id), _with_workflow(tmp_path, "ci.yml"))
+
+        assert result.status == "ERROR"
+        assert result.error_class == "usage"
+        assert result.error == {"class": "usage", "cause": result.message}
+        assert "GitHub token cannot be empty" in result.error["cause"]
+        assert "code 2" in result.error["cause"]
+        assert "zizmor" in result.error["cause"]
+        assert "(evidence only)" not in result.message
+        assert result.pass_history[1].result.outcome.value == "error"
+        assert len(result.pass_history) > 2
+
     def test_grep_match_is_evidence_without_unexpected_exit(self, tmp_path, tools) -> None:
         """#656: grep exit 0 is a declared failure, and concludes = [] leaves it non-conclusive."""
         tools.outcomes.update(WORKFLOW_SCENARIOS["grep-match-647"])

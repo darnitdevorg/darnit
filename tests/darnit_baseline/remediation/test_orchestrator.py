@@ -31,7 +31,7 @@ def mock_framework() -> FrameworkConfig:
             "OSPS-GV-01.01": ControlConfig(
                 name="Governance",
                 description="Test Governance Control",
-                level="1",
+                level=1,
                 passes=[],
                 remediation=RemediationConfig(
                     type="declarative",
@@ -43,7 +43,7 @@ def mock_framework() -> FrameworkConfig:
             "OSPS-AC-01.01": ControlConfig(
                 name="Access Control",
                 description="Test Access Control - Error Path",
-                level="1",
+                level=1,
                 passes=[],
                 remediation=RemediationConfig(
                     type="declarative",
@@ -244,6 +244,94 @@ def test_remediate_audit_findings_dry_run(
     assert not (temp_git_repo / "GOVERNANCE.md").exists()
 
 
+@patch("darnit_baseline.remediation.orchestrator._get_framework_config")
+@patch("darnit.core.audit_cache.read_audit_cache")
+@patch("darnit_baseline.remediation.orchestrator._preflight_context_check")
+def test_remediate_audit_findings_unconfirmed_context_partitions_controls(
+    mock_preflight,
+    mock_read_cache,
+    mock_get_framework,
+    mock_framework,
+    temp_git_repo,
+):
+    """When some controls require unconfirmed context and others are ready,
+
+    the ready controls proceed to Would Apply while unconfirmed ones report
+    needs_confirmation (#767).
+    """
+    mock_get_framework.return_value = mock_framework
+    mock_read_cache.return_value = {
+        "results": [
+            {"id": "OSPS-GV-01.01", "status": "FAIL"},
+            {"id": "OSPS-AC-01.01", "status": "FAIL"},
+        ]
+    }
+    # GV-01.01 is blocked by missing context, AC-01.01 is ready
+    mock_preflight.return_value = (
+        False,
+        {
+            "missing_context": ["maintainers"],
+            "key_to_controls": {"maintainers": ["OSPS-GV-01.01"]},
+            "prompts": ["Please confirm maintainers."],
+            "auto_detected": {},
+            "candidates": {},
+        },
+    )
+
+    with patch(
+        "darnit_baseline.remediation.orchestrator._apply_control_remediation"
+    ) as mock_apply:
+        mock_apply.side_effect = lambda control_id, **kwargs: (
+            {
+                "control_id": control_id,
+                "status": "needs_confirmation",
+                "description": "Test Governance Control",
+                "controls": [control_id],
+                "missing_context": ["maintainers"],
+                "result": "Please confirm maintainers.",
+            }
+            if control_id == "OSPS-GV-01.01"
+            else {
+                "control_id": control_id,
+                "status": "would_apply",
+                "description": "Test Access Control",
+                "controls": [control_id],
+                "plan": [],
+            }
+        )
+        result = remediate_audit_findings(
+            local_path=str(temp_git_repo),
+            owner="test-owner",
+            repo="test-repo",
+            dry_run=True,
+        )
+
+    assert "Would Apply" in result
+    assert "Needs Confirmation" in result
+    assert "OSPS-GV-01.01" in result
+    assert "OSPS-AC-01.01" in result
+    assert "BLOCKED: Remediation Cannot Proceed" not in result
+
+
+def test_preflight_context_check_aggregates_all_controls_per_key(temp_git_repo):
+    """Verify key_to_controls maps a context key to ALL controls requiring it (#767)."""
+    from darnit_baseline.remediation.orchestrator import _preflight_context_check
+
+    ready, info = _preflight_context_check(
+        control_ids=["OSPS-GV-01.01", "OSPS-GV-01.02", "OSPS-GV-04.01"],
+        local_path=str(temp_git_repo),
+        owner="test-owner",
+        repo="test-repo",
+    )
+    assert not ready
+    assert "maintainers" in info["missing_context"]
+    assert set(info["key_to_controls"]["maintainers"]) == {
+        "OSPS-GV-01.01",
+        "OSPS-GV-01.02",
+        "OSPS-GV-04.01",
+    }
+
+
 # ---------------------------------------------------------
 # Phase 4: Side Effects (LLM Enhancement)
 # ---------------------------------------------------------
@@ -359,3 +447,188 @@ def test_llm_enhancement_of_a_created_file_is_recorded_and_committable(stub_enha
 
     assert committed.startswith("Changes committed successfully"), committed
     assert "ARCHITECTURE.md" in committed
+
+
+def test_scheduled_file_create_paths_are_conservative():
+    """Same-run links follow only file creates that this run will perform."""
+    from darnit_baseline.remediation.orchestrator import _scheduled_file_create_paths
+
+    framework = FrameworkConfig(
+        metadata=FrameworkMetadata(name="Test", display_name="Test", version="1.0"),
+        controls={
+            "OSPS-GV-01.01": ControlConfig(
+                name="Governance",
+                description="Unconditional file_create is the first handler",
+                level=1,
+                passes=[],
+                remediation=RemediationConfig(
+                    handlers=[HandlerInvocation(handler="file_create", path="GOVERNANCE.md")],
+                ),
+            ),
+            "OSPS-GV-01.02": ControlConfig(
+                name="Maintainers",
+                description="Conditional file_create is not guaranteed",
+                level=1,
+                passes=[],
+                remediation=RemediationConfig(
+                    handlers=[
+                        HandlerInvocation(
+                            handler="file_create",
+                            path="MAINTAINERS.md",
+                            when={"detected_ecosystem": "python"},
+                        )
+                    ],
+                ),
+            ),
+            "OSPS-VM-05.02": ControlConfig(
+                name="SCA",
+                description="Conditional handler before a later file_create",
+                level=1,
+                passes=[],
+                remediation=RemediationConfig(
+                    strategy="first_match",
+                    handlers=[
+                        HandlerInvocation(handler="manual", when={"scan.app_kusari_inspector": "true"}),
+                        HandlerInvocation(handler="file_create", path=".github/workflows/sca.yml"),
+                    ],
+                ),
+            ),
+            "OSPS-QA-00": ControlConfig(
+                name="Unreachable",
+                description="Unconditional non-create first, so the later file is uncertain",
+                level=1,
+                passes=[],
+                remediation=RemediationConfig(
+                    strategy="first_match",
+                    handlers=[
+                        HandlerInvocation(handler="manual"),
+                        HandlerInvocation(handler="file_create", path="NOT-CREATED.md"),
+                    ],
+                ),
+            ),
+            "OSPS-ALL": ControlConfig(
+                name="All",
+                description="strategy all runs every unconditional file_create",
+                level=1,
+                passes=[],
+                remediation=RemediationConfig(
+                    strategy="all",
+                    handlers=[
+                        HandlerInvocation(handler="file_create", path="FILE-A.md"),
+                        HandlerInvocation(
+                            handler="file_create",
+                            path="MAYBE.md",
+                            when={"detected_ecosystem": "node"},
+                        ),
+                        HandlerInvocation(handler="file_create", path="FILE-B.md"),
+                    ],
+                ),
+            ),
+            "OSPS-HONOR": ControlConfig(
+                name="Honored",
+                description="Skipped because the claim is honored",
+                level=1,
+                passes=[],
+                remediation=RemediationConfig(
+                    handlers=[HandlerInvocation(handler="file_create", path="HONORED.md")],
+                ),
+            ),
+        },
+    )
+    control_ids = [
+        "OSPS-GV-01.01",
+        "OSPS-GV-01.02",
+        "OSPS-VM-05.02",
+        "OSPS-QA-00",
+        "OSPS-ALL",
+        "OSPS-HONOR",
+    ]
+
+    paths = _scheduled_file_create_paths(framework, control_ids, skipped={"OSPS-HONOR"})
+
+    assert "GOVERNANCE.md" in paths
+    assert paths == {"GOVERNANCE.md", "FILE-A.md", "FILE-B.md"}
+    assert ".github/workflows/sca.yml" not in paths
+    assert "NOT-CREATED.md" not in paths
+    assert "MAINTAINERS.md" not in paths
+    assert "MAYBE.md" not in paths
+    assert "HONORED.md" not in paths
+
+    honored_alone = _scheduled_file_create_paths(framework, ["OSPS-HONOR"])
+    assert honored_alone == {"HONORED.md"}
+
+
+@patch("darnit_baseline.remediation.orchestrator._get_framework_config")
+@patch("darnit_baseline.remediation.orchestrator.RemediationExecutor")
+@patch("darnit.core.audit_cache.read_audit_cache")
+@patch("darnit_baseline.remediation.orchestrator._preflight_context_check")
+def test_fenced_json_omits_file_contents(
+    mock_preflight,
+    mock_read_cache,
+    mock_executor_class,
+    mock_get_framework,
+    mock_framework,
+    temp_git_repo,
+):
+    """Fenced JSON strips content from file_changes to fit within client limits (fixes #725)."""
+    mock_get_framework.return_value = mock_framework
+    mock_read_cache.return_value = {
+        "results": [{"id": "OSPS-GV-01.01", "status": "FAIL"}]
+    }
+    mock_preflight.return_value = (True, [])
+
+    fc = FileChange(path="GOVERNANCE.md", action="create", content="# Governance\nLarge content body here\n")
+    item = PlanItem(control_id="OSPS-GV-01.01", step="file_create[0]", file_changes=[fc], previewable=True)
+    mock_executor = mock_executor_class.return_value
+    mock_executor.execute.return_value = RemediationResult(
+        success=True,
+        control_id="OSPS-GV-01.01",
+        remediation_type="declarative",
+        message="Created GOVERNANCE.md",
+        dry_run=False,
+        file_changes=[fc],
+        plan=[item],
+        details={"handlers": [{"handler": "file_create", "status": "pass"}]},
+    )
+
+    result_markdown = remediate_audit_findings(
+        local_path=str(temp_git_repo),
+        owner="test-owner",
+        repo="test-repo",
+        dry_run=False,
+        enhance_with_llm=False,
+    )
+
+    blocks = re.findall(r"```json\n(.*?)\n```", result_markdown, re.DOTALL)
+    assert blocks, "Expected fenced JSON block in output"
+    raw_json = json.loads(blocks[-1])
+
+    # In outcomes, file_changes must not contain 'content'
+    outcomes = raw_json.get("outcomes", [])
+    assert len(outcomes) == 1
+    file_changes = outcomes[0].get("file_changes", [])
+    assert len(file_changes) == 1
+    assert "content" not in file_changes[0]
+    assert file_changes[0]["path"] == "GOVERNANCE.md"
+    assert file_changes[0]["action"] == "create"
+    assert file_changes[0]["after_digest"] == fc.after_digest
+
+    # Also test preview mode (dry_run=True)
+    preview_markdown = remediate_audit_findings(
+        local_path=str(temp_git_repo),
+        owner="test-owner",
+        repo="test-repo",
+        dry_run=True,
+        enhance_with_llm=False,
+    )
+    prev_blocks = re.findall(r"```json\n(.*?)\n```", preview_markdown, re.DOTALL)
+    assert prev_blocks, "Expected fenced JSON block in preview output"
+    prev_json = json.loads(prev_blocks[-1])
+    plans = prev_json.get("plan", [])
+    assert len(plans) == 1
+    plan_fc = plans[0].get("file_changes", [])
+    assert len(plan_fc) == 1
+    assert "content" not in plan_fc[0]
+    assert plan_fc[0]["path"] == "GOVERNANCE.md"
+    assert plan_fc[0]["action"] == "create"
+    assert plan_fc[0]["after_digest"] == fc.after_digest

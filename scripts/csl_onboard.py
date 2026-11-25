@@ -94,17 +94,30 @@ def scan_placeholders(repo: Path) -> list[str]:
     return hits
 
 
-def main() -> int:
+def enum_choices(key: str) -> list[str]:
+    """The values of a Community Specification enum context key (#522).
+
+    Read from community-spec.toml, so the script offers exactly what
+    confirm_project_data accepts and remediate_community_spec validates.
+    """
+    import tomllib
+    from importlib.resources import files
+
+    toml_text = (files("darnit_csl") / "community-spec.toml").read_text(encoding="utf-8")
+    return list(tomllib.loads(toml_text)["context"][key]["values"])
+
+
+def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser()
     p.add_argument("--repo", required=True, help="owner/name, e.g. uptane/uptane-standard")
     p.add_argument("--scope-file", help="markdown file holding the drafted scope")
     p.add_argument("--contacts", default="", help="real Code of Conduct contacts")
-    p.add_argument("--coc-policy", choices=["csl", "umbrella", "org"], default=None,
+    p.add_argument("--coc-policy", choices=enum_choices("csl_coc_policy"), default=None,
                    help="org = point the notices at an existing project/org Code of Conduct")
     p.add_argument("--coc-reference", default="",
                    help="markdown sentence linking the existing CoC (required with --coc-policy org)")
     p.add_argument("--code-license", default=None)
-    p.add_argument("--governance-mode", choices=["csl", "umbrella"], default=None,
+    p.add_argument("--governance-mode", choices=enum_choices("csl_governance_mode"), default=None,
                    help="'umbrella' references existing project governance instead "
                         "of asserting the verbatim CSL policy")
     p.add_argument("--governance-reference", default="",
@@ -114,6 +127,11 @@ def main() -> int:
     p.add_argument("--branch", default="csl-compliance")
     p.add_argument("--dir", default=None, help="override local directory name")
     p.add_argument("--audit-only", action="store_true", help="baseline audit, write nothing")
+    return p
+
+
+def main() -> int:
+    p = parser()
     a = p.parse_args()
 
     owner, _, name = a.repo.partition("/")

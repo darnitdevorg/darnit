@@ -2,9 +2,8 @@
 category = "pending_llm"
 has_pending_llm = true
 strict = false
-# STAGE1-REF-SECURITY-01 runs file_exists first and FAILs here (no
-# SECURITY.md) before its llm_extract step. OSPS-DO-01.01 is the control
-# that waits for a model judgment on this fixture (feature 041).
+# OSPS-DO-01.01 is the control that waits for a model judgment on this
+# fixture (feature 041).
 control_ids = ["OSPS-DO-01.01"]
 
 [expected.counts]

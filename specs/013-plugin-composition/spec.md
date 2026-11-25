@@ -137,7 +137,7 @@ The architect ships `acme-baseline 1.0.0` referencing `openssf-baseline`. Six mo
 - **FR-003**: Each `[[compose]]` block MUST support at least the following inclusion expressions, evaluated as the intersection of all expressions present in that block:
   - `include_all = true` — pull every control from the source.
   - `include_levels = [N, ...]` — pull controls whose level matches one of the named integers.
-  - `include_controls = ["ID", ...]` — pull controls by exact ID.
+  - `include_controls = ["ID", ...]` — pull controls by exact ID. The framework MUST reject the block if any listed ID is absent from the resolved source, naming the source and all missing IDs.
   - `include_tags = { tag = "value", ... }` — pull controls matching the named tag/value pair (uses the existing `ControlSpec.tags` filter).
   - `exclude_controls = ["ID", ...]` — drop these specific IDs from the otherwise-included set.
 - **FR-004**: The framework MUST refuse to register a composite that requires a source implementation not installed on the host. The error MUST name the missing source slug.

@@ -26,5 +26,17 @@ When a vulnerability is discovered in a dependency:
 
 ## Tools
 
-- [<< scan.dependency_tool | default('Dependabot') >>](../.github/dependabot.yml) for automated dependency updates
-- [SCA workflow](../.github/workflows/sca.yml) for pull request dependency review
+<% if scan.dependency_config_path %>
+- [<< scan.dependency_tool | default('Dependency updates') >>](../<< scan.dependency_config_path >>) for automated dependency updates
+<% else %>
+- TODO: No Dependabot or Renovate configuration was found. Add that configuration before linking to it.
+<% endif %>
+<% if scan.sca_workflow_path %>
+<% if scan.sca_workflow_on_pull_request == 'true' %>
+- [SCA workflow](../<< scan.sca_workflow_path >>) for pull request dependency review
+<% else %>
+- [SCA workflow](../<< scan.sca_workflow_path >>) for dependency scanning or review
+<% endif %>
+<% else %>
+- TODO: No SCA workflow was found. Document dependency scanning or review without linking to a missing workflow file.
+<% endif %>

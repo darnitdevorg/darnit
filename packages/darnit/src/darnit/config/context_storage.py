@@ -279,7 +279,6 @@ def _run_detect_pipeline(
             control_id=f"context.{key}",
             project_context={},
             gathered_evidence={},
-            shared_cache={},
             dependency_results={},
         )
 
@@ -372,6 +371,26 @@ def _run_detect_pipeline(
     return None
 
 
+def _sieve_method(result: Any) -> str:
+    """How the sieve found ``result.value``, naming the files that gave it.
+
+    A candidate is shown with its origin (FR-013), so the method lists the
+    repository-relative file of every signal that produced the chosen value,
+    e.g. ``context_sieve (1 signals) from security-insights.yml``.
+    """
+    method = f"context_sieve ({len(result.signals)} signals)"
+    files = sorted(
+        {
+            signal.evidence["file"]
+            for signal in result.signals
+            if signal.value == result.value
+            and isinstance(signal.evidence, dict)
+            and isinstance(signal.evidence.get("file"), str)
+        }
+    )
+    return f"{method} from {', '.join(files)}" if files else method
+
+
 def _try_sieve_detection(
     key: str,
     local_path: str,
@@ -400,7 +419,7 @@ def _try_sieve_detection(
         if result.is_usable:
             return ContextValue.auto_detected(
                 value=result.value,
-                method=f"context_sieve ({len(result.signals)} signals)",
+                method=_sieve_method(result),
                 confidence=result.confidence,
             )
     except ImportError:
