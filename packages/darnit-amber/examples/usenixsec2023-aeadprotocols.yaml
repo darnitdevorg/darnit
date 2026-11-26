@@ -1,0 +1,29 @@
+id: usenixsec2023-aeadprotocols
+title: "Automated Analysis of Protocols that use Authenticated Encryption"
+venue: {name: USENIX Security, year: 2023}
+artifact:
+  clone: "https://github.com/AutomatedAnalysisOf/AEADProtocols.git"
+  ref_type: commit
+  ref: "cad164edf14cbf18253e527bfc6e11c1ce03422c"
+role: positive
+expected_verdict: REPRODUCED
+claims:
+  - id: gpg-consistency-SED-collkey
+    metric: proof_result
+    threshold: "== falsified"
+    unit: tamarin_lemma_result
+    source: "Models/results_precomputed/recent_results_gpg.spthy.csv, row consistency_SED / collkey"
+    measurement_protocol: "tamarin-prover 1.7.1 (image aeads/tamarin), --prove=consistency_SED -D=collkey, 4 cores, 60 s timeout; the 'summary of summaries' line for the lemma"
+    expected_verdict: REPRODUCED
+    measure:
+      file: amber-out/gpg-consistency_SED-collkey.txt
+      regex: 'consistency_SED \(all-traces\): (\w+)'
+    notes: "Precomputed: falsified in 14 steps. The image's Tamarin needs LANG=C.UTF-8 or it crashes on output; three other models in the repo do not parse with 1.7.1."
+run:
+  command: |
+    set -eu
+    test "$(git rev-parse HEAD)" = cad164edf14cbf18253e527bfc6e11c1ce03422c
+    mkdir -p amber-out
+    podman run --rm --entrypoint sh -e LANG=C.UTF-8 -e LC_ALL=C.UTF-8 -v "$PWD/Models:/opt/case-studies:Z" -w /opt/case-studies docker.io/aeads/tamarin -c 'timeout 60 tamarin-prover gpg.spthy --prove=consistency_SED +RTS -N4 -RTS -D=collkey 2>&1 | sed -n "/summary of summaries/,\$p"' > amber-out/gpg-consistency_SED-collkey.txt
+  outputs:
+    - amber-out/gpg-consistency_SED-collkey.txt
