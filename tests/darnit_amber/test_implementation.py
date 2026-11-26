@@ -28,16 +28,16 @@ class TestAmberImplementation:
     def test_version_matches_package_metadata(self) -> None:
         assert self.impl.version == importlib.metadata.version("darnit-amber")
 
-    def test_framework_toml_defines_five_controls(self) -> None:
-        assert len(_framework_controls(self.impl)) == 5
+    def test_framework_toml_defines_six_controls(self) -> None:
+        assert len(_framework_controls(self.impl)) == 6
 
     def test_control_ids(self) -> None:
         ids = {c.control_id for c in _framework_controls(self.impl)}
-        assert ids == {"RE-01.01", "RE-01.02", "RE-02.01", "RE-02.02", "RE-03.01"}
+        assert ids == {"RE-01.01", "RE-01.02", "RE-02.01", "RE-02.02", "RE-02.03", "RE-03.01"}
 
     def test_control_levels(self) -> None:
         levels = {c.control_id: c.level for c in _framework_controls(self.impl)}
-        assert levels == {"RE-01.01": 1, "RE-01.02": 1, "RE-02.01": 2, "RE-02.02": 2, "RE-03.01": 3}
+        assert levels == {"RE-01.01": 1, "RE-01.02": 1, "RE-02.01": 2, "RE-02.02": 2, "RE-02.03": 2, "RE-03.01": 3}
 
     def test_framework_config_path_exists(self) -> None:
         path = self.impl.get_framework_config_path()
@@ -49,6 +49,7 @@ class TestAmberImplementation:
             get_sieve_handler_registry,
             reset_sieve_handler_registry,
         )
+
         reset_sieve_handler_registry()
         self.impl.register_handlers()
         registry = get_sieve_handler_registry()
@@ -56,6 +57,7 @@ class TestAmberImplementation:
             "repro_deps_pinned", "repro_build_env_declared",
             "repro_hermetic_build", "repro_provenance_exists",
             "repro_bit_for_bit", "repro_witness_attestation",
+            "repro_run_verified",
         }
         for name in expected:
             assert registry.get(name) is not None, f"{name} not registered"
@@ -65,13 +67,17 @@ class TestAmberImplementation:
             get_sieve_handler_registry,
             reset_sieve_handler_registry,
         )
+
         reset_sieve_handler_registry()
         self.impl.register_handlers()
         registry = get_sieve_handler_registry()
         for name in [
-            "repro_deps_pinned", "repro_build_env_declared",
-            "repro_hermetic_build", "repro_provenance_exists",
-            "repro_bit_for_bit", "repro_witness_attestation",
+            "repro_deps_pinned",
+            "repro_build_env_declared",
+            "repro_hermetic_build",
+            "repro_provenance_exists",
+            "repro_bit_for_bit",
+            "repro_witness_attestation",
         ]:
             info = registry.get(name)
             assert info is not None and callable(info.fn), f"{name} not callable"

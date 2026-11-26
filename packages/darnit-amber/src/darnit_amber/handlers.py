@@ -14,6 +14,8 @@ from darnit.core.logging import get_logger
 from darnit.core.repo_files import read_repository_text
 from darnit.sieve.handler_registry import HandlerContext, HandlerResult, HandlerResultStatus
 
+from .rerun import failed, verify_commit_runs
+from .utils import head_commit
 from .witness_attestation import WitnessCheckResult, check_witness_attestation
 
 logger = get_logger("darnit_amber.handlers")
@@ -946,39 +948,35 @@ def repro_witness_attestation_handler(
     config: dict[str, Any],
     ctx: HandlerContext,
 ) -> HandlerResult:
-    """Check verified Witness / in-toto runtime-trace attestations for network access (#553).
+    """Check the verified Witness attestations of the audited commit's recorded runs for network access (#553).
 
-    Fetches the attestation artifacts of the successful CI runs for the audited
-    commit, verifies each against this repository's GitHub Actions identity and
-    that commit (see witness_attestation.py), and reads only the runtime-trace
-    predicate's ``monitorLog.network`` and Witness command-run process command
-    lines.
+    Reads the `darnit-amber run`s of the audited commit in the repository's bundle (`.amber/`), each
+    checked by `rerun.verify` against the signer it names (see witness_attestation.py), and from their
+    Witness attestations only the runtime-trace predicate's ``monitorLog.network`` and the command-run
+    process command lines.
 
     Registered with the ceiling ``{fail}``: a verified trace can show that the
-    build accessed the network, but an empty or absent network log is also what
+    run accessed the network, but an empty or absent network log is also what
     a monitor that does not trace sockets records, so it cannot show the
-    opposite.
+    opposite. A run checked against the signer it names may be anyone's: it
+    can only add FAIL evidence, never PASS.
 
-    ``verify_witness_attestations = false`` skips the network round-trip (air-
-    gapped audits, or no usable `gh` login). There is deliberately no "skip if
-    CI text doesn't mention witness" heuristic: a reusable or composite workflow
-    can produce a valid attestation without the calling repo's own CI files
-    ever spelling out "witness".
+    ``verify_witness_attestations = false`` skips the check.
 
     Result semantics:
     - FAIL:          a verified attestation recorded network events, or a
                      verified command-run process matched an installer pattern
     - INCONCLUSIVE:  everything else, including a verified clean trace (evidence
-                     only) and every missing prerequisite (disabled, no sigstore,
-                     no repository identity or commit, no gh or auth, no run,
-                     artifact, or verifiable bundle). Never ERROR: this step can
-                     only add FAIL evidence, so a missing optional source must
-                     not turn the control's WARN into ERROR.
+                     only) and every missing prerequisite (disabled, no commit,
+                     no bundle, no run of the commit, no run that verifies).
+                     Never ERROR: this step can only add FAIL evidence, so a
+                     missing optional source must not turn the control's WARN
+                     into ERROR.
     """
     if not config.get("verify_witness_attestations", True):
         return HandlerResult(
             status=HandlerResultStatus.INCONCLUSIVE,
-            message="Witness attestation verification is disabled (verify_witness_attestations = false)",
+            message="Witness attestation check is disabled (verify_witness_attestations = false)",
             confidence=0.0,
             evidence={"witness_attestation": {"verified": False, "detail": "verification disabled via config"}},
         )
@@ -1004,7 +1002,7 @@ def repro_witness_attestation_handler(
         return HandlerResult(
             status=HandlerResultStatus.FAIL,
             message=(
-                f"Verified Witness attestation ({artifact}) shows network access during the build of "
+                f"Verified Witness attestation of run {artifact} shows network access during the run of "
                 f"commit {commit}: {result.detail}"
             ),
             confidence=0.9,
@@ -1016,7 +1014,7 @@ def repro_witness_attestation_handler(
         return HandlerResult(
             status=HandlerResultStatus.INCONCLUSIVE,
             message=(
-                f"Verified Witness attestation ({artifact}, monitor: {monitors}) for commit {commit}: "
+                f"Verified Witness attestation of run {artifact} (monitor: {monitors}) for commit {commit}: "
                 f"{result.detail}. A clean runtime trace is recorded as evidence but cannot by itself "
                 "establish that the build had no network access: what a monitor records depends on its "
                 "type and trace policy."
@@ -1174,4 +1172,84 @@ def repro_bit_for_bit_handler(
         message="No reproducibility signals found — manual verification required",
         confidence=0.0,
         evidence=evidence,
+    )
+
+
+def repro_run_verified_handler(
+    config: dict[str, Any],
+    ctx: HandlerContext,
+) -> HandlerResult:
+    """
+    Check that the experiment's run at the audited commit is recorded by `darnit-amber run` and verifies.
+
+    Reads the bundle in the repository (`bundle`, default `.amber/`), and checks each run whose subject is
+    the audited commit with `rerun.verify`, against the signer the run names. That shows the record was not
+    changed since it was signed; who signed it is trusted only when the operator lists them:
+
+      trusted_keys:        sha256 key fingerprints, for runs signed with a key
+      trusted_identities:  [identity, issuer] pairs, for runs signed keyless (e.g. an email address and
+                           https://github.com/login/oauth, or a GitHub Actions workflow URI and
+                           https://token.actions.githubusercontent.com)
+
+    Registered with the ceiling {pass, fail}: the result is a cryptographic check, not a text signal.
+
+    - FAIL:          a run of this commit does not verify (its record was changed, or was never signed)
+    - PASS:          every run of this commit verifies, and one of them exited 0 with a trusted signer
+    - INCONCLUSIVE:  no bundle, no run of this commit, or verified runs that exited non-zero or whose
+                     signer the operator has not listed
+    """
+    root = Path(ctx.local_path)
+    bundle = root / config.get("bundle", ".amber")
+    trusted_keys = set(config.get("trusted_keys") or [])
+    trusted_identities = {tuple(pair) for pair in config.get("trusted_identities") or []}
+
+    def inconclusive(message: str, **evidence: Any) -> HandlerResult:
+        return HandlerResult(
+            status=HandlerResultStatus.INCONCLUSIVE, message=message, confidence=0.0, evidence={"amber_runs": evidence}
+        )
+
+    # 1. The audited commit, and the bundle's runs of it, each verified against the signer it names.
+    commit = head_commit(root)
+    if not commit:
+        return inconclusive("The audited repository has no commit to match runs against")
+    runs = verify_commit_runs(bundle, commit)
+    if not runs:
+        return inconclusive(f"No darnit-amber run of the audited commit {commit[:12]} in {bundle.name}/", commit=commit)
+
+    # 2. Every run of this commit must verify; one that does not concludes FAIL.
+    summary = {
+        run_id[:12]: {"verified": r["report"]["verified"], "failed": failed(r["report"]) or r["report"].get("error")}
+        | {"signer": r["signer"]}
+        for run_id, r in runs.items()
+    }
+    broken = [run_id for run_id, r in runs.items() if not r["report"]["verified"]]
+    if broken:
+        return HandlerResult(
+            status=HandlerResultStatus.FAIL,
+            message=f"A recorded run of commit {commit[:12]} does not verify: {', '.join(r[:12] for r in broken)}",
+            confidence=1.0,
+            evidence={"amber_runs": {"commit": commit, "runs": summary}},
+        )
+
+    # 3. A verified run that succeeded, by a signer the operator trusts.
+    def trusted(signer: dict[str, Any]) -> bool:
+        if "key_fingerprint" in signer:
+            return signer["key_fingerprint"] in trusted_keys
+        return (signer["identity"], signer["issuer"]) in trusted_identities
+
+    succeeded = [r for r in runs.values() if r["statement"]["predicate"]["exit_code"] == 0]
+    evidence = {"commit": commit, "runs": summary}
+    if not succeeded:
+        return inconclusive(f"Every recorded run of commit {commit[:12]} verifies, but none exited 0", **evidence)
+    if not any(trusted(r["signer"]) for r in succeeded):
+        return inconclusive(
+            f"A recorded run of commit {commit[:12]} verifies, but its signer is not in trusted_keys or "
+            "trusted_identities: the record was not changed, but who made it is not established",
+            **evidence,
+        )
+    return HandlerResult(
+        status=HandlerResultStatus.PASS,
+        message=f"A recorded run of commit {commit[:12]} verifies, exited 0, and is signed by a trusted signer",
+        confidence=1.0,
+        evidence={"amber_runs": evidence},
     )

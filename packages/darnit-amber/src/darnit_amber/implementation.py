@@ -116,4 +116,15 @@ class AmberImplementation:
             settings=frozenset(),
         )
 
+        # A recorded run (darnit-amber run) is checked cryptographically, so this step can conclude PASS:
+        # only when every run of the audited commit verifies and one is signed by a key the operator trusts.
+        registry.register(
+            "repro_run_verified",
+            phase="deterministic",
+            handler_fn=handlers.repro_run_verified_handler,
+            description="Verify the darnit-amber runs of the audited commit, signed by a trusted key",
+            ceiling={"pass", "fail"},
+            settings={"bundle", "trusted_keys", "trusted_identities"},
+        )
+
         registry.set_plugin_context(None)

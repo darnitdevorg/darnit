@@ -168,13 +168,7 @@ ATTESTATION_CORPUS: dict[str, tuple[dict, str]] = {
 @pytest.mark.parametrize("case", sorted(ATTESTATION_CORPUS))
 def test_attestation_corpus(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str) -> None:
     verified, expected = ATTESTATION_CORPUS[case]
-    artifact = tmp_path / "build.att.json"
-    artifact.write_text("{}", encoding="utf-8")
-    monkeypatch.setattr(wa, "SIGSTORE_VERIFY_AVAILABLE", True)
-    monkeypatch.setattr(wa, "_head_commit", lambda local_path: ("a" * 40, None))
-    monkeypatch.setattr(wa, "_successful_run_ids", lambda owner, repo, sha: (["1"], None))
-    monkeypatch.setattr(wa, "_fetch_candidate_files", lambda owner, repo, run_ids, scratch: ([artifact], None))
-    monkeypatch.setattr(wa, "_verify_bundle", lambda raw, owner, repo, sha: verified)
+    monkeypatch.setattr(wa, "verified_attestations", lambda checkout: ([("a" * 64, verified)], "", {"commit": "c"}))
 
     result = repro_witness_attestation_handler({}, repro_ctx(tmp_path))
 

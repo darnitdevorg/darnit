@@ -383,8 +383,8 @@ class TestReproWitnessAttestationHandler:
             lambda ctx: pytest.fail("verification must not run when disabled"),
         )
         monkeypatch.setattr(
-            "darnit_amber.witness_attestation._run_gh",
-            lambda args: pytest.fail("gh must not run when disabled"),
+            "darnit_amber.witness_attestation.verified_attestations",
+            lambda checkout: pytest.fail("no run must be read when disabled"),
         )
         result = repro_witness_attestation_handler({"verify_witness_attestations": False}, make_ctx(tmp_path))
         assert result.status == HandlerResultStatus.INCONCLUSIVE
@@ -442,9 +442,7 @@ class TestRepoDepsPin:
         assert result.status == HandlerResultStatus.INCONCLUSIVE
 
     def test_fail_with_pyproject_dependencies(self, tmp_path: Path) -> None:
-        (tmp_path / "pyproject.toml").write_text(
-            "[project]\nname = 'pkg'\ndependencies = ['requests>=2.0']\n"
-        )
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'pkg'\ndependencies = ['requests>=2.0']\n")
         result = repro_deps_pinned_handler({}, make_ctx(tmp_path))
         assert result.status == HandlerResultStatus.FAIL
 
@@ -959,12 +957,12 @@ class TestHermeticBuild:
 
     def test_does_not_consult_attestations(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         # #553: attestations are the repro_witness_attestation step's; this
-        # step reads only the checkout, so it makes no gh (or other) calls.
+        # step reads only the checkout's files, so it reads no runs and runs no subprocess.
         def no_calls(*args: object, **kwargs: object) -> None:
             pytest.fail("repro_hermetic_build must not consult attestations or run a subprocess")
 
         monkeypatch.setattr("darnit_amber.handlers.check_witness_attestation", no_calls)
-        monkeypatch.setattr("darnit_amber.witness_attestation._run_gh", no_calls)
+        monkeypatch.setattr("darnit_amber.witness_attestation.verified_attestations", no_calls)
         monkeypatch.setattr("subprocess.run", no_calls)
         wf_dir = tmp_path / ".github" / "workflows"
         wf_dir.mkdir(parents=True)
