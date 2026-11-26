@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Dependencies: `cryptography` 47.0.0 -> 50.0.2 (GHSA-537c-gmf6-5ccf, GHSA-g6cj-pr64-35w5: vulnerable OpenSSL in the wheels; the `<48` cap in `darnit[attestation]` is now `>=50,<51`), `mcp` 1.26.0 -> 1.30.0, `starlette` 1.0.0 -> 1.10.0, `httpx2`/`httpcore2` 2.9.1 -> 2.16.2, `certifi`, `dnspython`, `python-multipart`, `pydantic-settings`, `opentelemetry-api`, `pydantic-ai-slim` 2.24.0 -> 2.75.0 (which pulls `anthropic` 2.14 and `openai` 3.60): every finding of `pip-audit` on the exported lock, now clean.
+
 ### Changed
 
 - In the fenced JSON returned by `remediate_audit_findings`, omit file contents from `file_changes` in the plan and outcomes, keeping path, action, reason, and digests so the result stays well within MCP client limits (fixes #725).
