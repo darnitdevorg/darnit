@@ -267,3 +267,79 @@ class TestMissingRepositoryIdentity:
         result = gh_api_handler({"handler": "gh_api", "endpoint": "/user"}, ctx)
         assert responder.calls == ["/user"]
         assert result.status == HandlerResultStatus.PASS
+
+
+class TestAuthFields:
+    """Permission-gated response fields omitted on a 2xx answer report ERROR [auth] (issue #753)."""
+
+    ORG_ENDPOINT = "/orgs/$OWNER"
+    RESOLVED_ORG = "/orgs/octo"
+
+    def test_missing_auth_field_dict_reports_auth_error(self, recorded) -> None:
+        recorded({self.RESOLVED_ORG: {"status": 200, "body": {"login": "octo", "type": "Organization"}}})
+        config = {
+            "handler": "gh_api",
+            "endpoint": self.ORG_ENDPOINT,
+            "expr": "response.body.two_factor_requirement_enabled == true",
+            "auth_fields": {"two_factor_requirement_enabled": "visible only to organization owners"},
+        }
+        result = gh_api_handler(config, _ctx())
+        assert result.status == HandlerResultStatus.ERROR
+        assert result.error_class == "auth"
+        assert result.message == (
+            f"Platform API call {self.RESOLVED_ORG} could not be measured (auth): "
+            "'two_factor_requirement_enabled' is visible only to organization owners"
+        )
+
+    def test_cel_evaluation_error_stays_evaluation_when_auth_field_present(self, recorded) -> None:
+        recorded({self.RESOLVED_ORG: {"status": 200, "body": {"two_factor_requirement_enabled": True}}})
+        config = {
+            "handler": "gh_api",
+            "endpoint": self.ORG_ENDPOINT,
+            "expr": "response.body.two_factor_requirement_enabled && response.body.unknown_field == true",
+            "auth_fields": {"two_factor_requirement_enabled": "visible only to organization owners"},
+        }
+        result = gh_api_handler(config, _ctx())
+        assert result.status == HandlerResultStatus.ERROR
+        assert result.error_class == "evaluation"
+        assert "Could not evaluate expr" in result.message
+
+    def test_auth_field_present_evaluates_expr_pass(self, recorded) -> None:
+        recorded({self.RESOLVED_ORG: {"status": 200, "body": {"two_factor_requirement_enabled": True}}})
+        config = {
+            "handler": "gh_api",
+            "endpoint": self.ORG_ENDPOINT,
+            "expr": "response.body.two_factor_requirement_enabled == true",
+            "auth_fields": {"two_factor_requirement_enabled": "visible only to organization owners"},
+        }
+        result = gh_api_handler(config, _ctx())
+        assert result.status == HandlerResultStatus.PASS
+        assert result.error_class is None
+
+    def test_auth_field_present_evaluates_expr_fail(self, recorded) -> None:
+        recorded({self.RESOLVED_ORG: {"status": 200, "body": {"two_factor_requirement_enabled": False}}})
+        config = {
+            "handler": "gh_api",
+            "endpoint": self.ORG_ENDPOINT,
+            "expr": "response.body.two_factor_requirement_enabled == true",
+            "auth_fields": {"two_factor_requirement_enabled": "visible only to organization owners"},
+        }
+        result = gh_api_handler(config, _ctx())
+        assert result.status == HandlerResultStatus.FAIL
+        assert result.error_class is None
+
+    def test_auth_fields_through_orchestrator(self, recorded) -> None:
+        recorded({self.RESOLVED_ORG: {"status": 200, "body": {"login": "octo", "type": "Organization"}}})
+        result = _verify(
+            HandlerInvocation(
+                handler="gh_api",
+                endpoint=self.ORG_ENDPOINT,
+                expr="response.body.two_factor_requirement_enabled == true",
+                auth_fields={"two_factor_requirement_enabled": "visible only to organization owners"},
+            ),
+            HandlerInvocation(handler="manual", steps=["Navigate to Organization Settings"]),
+        )
+        assert result.status == "ERROR"
+        assert result.error["class"] == "auth"
+        assert "two_factor_requirement_enabled" in result.error["cause"]
+        assert "visible only to organization owners" in result.error["cause"]
