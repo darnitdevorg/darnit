@@ -16,19 +16,19 @@ The tag-driven pipeline in `release.yml` currently ships **PyPI + container** on
 
 PyPI publishing uses an **account-scoped API token** (`PYPI_API_TOKEN` repo secret) rather than trusted publishers. Trusted publishers are the better long-term posture (no long-lived secrets, per-project scoping) but the per-project PyPI UI setup was blocking; tokens ship the pipeline today and can be migrated later. See "External setup" below for the token flow.
 
-Sections below marked _(deferred)_ describe channels the workflow does not currently drive.
+Sections below marked *(deferred)* describe channels the workflow does not currently drive.
 
 ## Overview
 
 darnit is designed to be released through five user-facing channels from a single tag-driven pipeline:
 
-| Channel            | Surface                       | Stable | Pre-release             | Contract                                                                                                   |
-| ------------------ | ----------------------------- | ------ | ----------------------- | ---------------------------------------------------------------------------------------------------------- |
-| PyPI               | `pypi.org/project/darnit-*`   | ✅     | TestPyPI                | [pypi-publish-contract.md](../specs/012-packaging-distribution/contracts/pypi-publish-contract.md)         |
-| Container          | `ghcr.io/darnitdevorg/darnit` | ✅     | ✅ (`-rc` tags)         | [container-image-contract.md](../specs/012-packaging-distribution/contracts/container-image-contract.md)   |
-| Binary             | GitHub Release assets         | ✅     | ✅ (marked pre-release) | [binary-artifact-contract.md](../specs/012-packaging-distribution/contracts/binary-artifact-contract.md)   |
-| Homebrew           | `kusari-oss/homebrew-tap`     | ✅     | ❌ (stable only)        | [homebrew-formula-contract.md](../specs/012-packaging-distribution/contracts/homebrew-formula-contract.md) |
-| Claude Code plugin | GitHub Release asset          | ✅     | ❌ (stable only)        | [claude-plugin-contract.md](../specs/012-packaging-distribution/contracts/claude-plugin-contract.md)       |
+| Channel | Surface | Stable | Pre-release | Contract |
+|---|---|---|---|---|
+| PyPI | `pypi.org/project/darnit-*` | ✅ | TestPyPI | [pypi-publish-contract.md](../specs/012-packaging-distribution/contracts/pypi-publish-contract.md) |
+| Container | `ghcr.io/darnitdevorg/darnit` | ✅ | ✅ (`-rc` tags) | [container-image-contract.md](../specs/012-packaging-distribution/contracts/container-image-contract.md) |
+| Binary | GitHub Release assets | ✅ | ✅ (marked pre-release) | [binary-artifact-contract.md](../specs/012-packaging-distribution/contracts/binary-artifact-contract.md) |
+| Homebrew | `kusari-oss/homebrew-tap` | ✅ | ❌ (stable only) | [homebrew-formula-contract.md](../specs/012-packaging-distribution/contracts/homebrew-formula-contract.md) |
+| Claude Code plugin | GitHub Release asset | ✅ | ❌ (stable only) | [claude-plugin-contract.md](../specs/012-packaging-distribution/contracts/claude-plugin-contract.md) |
 
 All releases are tag-driven. Tag patterns: `v<X.Y.Z>` (stable) or `v<X.Y.Z>rc<N>` (pre-release).
 
@@ -45,70 +45,71 @@ Before the first release works end-to-end, a maintainer with admin access must:
 The workflow authenticates every `publish-*` job with the `PYPI_API_TOKEN` repo secret. Setup, one time:
 
 1. Under a PyPI account with 2FA enabled (Account settings -> Two-factor authentication), create a new API token:
-    - https://pypi.org/manage/account/token/
-    - Name: `darnit-github-actions` (or similar)
-    - Scope: **Entire account (all projects)**. Project-scoped tokens require the projects to already exist; the account-scoped token is only needed for first-time publish, then narrow down.
+   - https://pypi.org/manage/account/token/
+   - Name: `darnit-github-actions` (or similar)
+   - Scope: **Entire account (all projects)**. Project-scoped tokens require the projects to already exist; the account-scoped token is only needed for first-time publish, then narrow down.
 2. Copy the full token (starts with `pypi-`).
 3. Add as a **repository secret** (not environment secret) on `darnitdevorg/darnit`:
-    ```bash
-    gh secret set PYPI_API_TOKEN --repo darnitdevorg/darnit
-    ```
+   ```bash
+   gh secret set PYPI_API_TOKEN --repo darnitdevorg/darnit
+   ```
 4. After the first release lands and the six projects exist on PyPI, replace with per-project tokens for scope reduction (optional; not required for correctness).
 
 If the token is bad, the first `publish-*` job in `release.yml` fails immediately with a 403 and no packages are published. Fix the secret and re-trigger via `workflow_dispatch` on the same tag; no need to bump the version.
 
-### PyPI Trusted Publishing _(deferred)_
+### PyPI Trusted Publishing *(deferred)*
 
 Better long-term posture; skipped for v0.1.0 because per-project UI setup was blocking. To migrate later, per public package: on the project's "Publishing" page add a Trusted Publisher with Owner: `darnitdevorg`, Repository: `darnit`, Workflow: `release.yml`, Environment: `release`. Then swap `password: ${{ secrets.PYPI_API_TOKEN }}` in each `publish-*` job for the trusted-publisher config, add `id-token: write` permission, and re-add `environment: release`.
 
-### TestPyPI _(deferred)_
+### TestPyPI *(deferred)*
 
 Not currently used. rc tags publish directly to real PyPI as GitHub prereleases.
 
-### Homebrew tap _(deferred)_
+### Homebrew tap *(deferred)*
 
 1. Create `kusari-oss/homebrew-tap` as a public repo with the default branch `main` and a stub README. Copy `packaging/homebrew/tap-workflows/{bump-formula.yml,ci.yml}` into the tap repo's `.github/workflows/`.
 2. Provide a credential the release pipeline can use to fire a `repository_dispatch` against the tap repo. Two options, simplest first:
-    - **Fine-grained PAT** (recommended for low-cadence projects). Create at https://github.com/settings/personal-access-tokens/new with **Repository access → Only select repositories → `kusari-oss/homebrew-tap`** and **Repository permissions → Contents: Read and write**. Trade-off: tied to your user account; rotates when you re-issue the PAT.
-    - **GitHub App** (recommended once release cadence justifies the polish). Create an App with `contents: write` on `kusari-oss/homebrew-tap` only; install on the tap repo; store the App-issued installation token (or app-id + private-key pair the workflow exchanges for one) as the secret. Trade-off: more setup; rotatable; not tied to a user account.
+   - **Fine-grained PAT** (recommended for low-cadence projects). Create at https://github.com/settings/personal-access-tokens/new with **Repository access → Only select repositories → `kusari-oss/homebrew-tap`** and **Repository permissions → Contents: Read and write**. Trade-off: tied to your user account; rotates when you re-issue the PAT.
+   - **GitHub App** (recommended once release cadence justifies the polish). Create an App with `contents: write` on `kusari-oss/homebrew-tap` only; install on the tap repo; store the App-issued installation token (or app-id + private-key pair the workflow exchanges for one) as the secret. Trade-off: more setup; rotatable; not tied to a user account.
 
-    The dispatch step in `release.yml` uses bearer auth (`Authorization: Bearer ${HOMEBREW_TAP_TOKEN}`), which works identically for both options. Swap between them at any time without touching the workflow.
+   The dispatch step in `release.yml` uses bearer auth (`Authorization: Bearer ${HOMEBREW_TAP_TOKEN}`), which works identically for both options. Swap between them at any time without touching the workflow.
 
 3. Store the credential as the `HOMEBREW_TAP_TOKEN` secret on the `release` environment of `kusari-oss/darnit`:
-    ```bash
-    gh secret set HOMEBREW_TAP_TOKEN --repo kusari-oss/darnit --env release
-    ```
+   ```bash
+   gh secret set HOMEBREW_TAP_TOKEN --repo kusari-oss/darnit --env release
+   ```
 
 ## Doing a release
 
 ### Pre-flight (before tagging)
 
 1. **Sync `main` from upstream and confirm CI is green.**
-    ```bash
-    git checkout main
-    git fetch upstream && git merge --ff-only upstream/main
-    gh run list --branch main --limit 5
-    ```
+   ```bash
+   git checkout main
+   git fetch upstream && git merge --ff-only upstream/main
+   gh run list --branch main --limit 5
+   ```
 2. **Decide the version.** Stable releases are `vX.Y.Z`; pre-releases are `vX.Y.ZrcN` (no hyphen — PEP 440 canonical). Use a pre-release tag if this is the first run after a non-trivial release-pipeline change.
 3. **Bump the version everywhere it appears in the six public `pyproject.toml` files.** The packages must agree exactly with the tag (preflight enforces this), and so must the pins between them: `darnit-mcp` pins its components with `==`, `darnit-reproducibility` pins `darnit-amber` with `==`, and `darnit-baseline` and `darnit-gittuf` require `darnit-core>=` the same version (`tests/packaging/test_workspace_pins.py` fails otherwise). A text replace of the old version with the new one in these six files does all of it:
-    - `pyproject.toml` (the root `darnit-mcp` package)
-    - `packages/darnit/pyproject.toml` (name: `darnit-core`)
-    - `packages/darnit-baseline/pyproject.toml`
-    - `packages/darnit-gittuf/pyproject.toml`
-    - `packages/darnit-amber/pyproject.toml`
+   - `pyproject.toml` (the root `darnit-mcp` package)
+   - `packages/darnit/pyproject.toml` (name: `darnit-core`)
+   - `packages/darnit-baseline/pyproject.toml`
+   - `packages/darnit-gittuf/pyproject.toml`
+   - `packages/darnit-amber/pyproject.toml`
+   - `packages/darnit-reproducibility/pyproject.toml` (the transitional package, one release)
 4. **Sync and verify locally:**
-    ```bash
-    uv sync --all-extras
-    uv run ruff check .
-    uv run pytest tests/ --ignore=tests/integration/ -q
-    uv run python scripts/validate_sync.py --verbose
-    ```
+   ```bash
+   uv sync --all-extras
+   uv run ruff check .
+   uv run pytest tests/ --ignore=tests/integration/ -q
+   uv run python scripts/validate_sync.py --verbose
+   ```
 5. **Commit and push the version bump:**
-    ```bash
-    git add -p   # review carefully
-    git commit -m "release: vX.Y.Z"
-    git push upstream main
-    ```
+   ```bash
+   git add -p   # review carefully
+   git commit -m "release: vX.Y.Z"
+   git push upstream main
+   ```
 
 ### Cut the tag
 
@@ -123,8 +124,8 @@ The `release.yml` workflow triggers automatically. **No `--force` or amend** —
 
 1. Open the [Actions tab](https://github.com/kusari-oss/darnit/actions). The `Release` workflow should appear within a few seconds of tag push.
 2. Watch `preflight` first. If it fails:
-    - Most common: version mismatch between tag and `pyproject.toml`. Delete the tag (`git push upstream --delete vX.Y.Z`), fix the bump commit, push a new tag.
-    - Other gates (lint/tests/sync/doc-gen) should have been caught in pre-flight above. If they fire here, you skipped step 4.
+   - Most common: version mismatch between tag and `pyproject.toml`. Delete the tag (`git push upstream --delete vX.Y.Z`), fix the bump commit, push a new tag.
+   - Other gates (lint/tests/sync/doc-gen) should have been caught in pre-flight above. If they fire here, you skipped step 4.
 3. Once preflight is green, channel jobs run in parallel: `pypi_publish` → `container_build_push` + `binary_matrix`; then `release_attach_binaries`, `homebrew_dispatch` (stable only), `plugin_package` (stable only); then `finalize`.
 4. **SC-007 budget**: stable releases are wall-clocked at 30 minutes (workflow-level timeout). Pre-releases are uncapped.
 
@@ -134,12 +135,12 @@ The `release.yml` workflow triggers automatically. **No `--force` or amend** —
 - For stable tags only: if any channel failed OR exceeded its budget, `finalize` opens a `release-failure` issue tagged with the channel name(s).
 - Run smoke tests (`Release Smoke Tests` workflow) — they trigger automatically on workflow_run.
 - Verify the user-facing surfaces:
-    ```bash
-    pip install darnit-mcp==X.Y.Z
-    docker pull ghcr.io/kusari-oss/darnit:vX.Y.Z
-    # stable only:
-    brew tap kusari-oss/tap && brew install darnit
-    ```
+  ```bash
+  pip install darnit-mcp==X.Y.Z
+  docker pull ghcr.io/kusari-oss/darnit:vX.Y.Z
+  # stable only:
+  brew tap kusari-oss/tap && brew install darnit
+  ```
 
 ### If something goes wrong mid-release
 
@@ -159,21 +160,21 @@ See [`RECOVERY.md`](RECOVERY.md). Each channel has a documented recovery path. R
 
 ## Workflow files
 
-| File                                                   | Purpose                                                                                                                                           |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `.github/workflows/release.yml`                        | Tag-triggered orchestrator; fans out per-channel publish jobs                                                                                     |
-| `.github/workflows/release-smoke.yml`                  | Per-channel post-publish smoke tests                                                                                                              |
-| `.github/workflows/release-yml-lint.yml`               | `actionlint` over `release.yml` + `release-smoke.yml` on every PR                                                                                 |
-| `.github/workflows/container-edge.yml`                 | `main`-branch builds tagged `:edge` (unsigned, non-release)                                                                                       |
-| `.github/workflows/release.yml::homebrew_dispatch` job | Cross-repo dispatch to `kusari-oss/homebrew-tap` (stable tags only)                                                                               |
-| `packaging/homebrew/tap-workflows/`                    | Reference copies of the workflows that live in `kusari-oss/homebrew-tap` (`bump-formula.yml`, `ci.yml`) — copy into the tap repo on initial setup |
+| File | Purpose |
+|---|---|
+| `.github/workflows/release.yml` | Tag-triggered orchestrator; fans out per-channel publish jobs |
+| `.github/workflows/release-smoke.yml` | Per-channel post-publish smoke tests |
+| `.github/workflows/release-yml-lint.yml` | `actionlint` over `release.yml` + `release-smoke.yml` on every PR |
+| `.github/workflows/container-edge.yml` | `main`-branch builds tagged `:edge` (unsigned, non-release) |
+| `.github/workflows/release.yml::homebrew_dispatch` job | Cross-repo dispatch to `kusari-oss/homebrew-tap` (stable tags only) |
+| `packaging/homebrew/tap-workflows/` | Reference copies of the workflows that live in `kusari-oss/homebrew-tap` (`bump-formula.yml`, `ci.yml`) — copy into the tap repo on initial setup |
 
 ### Pinned tool versions
 
 These tools are pinned in the release workflows. **Local installations must match** so contributors catch issues before CI does. If you bump one, update all three sites (the two workflow files and this table) in the same PR.
 
-| Tool         | Pinned version                                      | Where                                            |
-| ------------ | --------------------------------------------------- | ------------------------------------------------ |
+| Tool | Pinned version | Where |
+|---|---|---|
 | `actionlint` | `v1.7.12` (linux/amd64 sha256 `8aca8db9...349a3d8`) | `release.yml` preflight + `release-yml-lint.yml` |
 
 #### Local install (macOS via Homebrew)
