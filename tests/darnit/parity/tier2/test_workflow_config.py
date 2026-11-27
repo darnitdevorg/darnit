@@ -188,16 +188,24 @@ class TestOpenAIWorkflowGovernance:
 
 
 class TestOpenAIApiKeyExclusivity:
-    """SC-002 + OW-7: OPENAI_API_KEY MUST appear only in parity-tier2-openai.yml."""
+    """SC-002 + OW-7: OPENAI_API_KEY MUST appear only in parity-tier2-openai.yml (or smoke-ollama.yml with dummy value)."""
 
     def test_sc_002_no_stray_openai_key_references(self) -> None:
+        allowed = {TIER2_OPENAI_WORKFLOW.name, "smoke-ollama.yml"}
         offenders: list[str] = []
         for wf in list(WORKFLOWS_DIR.glob("*.yml")) + list(WORKFLOWS_DIR.glob("*.yaml")):
-            if wf.name == TIER2_OPENAI_WORKFLOW.name:
+            if wf.name in allowed:
                 continue
             if "OPENAI_API_KEY" in wf.read_text():
                 offenders.append(str(wf))
-        assert not offenders, f"OPENAI_API_KEY MUST only appear in parity-tier2-openai.yml. Offenders: {offenders}"
+        assert not offenders, f"OPENAI_API_KEY MUST only appear in {allowed}. Offenders: {offenders}"
+
+        # smoke-ollama.yml uses a local model on localhost, so it MUST NOT expose secrets.OPENAI_API_KEY
+        smoke_wf = WORKFLOWS_DIR / "smoke-ollama.yml"
+        if smoke_wf.exists():
+            assert "secrets.OPENAI_API_KEY" not in smoke_wf.read_text(), (
+                "smoke-ollama.yml must use a dummy key on localhost, not secrets.OPENAI_API_KEY"
+            )
 
     def test_ow_9_no_anthropic_key_in_openai_workflow(self) -> None:
         """OW-9: the OpenAI workflow does NOT expose ANTHROPIC_API_KEY."""
