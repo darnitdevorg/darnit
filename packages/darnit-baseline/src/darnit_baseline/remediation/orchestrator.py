@@ -10,6 +10,7 @@ iterates *controls*, not hardcoded categories.
 
 import json
 import os
+from collections import Counter
 from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from datetime import datetime
@@ -1118,6 +1119,117 @@ def _scheduled_file_create_paths(
     return paths
 
 
+def _format_no_failures_report(
+    audit_results: list[dict[str, Any]],
+    *,
+    allowed_ids: Collection[str] | None = None,
+    profile_ids: Collection[str] | None = None,
+) -> RemediationReport:
+    """Format report when no failing controls exist in scope (Issue #797).
+
+    Only claims 'all controls are passing' when every control in scope is
+    PASS or an honored N/A. When unverified controls (ERROR, WARN, PENDING)
+    exist, states that no controls failed, reports the unverified counts,
+    and identifies the most common cause for ERROR controls.
+    """
+    scoped: list[dict[str, Any]] = audit_results
+    if allowed_ids is not None:
+        allowed_set = set(allowed_ids)
+        scoped = [r for r in scoped if r.get("id") in allowed_set]
+    if profile_ids is not None:
+        profile_set = set(profile_ids)
+        scoped = [r for r in scoped if r.get("id") in profile_set]
+
+    if not scoped:
+        return RemediationReport("No remediations needed - all controls are passing.")
+
+    errors: list[dict[str, Any]] = []
+    warns: list[dict[str, Any]] = []
+    pendings: list[dict[str, Any]] = []
+
+    for r in scoped:
+        status = r.get("status")
+        if status == "ERROR":
+            errors.append(r)
+        elif status == "WARN":
+            warns.append(r)
+        elif status == "PENDING":
+            pendings.append(r)
+        elif status == "N/A":
+            # Feature 040: an assertion that is pending or contradicted is not honored
+            assertion = r.get("assertion") or {}
+            if assertion and assertion.get("outcome") != "honored":
+                pendings.append(r)
+
+    unverified_count = len(errors) + len(warns) + len(pendings)
+    if unverified_count == 0:
+        return RemediationReport("No remediations needed - all controls are passing.")
+
+    status_parts: list[str] = []
+    if errors:
+        status_parts.append(f"{len(errors)} ERROR")
+    if warns:
+        status_parts.append(f"{len(warns)} WARN")
+    if pendings:
+        status_parts.append(f"{len(pendings)} PENDING")
+    status_summary = ", ".join(status_parts)
+
+    lines = [
+        "Nothing to remediate: no control failed.",
+        "",
+        f"{unverified_count} control(s) could not be verified ({status_summary}):",
+    ]
+
+    if errors:
+        causes = [
+            r.get("error_class")
+            or (r.get("error") or {}).get("class")
+            or "evaluation"
+            for r in errors
+        ]
+        cause_counts = Counter(causes)
+        top_cause = cause_counts.most_common(1)[0][0]
+        class_summary = ", ".join(f"{cnt} {cls}" for cls, cnt in cause_counts.most_common())
+
+        # Find one sample control in the most common error class
+        sample_ctrl = next(
+            (
+                r
+                for r in errors
+                if (r.get("error_class") or (r.get("error") or {}).get("class") or "evaluation") == top_cause
+            ),
+            errors[0],
+        )
+        sample_id = sample_ctrl.get("id", "control")
+        raw_details = str(
+            sample_ctrl.get("details")
+            or (sample_ctrl.get("error") or {}).get("cause")
+            or sample_ctrl.get("message")
+            or ""
+        ).strip()
+        clean_details = " ".join(raw_details.split())
+
+        if clean_details:
+            lines.append(
+                f"- **ERROR ({len(errors)}):** could not measure. {class_summary}, e.g. {sample_id}: {clean_details}"
+            )
+        else:
+            lines.append(
+                f"- **ERROR ({len(errors)}):** could not measure. {class_summary}, e.g. {sample_id}"
+            )
+
+    if warns:
+        lines.append(f"- **WARN ({len(warns)}):** Could not automatically verify - manual verification required")
+
+    if pendings:
+        lines.append(f"- **PENDING ({len(pendings)}):** Awaiting model judgment or confirmation")
+
+    lines.append("")
+    lines.append("Automated remediation applies only to failing controls. Unverified controls are non-compliant until verified.")
+
+    return RemediationReport("\n".join(lines))
+
+
 def run_remediation(
     local_path: str = ".",
     owner: str | None = None,
@@ -1232,13 +1344,16 @@ def run_remediation(
     # ------------------------------------------------------------------
     # Build the list of controls to remediate
     # ------------------------------------------------------------------
+    allowed_ids: list[str] | None = None
     if not categories or categories == ["all"]:
         if error:
             return RemediationReport(f"Error running audit: {error}")
         if not failed_ids:
             if failed_ids is None:
                 return RemediationReport("Error: Audit did not produce results. Try running an audit first.")
-            return RemediationReport("No remediations needed - all controls are passing.")
+            return _format_no_failures_report(
+                audit_results, profile_ids=profile_ids
+            )
 
         # All failed controls that have ANY remediation in TOML
         remediable_ids = []
@@ -1277,14 +1392,23 @@ def run_remediation(
             )
 
     if not remediable_ids:
-        if failed_ids:
-            no_handler_ids = sorted(failed_ids)
+        if error:
+            return RemediationReport(f"Error running audit: {error}")
+        scoped_failed = (
+            (failed_ids & set(allowed_ids))
+            if allowed_ids is not None and failed_ids is not None
+            else failed_ids
+        )
+        if scoped_failed:
+            no_handler_ids = sorted(scoped_failed)
             return RemediationReport(
-                f"{len(failed_ids)} control(s) failed but none have auto-fix handlers.\n\n"
+                f"{len(scoped_failed)} control(s) failed but none have auto-fix handlers.\n\n"
                 f"**Controls without auto-fix:** {', '.join(no_handler_ids)}\n\n"
                 "These require manual remediation."
             )
-        return RemediationReport("No remediations needed - all controls are passing.")
+        return _format_no_failures_report(
+            audit_results, allowed_ids=allowed_ids, profile_ids=profile_ids
+        )
 
     # ------------------------------------------------------------------
     # Pre-flight context check (prompt for ALL missing context upfront)

@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- When an audit has no failing controls but contains unverified controls (ERROR, WARN, PENDING), remediate_audit_findings reports that no controls failed alongside unverified counts and error details instead of claiming all controls pass (fixes #797).
 - In previewable exec remediations, preview files with uncommitted user changes
   as action `none` with reason `user_changes_present`, and omit files the command
   will not touch when refused, matching what apply does (fixes #543).
