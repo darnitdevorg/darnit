@@ -10,8 +10,10 @@ from pathlib import Path
 
 import pytest
 
+from darnit_baseline.threat_model.discovery_models import FileScanStats
 from darnit_baseline.threat_model.file_discovery import (
     BASELINE_EXCLUDED_DIRS,
+    MAX_FILE_BYTES,
     ScannedFile,
     _parse_gitignore_dirs,
     walk_repo,
@@ -156,7 +158,7 @@ def test_excluded_dir_count_tracks_gitignore_prunes(tmp_path: Path) -> None:
 
 
 def test_file_scan_stats_invariant(tmp_path: Path) -> None:
-    """FileScanStats enforces total == unsupported + in_scope."""
+    """FileScanStats enforces total == unsupported + in_scope + oversized."""
     _write(tmp_path / "a.py", "pass\n")
     _write(tmp_path / "README.md", "# readme\n")
     _, stats = walk_repo(tmp_path)
@@ -171,3 +173,45 @@ def test_relpath_is_repo_relative(tmp_path: Path) -> None:
     assert files[0].path.is_absolute()
     assert files[0].language == "python"
     assert isinstance(files[0], ScannedFile)
+
+
+class TestFileSizeCap:
+    """Files over the size limit are not parsed, and the skip is counted (#168)."""
+
+    def test_oversized_file_is_skipped_and_counted(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+        _write(tmp_path / "small.py", "pass\n")
+        _write(tmp_path / "bundle.js", "x" * 101)
+        _write(tmp_path / "README.md", "y" * 500)
+        files, stats = walk_repo(tmp_path, max_file_bytes=100)
+        assert [f.relpath for f in files] == ["small.py"]
+        assert stats.oversized_file_count == 1
+        assert stats.unsupported_file_count == 1
+        assert stats.max_file_bytes == 100
+        assert stats.by_language == {"python": 1}
+        assert stats.total_files_seen == 3
+        assert "not parsing bundle.js: 101 bytes is over the 100-byte limit" in caplog.text
+
+    def test_file_at_the_limit_is_parsed(self, tmp_path: Path) -> None:
+        _write(tmp_path / "edge.py", "x" * 100)
+        files, stats = walk_repo(tmp_path, max_file_bytes=100)
+        assert [f.relpath for f in files] == ["edge.py"]
+        assert stats.oversized_file_count == 0
+
+    def test_default_limit_is_one_megabyte(self, tmp_path: Path) -> None:
+        _write(tmp_path / "a.py", "pass\n")
+        _, stats = walk_repo(tmp_path)
+        assert MAX_FILE_BYTES == 1_000_000
+        assert stats.max_file_bytes == MAX_FILE_BYTES
+        assert FileScanStats.__dataclass_fields__["max_file_bytes"].default == MAX_FILE_BYTES
+
+    def test_invariant_counts_oversized_files(self) -> None:
+        with pytest.raises(ValueError, match="oversized_file_count"):
+            FileScanStats(
+                total_files_seen=3,
+                excluded_dir_count=0,
+                unsupported_file_count=1,
+                in_scope_files=1,
+                by_language={},
+                shallow_mode=False,
+                shallow_threshold=500,
+            )
