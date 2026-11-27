@@ -1279,7 +1279,7 @@ identity detector. This function prefers the `upstream` git remote over
 module SHALL implement repo identity detection logic (parsing git remotes,
 calling `gh repo view`, etc.).
 
-**Rendering** (#152): templates render with Jinja, `<< >>` for variables and `<% %>` for blocks. A name the template uses that does not exist fails the render: a top-level variable, a namespace, or a `context.*` key no context value has. The exception is an absent `scan.*` or `project.*` key, which means "not detected" and renders as an empty, false value, so `<% if scan.x %>` and `| default(...)` work. A rendered file whose path ends in `.yml`, `.yaml`, or `.json` MUST parse as that format. A render that fails either way, or a template syntax error, stops the remediation while planning: the preview reports the template and the reason, and an apply writes nothing.
+**Rendering** (#152): templates render with Jinja, `<< >>` for variables and `<% %>` for blocks. A name the template uses that does not exist fails the render: a misspelled top-level variable or namespace. A key of the `scan`, `project`, or `context` namespace that has no value is not an error: it means "not detected" or "not set" and renders as an empty, false value, so `<% if scan.x %>` and `| default(...)` work. A `context` key that needs confirmation still stops the remediation (section 7.11). A rendered file whose path ends in `.yml`, `.yaml`, or `.json` MUST parse as that format. A render that fails either way, or a template syntax error, stops the remediation while planning: the preview reports the template and the reason, and an apply writes nothing.
 
 #### Scenario: Template with inline content
 - **WHEN** a `[templates.foo]` entry has `content = "# Header\n..."`
@@ -2694,7 +2694,7 @@ The following requirements have been superseded: by the handler dispatch archite
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.0.0-alpha.33 | 2026-11-27 | Remediation templates render strictly: an undefined name fails the render except an absent `scan.*` or `project.*` key, and a rendered `.yml`, `.yaml`, or `.json` file must parse; either failure stops the remediation while planning (Section 4.8; #152) |
+| 1.0.0-alpha.33 | 2026-11-27 | Remediation templates render strictly: an undefined top-level name or namespace fails the render (a `scan`, `project`, or `context` key with no value does not), and a rendered `.yml`, `.yaml`, or `.json` file must parse; either failure stops the remediation while planning (Section 4.8; #152) |
 | 1.0.0-alpha.32 | 2026-11-26 | One creation per path in a remediation run: a later control planning a path another control creates reports `created_by_other_control`, in preview and apply alike (Section 15.2; `FileChange` reasons) |
 | 1.0.0-alpha.31 | 2026-11-24 | `gh_api` step setting `auth_fields`: when an HTTP 2xx response omits any declared field, reports ERROR with error class `auth` naming the elevated permission requirement (Section 3.8; #753) |
 | 1.0.0-alpha.30 | 2026-11-24 | An `exec` remediation step previewed in a scratch copy marks files that have uncommitted user changes in the checkout with `action = "none"` and `reason = "user_changes_present"`, reports that the command will not run, and omits files the command will not touch, matching what the apply does (Section 4.4; #543) |

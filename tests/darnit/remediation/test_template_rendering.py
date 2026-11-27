@@ -5,8 +5,11 @@ string, and a rendered workflow file was written without checking it was
 valid YAML. Both now stop the remediation while planning: the preview
 reports the error and an apply writes nothing.
 
-Absent ``scan.*`` and ``project.*`` keys mean "not detected", and templates
-test them with ``<% if scan.x %>`` or ``| default(...)``; those still render.
+Absent ``scan.*`` and ``project.*`` keys mean "not detected", and a
+``context.*`` key with no value means "not set"; templates test them with
+``<% if scan.x %>`` or ``| default(...)``, and those still render. (A context
+key that needs confirmation still stops the remediation; see
+test_confirmation_required.py.)
 """
 
 from __future__ import annotations
@@ -70,6 +73,10 @@ class TestDetectedValues:
             ("<% if scan.package_manager == 'uv' %>uv<% else %>other<% endif %>\n", "other\n"),
             ("[<< project.name >>]\n", "[]\n"),
             ("[<< scan['test_command'] >>]\n", "[]\n"),
+            ("<% if context.security_contact %>contact<% else %>none<% endif %>\n", "none\n"),
+            ("[<< context.not_declared >>]\n", "[]\n"),
+            ("<< context.get('maintainers', '@org/maintainers') >>\n", "@org/maintainers\n"),
+            ("<< scan.items() | list | length >>\n", "0\n"),
         ],
     )
     def test_absent_detected_value_is_empty(self, tmp_path: Path, content: str, expected: str) -> None:

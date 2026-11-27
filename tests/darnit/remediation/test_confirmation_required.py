@@ -74,24 +74,13 @@ class TestTemplateReads:
         assert not (tmp_path / "FIRST.md").exists()
         assert not (tmp_path / "SECOND.md").exists()
 
-    def test_undefined_key_that_is_not_a_context_key_stops_the_remediation(self, tmp_path: Path) -> None:
-        """A name no context key has is a template bug, not an empty value (#152)."""
+    def test_undefined_key_that_is_not_a_context_key_renders_empty(self, tmp_path: Path) -> None:
         executor = _executor(tmp_path, "[<< context.not_a_key >>]\n", unconfirmed={"maintainers"})
 
         result = executor.execute("C-1", RemediationConfig(handlers=[_file("OUT.md")]), dry_run=False)
 
-        assert not result.success
-        assert result.confirmation_required is None
-        assert "not_a_key" in result.message
-        assert not (tmp_path / "OUT.md").exists()
-
-    def test_undefined_context_key_with_a_default_renders_the_default(self, tmp_path: Path) -> None:
-        executor = _executor(tmp_path, "[<< context.not_a_key | default('x') >>]\n")
-
-        result = executor.execute("C-1", RemediationConfig(handlers=[_file("OUT.md")]), dry_run=False)
-
         assert result.success
-        assert (tmp_path / "OUT.md").read_text() == "[x]\n"
+        assert (tmp_path / "OUT.md").read_text() == "[]\n"
 
 
 @pytest.mark.unit

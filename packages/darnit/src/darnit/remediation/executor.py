@@ -99,8 +99,24 @@ class DetectedValues(dict[str, str]):
 
     Templates test these with ``<% if scan.x %>`` or ``| default(...)``, so
     an absent key renders as an ordinary (empty, false) undefined value.
-    Every other undefined name fails the render (#152).
     """
+
+
+def _absent_key(obj: Any, name: Any, *, attribute: bool) -> bool:
+    """``name`` is a key a value namespace has no value for (#152).
+
+    The namespaces are ``scan``, ``project`` (:class:`DetectedValues`), and
+    ``context`` (:class:`GuardedContext`). For ``context`` the membership
+    test raises :class:`ConfirmationRequired` for a key that needs
+    confirmation, so such a key still stops the remediation; a key that
+    simply has no value renders as an ordinary undefined value, as it always
+    has. A mapping method such as ``context.get`` is not a key.
+    """
+    if not isinstance(obj, (DetectedValues, GuardedContext)) or not isinstance(name, str):
+        return False
+    if name in obj:
+        return False
+    return not (attribute and hasattr(obj, name))
 
 
 def _template_environment() -> Environment:
@@ -108,18 +124,20 @@ def _template_environment() -> Environment:
 
     ``<< >>`` for variables and ``<% %>`` for blocks, so GitHub Actions
     ``${{ }}`` and shell ``$VAR`` pass through untouched. Undefined names are
-    strict, except absent keys of a :class:`DetectedValues` namespace.
+    strict (a misspelled variable or namespace fails the render), except a
+    key of the ``scan``, ``project``, or ``context`` namespace that has no
+    value (see :func:`_absent_key`).
     """
     import jinja2
 
     class _Environment(jinja2.Environment):
         def getattr(self, obj: Any, attribute: str) -> Any:
-            if isinstance(obj, DetectedValues) and attribute not in obj:
+            if _absent_key(obj, attribute, attribute=True):
                 return jinja2.Undefined(obj=obj, name=attribute)
             return super().getattr(obj, attribute)
 
         def getitem(self, obj: Any, argument: Any) -> Any:
-            if isinstance(obj, DetectedValues) and isinstance(argument, str) and argument not in obj:
+            if _absent_key(obj, argument, attribute=False):
                 return jinja2.Undefined(obj=obj, name=argument)
             return super().getitem(obj, argument)
 
