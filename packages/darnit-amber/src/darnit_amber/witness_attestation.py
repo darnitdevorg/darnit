@@ -150,14 +150,10 @@ def _head_commit(local_path: str) -> tuple[str | None, str | None]:
     """
     if not local_path or not Path(local_path).is_dir():
         return None, "audited path is not a directory, so there is no commit to bind attestations to"
+    from darnit.remediation.git_state import run_git
+
     try:
-        proc = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=local_path,
-            capture_output=True,
-            text=True,
-            timeout=_GIT_TIMEOUT_SECONDS,
-        )
+        proc = run_git(local_path, "rev-parse", "HEAD", timeout=_GIT_TIMEOUT_SECONDS)
     except FileNotFoundError:
         return None, "git not found in PATH, so the audited commit is unknown"
     except subprocess.TimeoutExpired:

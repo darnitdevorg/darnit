@@ -105,14 +105,10 @@ def _get_cache_dir(local_path: str) -> Path:
 
 def _get_head_commit(local_path: str) -> str | None:
     """Return the current HEAD commit hash, or None if not a git repo."""
+    from darnit.remediation.git_state import run_git
+
     try:
-        result = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=local_path,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
+        result = run_git(local_path, "rev-parse", "HEAD", timeout=10)
         if result.returncode == 0:
             return result.stdout.strip()
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
@@ -122,14 +118,10 @@ def _get_head_commit(local_path: str) -> str | None:
 
 def _is_working_tree_dirty(local_path: str) -> bool:
     """Return True if the working tree has uncommitted changes."""
+    from darnit.remediation.git_state import run_git
+
     try:
-        result = subprocess.run(
-            ["git", "status", "--porcelain"],
-            cwd=local_path,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
+        result = run_git(local_path, "status", "--porcelain", timeout=10)
         if result.returncode == 0:
             return len(result.stdout.strip()) > 0
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):

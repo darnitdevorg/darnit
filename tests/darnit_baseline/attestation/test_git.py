@@ -21,10 +21,12 @@ class TestGetGitCommit:
             commit = get_git_commit("/path/to/repo")
             assert commit == "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
             mock_run.assert_called_once_with(
-                ["git", "rev-parse", "HEAD"],
+                ["git", "--no-optional-locks", "-c", "core.fsmonitor=false", "rev-parse", "HEAD"],
                 cwd="/path/to/repo",
                 capture_output=True,
                 text=True,
+                input=None,
+                timeout=None,
             )
 
     def test_get_git_commit_non_zero_exit(self) -> None:
@@ -55,10 +57,12 @@ class TestGetGitRef:
             ref = get_git_ref("/path/to/repo")
             assert ref == "feature/my-branch"
             mock_run.assert_called_once_with(
-                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                ["git", "--no-optional-locks", "-c", "core.fsmonitor=false", "rev-parse", "--abbrev-ref", "HEAD"],
                 cwd="/path/to/repo",
                 capture_output=True,
                 text=True,
+                input=None,
+                timeout=None,
             )
 
     def test_get_git_ref_detached_head_with_tag(self) -> None:
@@ -70,16 +74,20 @@ class TestGetGitRef:
             assert ref == "v1.2.3"
             assert mock_run.call_count == 2
             mock_run.assert_any_call(
-                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                ["git", "--no-optional-locks", "-c", "core.fsmonitor=false", "rev-parse", "--abbrev-ref", "HEAD"],
                 cwd="/path/to/repo",
                 capture_output=True,
                 text=True,
+                input=None,
+                timeout=None,
             )
             mock_run.assert_any_call(
-                ["git", "describe", "--tags", "--exact-match"],
+                ["git", "--no-optional-locks", "-c", "core.fsmonitor=false", "describe", "--tags", "--exact-match"],
                 cwd="/path/to/repo",
                 capture_output=True,
                 text=True,
+                input=None,
+                timeout=None,
             )
 
     def test_get_git_ref_detached_head_without_tag(self) -> None:

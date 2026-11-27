@@ -367,11 +367,10 @@ def validate_local_path(
     if local_path == "." and expected_owner and expected_repo:
         dir_name = os.path.basename(abs_path)
         if dir_name.lower() != expected_repo.lower():
+            from darnit.remediation.git_state import run_git
+
             try:
-                result = subprocess.run(
-                    ["git", "-C", abs_path, "remote", "get-url", "origin"],
-                    capture_output=True, text=True, timeout=5
-                )
+                result = run_git(abs_path, "remote", "get-url", "origin", timeout=5)
                 if result.returncode == 0:
                     remote_url = result.stdout.strip()
                     match = re.search(r'[:/]([^/:]+)/([^/]+?)(?:\.git)?$', remote_url)
@@ -429,14 +428,10 @@ def validate_local_path(
 
 def _get_remote_url(remote_name: str, cwd: str) -> str | None:
     """Get the URL of a named git remote."""
+    from darnit.remediation.git_state import run_git
+
     try:
-        result = subprocess.run(
-            ["git", "remote", "get-url", remote_name],
-            capture_output=True,
-            text=True,
-            cwd=cwd,
-            timeout=5,
-        )
+        result = run_git(cwd, "remote", "get-url", remote_name, timeout=5)
         if result.returncode == 0:
             return result.stdout.strip()
     except (subprocess.SubprocessError, FileNotFoundError):
@@ -641,13 +636,10 @@ def read_file(local_path: str, filename: str) -> str | None:
 
 def get_git_commit(local_path: str) -> str | None:
     """Get the current git commit SHA."""
+    from darnit.remediation.git_state import run_git
+
     try:
-        result = subprocess.run(
-            ["git", "-C", local_path, "rev-parse", "HEAD"],
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
+        result = run_git(local_path, "rev-parse", "HEAD", timeout=10)
         if result.returncode == 0:
             return result.stdout.strip()
     except subprocess.TimeoutExpired:
@@ -659,24 +651,16 @@ def get_git_commit(local_path: str) -> str | None:
 
 def get_git_ref(local_path: str) -> str | None:
     """Get the current git branch/ref."""
+    from darnit.remediation.git_state import run_git
+
     try:
-        result = subprocess.run(
-            ["git", "-C", local_path, "rev-parse", "--abbrev-ref", "HEAD"],
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
+        result = run_git(local_path, "rev-parse", "--abbrev-ref", "HEAD", timeout=10)
         if result.returncode == 0:
             ref = result.stdout.strip()
             if ref != "HEAD":
                 return ref
         # Try to get tag
-        result = subprocess.run(
-            ["git", "-C", local_path, "describe", "--tags", "--exact-match"],
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
+        result = run_git(local_path, "describe", "--tags", "--exact-match", timeout=10)
         if result.returncode == 0:
             return result.stdout.strip()
     except subprocess.TimeoutExpired:

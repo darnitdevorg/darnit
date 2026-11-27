@@ -112,13 +112,10 @@ def repo_display_name(repo_path: str) -> str:
     Tries git remote URL first (``owner/repo``), then falls back to the
     directory basename.  Never leaks an absolute local path.
     """
+    from darnit.remediation.git_state import run_git
+
     try:
-        proc = subprocess.run(  # noqa: S603,S607
-            ["git", "-C", repo_path, "remote", "get-url", "origin"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
+        proc = run_git(repo_path, "remote", "get-url", "origin", timeout=5)
         if proc.returncode == 0:
             url = proc.stdout.strip()
             m = re.search(r"[:/]([^/:]+/[^/]+?)(?:\.git)?$", url)

@@ -432,6 +432,8 @@ def exec_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResu
         for var, val in substitutions.items():
             arg = arg.replace(var, val)
         resolved_cmd.append(arg)
+    if resolved_cmd and os.path.basename(resolved_cmd[0]) == "git":
+        resolved_cmd = [resolved_cmd[0], "--no-optional-locks", "-c", "core.fsmonitor=false", *resolved_cmd[1:]]
 
     # Build environment. Step ``env`` overrides the parent, then an empty
     # GitHub token is dropped (#752). Remediation preview re-enters this

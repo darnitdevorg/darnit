@@ -106,13 +106,9 @@ _SIGNATURE_HEADERS = ("gpgsig ", "gpgsig-sha256 ")
 
 def _has_signature_header(local_path: str, sha: str) -> bool:
     """Whether commit ``sha`` carries a signature, whatever git could make of it."""
-    result = subprocess.run(
-        ["git", "cat-file", "commit", sha],
-        cwd=local_path,
-        capture_output=True,
-        text=True,
-        timeout=15,
-    )
+    from darnit.remediation.git_state import run_git
+
+    result = run_git(local_path, "cat-file", "commit", sha, timeout=15)
     headers = result.stdout.split("\n\n", 1)[0]
     return any(line.startswith(_SIGNATURE_HEADERS) for line in headers.splitlines())
 
@@ -132,13 +128,16 @@ def gittuf_commits_signed_handler(
     trusted) and for no commits. A FAIL outweighs an ERROR, which
     outweighs INCONCLUSIVE.
     """
+    from darnit.remediation.git_state import run_git
+
     try:
-        result = subprocess.run(
-            ["git", "log", "--format=%H%x1f%G?%x1f%GK", "-5"],
-            cwd=ctx.local_path,
-            capture_output=True,
-            text=True,
+        result = run_git(
+            ctx.local_path,
+            "log",
+            "--format=%H%x1f%G?%x1f%GK",
+            "-5",
             timeout=15,
+            verify_signatures=True,
         )
 
         if result.returncode != 0:
