@@ -364,3 +364,44 @@ class TestOrchestratorCacheInvalidation:
             )
 
             invalidate_mock.assert_not_called()
+
+
+class TestOneCreationPerPathAcrossControls:
+    """The orchestrator builds one executor per control; the run's claim map is shared between them (#755)."""
+
+    def test_every_control_gets_the_same_claim_map(self, tmp_path, cached_results):
+        apply_mock = MagicMock(return_value={"status": "would_apply", "control_id": "test"})
+        with (
+            patch("darnit.core.audit_cache.read_audit_cache", return_value=cached_results),
+            patch(
+                "darnit_baseline.remediation.orchestrator.validate_local_path",
+                return_value=(str(tmp_path), None),
+            ),
+            patch("darnit.core.utils.detect_owner_repo", return_value=("testorg", "testrepo")),
+            patch("darnit_baseline.remediation.orchestrator._preflight_context_check", return_value=(True, {})),
+            patch("darnit_baseline.remediation.orchestrator._apply_control_remediation", apply_mock),
+        ):
+            from darnit_baseline.remediation.orchestrator import remediate_audit_findings
+
+            remediate_audit_findings(local_path=str(tmp_path), dry_run=True)
+        maps = [call.kwargs["claimed_paths"] for call in apply_mock.call_args_list]
+        assert len(maps) >= 2 and all(m is maps[0] for m in maps), "one dict for the whole run"
+
+    def test_the_map_reaches_the_executor(self, tmp_path):
+        """_apply_control_remediation hands the run's map to the executor it builds."""
+        from darnit.remediation.executor import RemediationExecutor
+        from darnit_baseline.remediation import orchestrator
+
+        claims: dict[str, str] = {}
+        seen: dict[str, object] = {}
+        real_init = RemediationExecutor.__init__
+
+        def spy_init(self, *args, **kwargs):
+            seen["claimed_paths"] = kwargs.get("claimed_paths")
+            real_init(self, *args, **kwargs)
+
+        with patch.object(RemediationExecutor, "__init__", spy_init):
+            orchestrator._apply_control_remediation(
+                "OSPS-DO-03.01", str(tmp_path), owner="o", repo="r", dry_run=True, claimed_paths=claims
+            )
+        assert seen.get("claimed_paths") is claims

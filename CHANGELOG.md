@@ -63,6 +63,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   path the project had already set. `project_reference` is now accepted on
   plugin handlers that declare it, not only on `file_create`; it records only
   the file at the step's `path` (fixes #545).
+- Remediation: three controls planned the same new file (`SUPPORT.md` under
+  OSPS-DO-03.01, DO-04.01 and DO-05.01) and the preview listed it under each,
+  while the apply wrote it once. The first control to plan a path creates it;
+  a later one reports `not written (created by OSPS-DO-03.01)` in the preview
+  and in the apply, so the two agree and the approved plan items keep their
+  digests (fixes #755).
 - In the gittuf commit signature check (GT-02.01), when commits lack good
   signatures, the FAIL message states how many recent commits have a good
   signature and reports commits that could not be checked on the machine

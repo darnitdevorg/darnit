@@ -178,7 +178,7 @@ def describe_plan_item(item: PlanItem, reasons: Sequence[str], root: str | Path 
     lines += [f"  Needs individual approval: {reason}" for reason in reasons]
     for change in item.file_changes:
         if not change.changes:
-            lines.append(f"  {_printable(change.path)}: not written ({change.reason})")
+            lines.append(f"  {_printable(change.path)}: not written ({change.not_written_because()})")
             continue
         lines += _file_lines(change, root)
     lines += [f"  Command: {_printable(' '.join(command))}" for command in item.commands]

@@ -27,7 +27,7 @@ _FORBID = ConfigDict(extra="forbid")
 DIGEST_PREFIX = "sha256:"
 
 FileChangeAction = Literal["create", "modify", "none"]
-FileChangeReason = Literal["already_exists", "user_changes_present", "when_not_met"]
+FileChangeReason = Literal["already_exists", "user_changes_present", "when_not_met", "created_by_other_control"]
 OutcomeKind = Literal[
     "fixed",
     "changed_not_passing",
@@ -79,6 +79,18 @@ def normalize_repo_path(path: str) -> str:
     return normalized
 
 
+def not_written_because(reason: str | None, created_by: str | None = None) -> str:
+    """Why a file was not written, in words, the same in every report (CLI, MCP, approval text).
+
+    ``created_by_other_control`` reads ``created by OSPS-DO-03.01``: the preview
+    is what a person approves from, so it names the control rather than
+    showing the reason code (#755).
+    """
+    if reason == "created_by_other_control":
+        return f"created by {created_by}"
+    return str(reason)
+
+
 class FileChange(BaseModel):
     """One file a remediation step would create or modify, or leaves alone with a reason."""
 
@@ -87,6 +99,7 @@ class FileChange(BaseModel):
     path: str
     action: FileChangeAction
     reason: FileChangeReason | None = None
+    created_by: str | None = None  # with reason created_by_other_control: the control that creates the path
     ignored: bool = False
     content: str | None = None
     before_digest: str | None = None
@@ -98,6 +111,10 @@ class FileChange(BaseModel):
     def _relative_path(cls, value: str) -> str:
         return normalize_repo_path(value)
 
+    def not_written_because(self) -> str:
+        """``not_written_because(self.reason, self.created_by)``: for an ``action: none`` change."""
+        return not_written_because(self.reason, self.created_by)
+
     @model_validator(mode="after")
     def _consistent(self) -> FileChange:
         if self.action == "none":
@@ -105,9 +122,15 @@ class FileChange(BaseModel):
                 raise ValueError("a FileChange with action 'none' needs a reason")
             if self.content is not None or self.after_digest is not None:
                 raise ValueError("a FileChange with action 'none' has no resulting content")
+            if (self.reason == "created_by_other_control") != (self.created_by is not None):
+                raise ValueError(
+                    "created_by names the creating control exactly when the reason is created_by_other_control"
+                )
             return self
         if self.reason is not None:
             raise ValueError(f"a FileChange with action {self.action!r} has no reason")
+        if self.created_by is not None:
+            raise ValueError(f"a FileChange with action {self.action!r} has no created_by")
         if self.content is None:
             raise ValueError(f"a FileChange with action {self.action!r} needs its resulting content")
         if self.action == "create" and self.before_digest is not None:

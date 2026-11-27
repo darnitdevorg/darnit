@@ -873,6 +873,13 @@ MAX_AGENT_ITERATIONS = 10
 _PAST = {"create": "created", "modify": "modified"}
 
 
+def _reason(change: dict) -> str:
+    """Why a file was not written, in words, as every report says it (``created by OSPS-DO-03.01``; #755)."""
+    from darnit.remediation.plan import not_written_because
+
+    return not_written_because(change.get("reason"), change.get("created_by"))
+
+
 def _ascii(text: str) -> str:
     return text.encode("ascii", "backslashreplace").decode("ascii")
 
@@ -889,7 +896,7 @@ def _remediation_lines(results: list[dict], applied: bool) -> list[str]:
             for item in result.get("plan", []):
                 for change in item["file_changes"]:
                     if change["action"] == "none":
-                        body.append(f"{change['path']}: not written ({change['reason']})")
+                        body.append(f"{change['path']}: not written ({_reason(change)})")
                     else:
                         body.append(f"{change['action']} {change['path']}")
                 body += [f"command: {' '.join(command)}" for command in item["commands"]]
@@ -900,7 +907,7 @@ def _remediation_lines(results: list[dict], applied: bool) -> list[str]:
         else:
             for change in result.get("file_changes", []):
                 if change["action"] == "none":
-                    body.append(f"{change['path']}: not written ({change['reason']})")
+                    body.append(f"{change['path']}: not written ({_reason(change)})")
                 else:
                     body.append(f"{_PAST[change['action']]} {change['path']}")
             body += [f"approved: {approval['digest']}" for approval in result.get("approvals", [])]
