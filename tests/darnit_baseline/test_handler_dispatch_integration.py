@@ -568,8 +568,9 @@ body:
     def test_osps_do_02_01_warns_for_feature_only_template(self, tmp_path):
         """OSPS-DO-02.01 must not PASS when only a feature template exists.
 
-        Feature 041: no step concludes, so the control waits for a model
-        judgment (PENDING); before the llm_eval step was added it ended WARN.
+        Feature 041: no step concludes. The llm_eval step reads only bug
+        templates, and none exists, so no model judgment is requested (#485)
+        and the control ends WARN at its manual step.
 
         End-to-end result is unchanged by feature 020 (still WARN), but the
         internal path differs: pre-020 pass 1 (file_exists) returned FAIL,
@@ -613,7 +614,11 @@ body:
         )
         result = orchestrator.verify(control, context)
 
-        assert result.status == "PENDING"
+        # #485: none of the files the llm_eval step reads exists (the feature
+        # template is not one of them), so no model judgment is requested and
+        # the control ends at its manual step.
+        assert result.status == "WARN"
+        assert "llm_consultation" not in (result.evidence or {})
 
     @pytest.mark.unit
     def test_osps_do_02_01_matches_contributing_md_with_bug_link(self, tmp_path):
