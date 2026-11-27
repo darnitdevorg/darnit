@@ -381,6 +381,15 @@ class PlatformSession:
         """Record a digest of this run that is not a change set (a plan item), so approving it is not stale."""
         self._known.add(digest)
 
+    def approve_change_sets(self, digests: Iterable[str]) -> None:
+        """Approve change sets whose plan item a person approved by its own digest (#547).
+
+        The executor passes only digests of non-high-impact change sets of an
+        approved item whose only actions are those change sets. At apply they
+        still write only when the re-planned digest matches, as any approval.
+        """
+        self.approvals = self.approvals | frozenset(digests)
+
     def _all(self) -> list[tuple[_Group, TargetPlan]]:
         if self._plans is None:
             self._plans = _plans(self.repository, self._requests)

@@ -1,8 +1,8 @@
 # Darnit Framework Design Specification
 
-> **Version**: 1.0.0-alpha.32
+> **Version**: 1.0.0-alpha.33
 > **Status**: Authoritative
-> **Last Updated**: 2026-11-26
+> **Last Updated**: 2026-11-27
 
 This specification defines the authoritative design of the Darnit framework, including the sieve orchestrator, TOML schema, built-in pass types, remediation actions, and plugin protocol.
 
@@ -2330,6 +2330,12 @@ An item that can change nothing (it is previewable and has no file change, no pl
 
 An item that needs individual approval and has none has outcome `needs_approval`, and nothing is written for it. Approval is per control: while any item of a control's remediation needs approval and lacks it, no step of that remediation runs. An item that needs approval only because of rule 3 is also approved by the digests of its change sets, or by a person at the terminal (15.2).
 
+An approval of an item's own digest (listed, or a person's yes at the terminal) also approves its change sets when the item's only actions are those change sets: it is previewable, writes no file, and runs no command (#547). The person saw exactly those change sets, and `PlanItem.digest` covers them, so they are not asked for again under `prompt`. A high-impact change set still needs its own digest. At apply each change set still writes only when its re-planned digest matches.
+
+#### Scenario: One approval for a platform-only step
+- **WHEN** a remediation with `safe = false` has one `platform_setting` step that is not high-impact, the policy is `prompt`, and a person approves the step at the terminal
+- **THEN** its change set MUST be applied without asking again
+
 #### Scenario: Unsafe remediation in a batch
 - **WHEN** a batch apply includes a remediation with `safe = false` and its `PlanItem.digest` was not approved
 - **THEN** it MUST NOT be applied, under every policy including `auto`
@@ -2680,6 +2686,7 @@ The following requirements have been superseded: by the handler dispatch archite
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.0.0-alpha.33 | 2026-11-27 | Approving a plan item whose only actions are platform change sets also approves those change sets, except high-impact ones, so `darnit run` asks once for such a step (Section 15.3; #547) |
 | 1.0.0-alpha.32 | 2026-11-26 | One creation per path in a remediation run: a later control planning a path another control creates reports `created_by_other_control`, in preview and apply alike (Section 15.2; `FileChange` reasons) |
 | 1.0.0-alpha.31 | 2026-11-24 | `gh_api` step setting `auth_fields`: when an HTTP 2xx response omits any declared field, reports ERROR with error class `auth` naming the elevated permission requirement (Section 3.8; #753) |
 | 1.0.0-alpha.30 | 2026-11-24 | An `exec` remediation step previewed in a scratch copy marks files that have uncommitted user changes in the checkout with `action = "none"` and `reason = "user_changes_present"`, reports that the command will not run, and omits files the command will not touch, matching what the apply does (Section 4.4; #543) |
