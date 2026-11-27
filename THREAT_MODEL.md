@@ -864,3 +864,14 @@ No compound attack paths identified.
 
 *This is a threat-modeling aid, not an exhaustive vulnerability scan. Full dynamic and cross-function taint analysis is out of scope for darnit; use Kusari Inspector or an equivalent SAST tool for deeper coverage.*
 
+### Untrusted Git Repository Configuration Scope
+
+To protect the auditor and remediation workflows from hostile repository configuration (issue #617), darnit executes git commands through safe runners that neutralize known execution vectors:
+- `core.fsmonitor` is disabled (`core.fsmonitor=false`).
+- Configured clean and process filters (`filter.<name>.clean`, `filter.<name>.process`, `filter.<name>.required=false`) across the main repository and submodules are neutralized by name.
+- GPG verifiers (`gpg.program`, `gpg.ssh.program`, `gpg.x509.program`) are pinned on read-side verification invocations to auditor global/system configuration or system defaults.
+- On write operations (`git add`, `git commit`, `git push`), `core.fsmonitor=false` and filter overrides are maintained, while preserving user signing configuration.
+
+**Out of scope:**
+The override list is a targeted denylist covering paths reached by darnit operations. Other git configuration directives that invoke external commands (such as `diff.*.command`, `*.textconv`, `core.sshCommand`, and repository hooks via `core.hooksPath` or `.git/hooks`) are out of scope and not overridden.
+
