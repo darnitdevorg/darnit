@@ -93,9 +93,48 @@ def format_result_text(result: dict) -> str:
     return f"  {icon} {control_id}: {status}{pending_tag}{ec_tag} - {details}"
 
 
-def format_results_text(results: list[CheckResult], framework_name: str, show_all: bool = False) -> str:
+def audited_repository(repo_path: Path, target: str | None) -> dict[str, str]:
+    """Which repository an audit's platform checks ask about, and where that came from (#344).
+
+    ``source`` is ``"--repo"`` for the identity the operator named, the git
+    remote's name (``"origin"`` or ``"upstream"``) when it came from the
+    checkout, or ``"none"`` when no owner is known: the name is then the
+    directory's, and steps that need ``$OWNER`` report ERROR ``unavailable``.
+    """
+    from darnit.core.utils import detect_repo_from_git
+    from darnit.trust.decision import owner_repo_from_identity
+
+    if target:
+        owner, repo = owner_repo_from_identity(target)
+        return {"owner": owner, "repo": repo, "source": "--repo", "path": str(repo_path)}
+    info = detect_repo_from_git(str(repo_path))
+    if info:
+        return {"owner": info["owner"], "repo": info["repo"], "source": info["source"], "path": str(repo_path)}
+    return {"owner": "", "repo": repo_path.name, "source": "none", "path": str(repo_path)}
+
+
+def format_audited_repository(repository: dict[str, str]) -> str:
+    """One line naming the audited repository and where its identity came from."""
+    source = repository["source"]
+    if source == "none":
+        return (
+            f"Repository: {repository['path']} (no owner known: no git remote names one and --repo "
+            "was not given; platform checks that need it cannot run)"
+        )
+    origin = "--repo" if source == "--repo" else f"git remote '{source}'"
+    return f"Repository: {repository['owner']}/{repository['repo']} (from {origin}), checkout {repository['path']}"
+
+
+def format_results_text(
+    results: list[CheckResult],
+    framework_name: str,
+    show_all: bool = False,
+    repository: dict[str, str] | None = None,
+) -> str:
     """Format all results for text output."""
     lines = [f"\n=== {framework_name} Audit Results ===\n"]
+    if repository:
+        lines.append(format_audited_repository(repository) + "\n")
 
     # Group by status
     by_status = {}
@@ -373,11 +412,11 @@ def cmd_audit(args: argparse.Namespace) -> int:
 
     logger.info(f"Auditing {repo_path} with {len(controls)} controls")
 
-    # Detect owner/repo from git if available
-    from darnit.core.utils import detect_owner_repo
-    from darnit.trust.decision import owner_repo_from_identity
-
-    owner, repo = owner_repo_from_identity(target) if target else detect_owner_repo(str(repo_path))
+    # Detect owner/repo from git if available, and say which (#344): on a
+    # fork checkout the platform checks must visibly name the repository.
+    repository = audited_repository(repo_path, target)
+    owner, repo = repository["owner"], repository["repo"]
+    logger.info(format_audited_repository(repository))
     default_branch = _detect_default_branch(repo_path)
 
     # Delegate to canonical audit pipeline
@@ -409,14 +448,17 @@ def cmd_audit(args: argparse.Namespace) -> int:
 
     from darnit.tools.audit import audit_report_metadata
 
-    metadata = audit_report_metadata(operator_config, str(repo_path), target, config.framework_name)
+    metadata = {
+        "repository": repository,
+        **audit_report_metadata(operator_config, str(repo_path), target, config.framework_name),
+    }
 
     # Output results
     if args.output == "json":
         sys.stdout.write(format_results_json(results, config.framework_name, metadata) + "\n")
     else:
         sys.stdout.write(
-            format_results_text(results, config.framework_name, show_all=args.show_all) + "\n"
+            format_results_text(results, config.framework_name, show_all=args.show_all, repository=repository) + "\n"
         )
         sys.stdout.write(format_audit_metadata_text(metadata) + "\n")
 
