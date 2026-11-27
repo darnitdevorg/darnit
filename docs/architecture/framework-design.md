@@ -1,8 +1,8 @@
 # Darnit Framework Design Specification
 
-> **Version**: 1.0.0-alpha.32
+> **Version**: 1.0.0-alpha.33
 > **Status**: Authoritative
-> **Last Updated**: 2026-11-26
+> **Last Updated**: 2026-11-28
 
 This specification defines the authoritative design of the Darnit framework, including the sieve orchestrator, TOML schema, built-in pass types, remediation actions, and plugin protocol.
 
@@ -2158,14 +2158,26 @@ Design principle: **the audited repository is untrusted input in its entirety, i
 - Every report records the operator configuration source and a digest of its content.
 - The `[remediation]` section sets the remediation policy for platform changes (section 15.1).
 - The `[plugins]` section restricts which installed plugins darnit loads (section 6.6).
-- The `[llm]` section selects the model the harness calls for `llm_eval` steps. `provider` is `anthropic` (default) or `openai`; any other value is a setup error. `model` is the provider's model name; `openai` has no default model, so `provider = "openai"` without `model` is a setup error. The API key comes only from the environment variable for the configured provider (`ANTHROPIC_API_KEY` or `OPENAI_API_KEY`), checked before the audit starts after `[llm]` is applied, and again when the model is first called. The report (`llm_calls.provider`) and every model judgment result, whatever its outcome, record the model as `<provider>:<model>` (evidence `llm_model`, with the provider's `llm_model_version` when it returns one). The provider does not change what a model judgment can conclude (section 3.0.1). `max_cost_usd_per_run` is accepted and not enforced.
+- The `[llm]` section selects the model the harness calls for `llm_eval` steps. `provider` is `anthropic` (default) or `openai`; any other value is a setup error. `model` is the provider's model name; `openai` has no default model, so `provider = "openai"` without `model` is a setup error. `base_url` is an optional HTTP or HTTPS URL directing model calls to an OpenAI-compatible endpoint (e.g. a local server such as Ollama, LM Studio, or vLLM); it comes strictly from operator configuration, never from the repository or ambient environment. Credentials (username or password) in `base_url` are rejected as a setup error. To prevent ambient environment variables (`OPENAI_BASE_URL` or `ANTHROPIC_BASE_URL`) from redirecting requests away from what the evidence records, the provider is constructed explicitly every time with the configured `base_url` or the provider's hosted default. When `base_url` is configured, the provider API key in the environment is optional, and preflight verifies endpoint reachability (<2s) rather than checking credentials. When `base_url` is omitted, the API key comes from the environment variable for the configured provider (`ANTHROPIC_API_KEY` or `OPENAI_API_KEY`), checked before the audit starts. The report (`llm_calls.provider`) and every model judgment result, whatever its outcome, record the model as `<provider>:<model>` (with `llm_model_version` when returned). Every model judgment result also records the endpoint host in evidence `llm_endpoint`, and whether the endpoint was hosted or local in `llm_endpoint_kind`. The provider and endpoint do not change what a model judgment can conclude (section 3.0.1). `max_cost_usd_per_run` is accepted and not enforced.
 
 #### Scenario: OpenAI provider
 - **WHEN** operator configuration has `[llm] provider = "openai"` and `model = "gpt-5"`, `OPENAI_API_KEY` is set and `ANTHROPIC_API_KEY` is not
 - **THEN** the harness starts, calls `openai:gpt-5` for model judgments, and records `openai:gpt-5` in the report and in each judgment's evidence
 
+#### Scenario: Local model via base_url
+- **WHEN** operator configuration has `[llm] provider = "openai"`, `model = "qwen2.5-coder:1.5b"`, and `base_url = "http://127.0.0.1:11434/v1"`, and neither `OPENAI_API_KEY` nor `ANTHROPIC_API_KEY` is set
+- **THEN** the harness verifies reachability of the endpoint, queries the local model without requiring an API key, and records the model, `llm_endpoint = "127.0.0.1:11434"`, and `llm_endpoint_kind = "local"` in each judgment's evidence
+
+#### Scenario: Credentials in base_url
+- **WHEN** operator configuration has `[llm] base_url = "http://user:s3cret@127.0.0.1:18799/v1"`
+- **THEN** the harness stops before the audit starts with a setup error stating that base_url must not contain credentials
+
+#### Scenario: Unreachable base_url
+- **WHEN** operator configuration has `[llm] base_url` set to an unreachable endpoint
+- **THEN** the harness stops before the audit starts with a setup error naming the unreachable base_url
+
 #### Scenario: Missing key for the configured provider
-- **WHEN** operator configuration has `[llm] provider = "openai"` and `OPENAI_API_KEY` is not set
+- **WHEN** operator configuration has `[llm] provider = "openai"` and `OPENAI_API_KEY` is not set and `base_url` is not set
 - **THEN** the harness stops before the audit with a setup error naming `OPENAI_API_KEY` and the provider, even if `ANTHROPIC_API_KEY` is set
 
 ### 14.2 Trusted repositories and CI
@@ -2680,6 +2692,7 @@ The following requirements have been superseded: by the handler dispatch archite
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.0.0-alpha.33 | 2026-11-28 | Operator `[llm] base_url` directs harness model judgments to custom or local OpenAI-compatible endpoints (Ollama, LM Studio, vLLM): preflight verifies endpoint reachability (<2s) with API keys optional, explicit provider instantiation blocks ambient environment redirection, credentials in `base_url` are rejected, and every model judgment records `llm_endpoint` (host and port) and `llm_endpoint_kind` in evidence (Section 14.1; #764) |
 | 1.0.0-alpha.32 | 2026-11-26 | One creation per path in a remediation run: a later control planning a path another control creates reports `created_by_other_control`, in preview and apply alike (Section 15.2; `FileChange` reasons) |
 | 1.0.0-alpha.31 | 2026-11-24 | `gh_api` step setting `auth_fields`: when an HTTP 2xx response omits any declared field, reports ERROR with error class `auth` naming the elevated permission requirement (Section 3.8; #753) |
 | 1.0.0-alpha.30 | 2026-11-24 | An `exec` remediation step previewed in a scratch copy marks files that have uncommitted user changes in the checkout with `action = "none"` and `reason = "user_changes_present"`, reports that the command will not run, and omits files the command will not touch, matching what the apply does (Section 4.4; #543) |

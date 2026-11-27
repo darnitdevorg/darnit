@@ -57,6 +57,7 @@ class LLMJudgment(BaseModel):
     # Filled in by the LLM step from its provider, not by the model.
     model: str = ""
     model_version: str = ""
+    endpoint: str = ""
 
 
 # Providers the default step supports, and the environment variable that holds
@@ -64,6 +65,11 @@ class LLMJudgment(BaseModel):
 PROVIDER_API_KEY_ENV: dict[str, str] = {
     "anthropic": "ANTHROPIC_API_KEY",
     "openai": "OPENAI_API_KEY",
+}
+
+HOSTED_DEFAULT_BASE_URL: dict[str, str] = {
+    "anthropic": "https://api.anthropic.com",
+    "openai": "https://api.openai.com/v1",
 }
 
 
@@ -75,6 +81,30 @@ def model_provider(model: str) -> str:
 def api_key_env(model: str) -> str | None:
     """The environment variable holding the API key for ``model``, or None for an unsupported provider."""
     return PROVIDER_API_KEY_ENV.get(model_provider(model))
+
+
+def endpoint_kind(endpoint: str) -> str:
+    """Return 'local' or 'hosted' for an endpoint URL or hostname.
+
+    Local endpoints include loopback addresses, RFC-1918 private subnets,
+    and 'localhost'. All other endpoints are classified as hosted.
+    """
+    import ipaddress
+    from urllib.parse import urlsplit
+
+    if not endpoint:
+        return "hosted"
+    parsed = urlsplit(endpoint if "://" in endpoint else f"http://{endpoint}")
+    host = parsed.hostname or ""
+    if host.lower() in ("localhost", "127.0.0.1", "::1"):
+        return "local"
+    try:
+        ip = ipaddress.ip_address(host)
+        if ip.is_loopback or ip.is_private:
+            return "local"
+    except ValueError:
+        pass
+    return "hosted"
 
 
 @runtime_checkable
@@ -105,9 +135,29 @@ class PydanticAILLMStep:
     (one file); this class is the shipping default, not a mandatory type.
     """
 
-    def __init__(self, model: str = "anthropic:claude-sonnet-5") -> None:
+    def __init__(
+        self,
+        model: str = "anthropic:claude-sonnet-5",
+        base_url: str | None = None,
+    ) -> None:
         self.model = model
+        if base_url:
+            from urllib.parse import urlsplit
+
+            parsed = urlsplit(base_url if "://" in base_url else f"http://{base_url}")
+            if parsed.username or parsed.password:
+                raise ValueError(
+                    "base_url must not contain credentials (username or password); API keys belong in the environment"
+                )
+        self.base_url = base_url
         self._agent: Any = None  # lazily constructed on first evaluate()
+
+    @property
+    def effective_endpoint(self) -> str:
+        if self.base_url:
+            return self.base_url
+        provider_name = model_provider(self.model)
+        return HOSTED_DEFAULT_BASE_URL.get(provider_name, "")
 
     def _build_agent(self) -> Any:
         """Lazily construct the pydantic_ai.Agent. Raises a clear error if
@@ -120,16 +170,50 @@ class PydanticAILLMStep:
                 f"PydanticAILLMStep does not support model {self.model!r}: the provider "
                 f"must be one of {', '.join(sorted(PROVIDER_API_KEY_ENV))}."
             )
-        if not os.environ.get(env_var):
+
+        api_key = os.environ.get(env_var)
+        if not self.base_url and not api_key:
             raise RuntimeError(
                 f"PydanticAILLMStep.evaluate requires {env_var} in the environment "
                 f"for provider {model_provider(self.model)!r}. Inject a MockLLMStep "
                 "in tests, or set the env var for interactive use."
             )
+
+        provider_name = model_provider(self.model)
+        effective_base_url = self.effective_endpoint
+        model_name = self.model.partition(":")[2] or self.model
+
+        if provider_name == "openai":
+            from pydantic_ai.providers.openai import OpenAIProvider
+
+            provider = OpenAIProvider(
+                base_url=effective_base_url,
+                api_key=api_key or "not-needed",
+            )
+            if model_name.startswith("gpt-5"):
+                from pydantic_ai.models.openai import OpenAIResponsesModel
+
+                agent_model: Any = OpenAIResponsesModel(model_name, provider=provider)
+            else:
+                from pydantic_ai.models.openai import OpenAIChatModel
+
+                agent_model = OpenAIChatModel(model_name, provider=provider)
+        elif provider_name == "anthropic":
+            from pydantic_ai.models.anthropic import AnthropicModel
+            from pydantic_ai.providers.anthropic import AnthropicProvider
+
+            provider = AnthropicProvider(
+                base_url=effective_base_url,
+                api_key=api_key or "not-needed",
+            )
+            agent_model = AnthropicModel(model_name, provider=provider)
+        else:
+            agent_model = self.model
+
         from pydantic_ai import Agent
 
         return Agent(
-            model=self.model,
+            model=agent_model,
             output_type=LLMJudgment,
             system_prompt=(
                 "You are a compliance-audit assistant. Return a JSON judgment "
@@ -177,7 +261,13 @@ class PydanticAILLMStep:
         # model answered.
         response = getattr(result, "response", None)
         model_version = getattr(response, "model_name", None) or self.model.partition(":")[2] or self.model
-        return result.output.model_copy(update={"model": self.model, "model_version": model_version})
+        return result.output.model_copy(
+            update={
+                "model": self.model,
+                "model_version": model_version,
+                "endpoint": self.effective_endpoint,
+            }
+        )
 
 
 class MockLLMStep:

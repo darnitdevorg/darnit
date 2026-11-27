@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Operator configuration supports `[llm] base_url` to direct model judgments to local or custom OpenAI-compatible endpoints (Ollama, LM Studio, vLLM). When configured, the provider API key is optional, preflight checks endpoint reachability fast (<2s), and every judgment records `llm_endpoint` and `llm_endpoint_kind` in its evidence (fixes #764).
+
 ### Changed
 
 - In the fenced JSON returned by `remediate_audit_findings`, omit file contents from `file_changes` in the plan and outcomes, keeping path, action, reason, and digests so the result stays well within MCP client limits (fixes #725).

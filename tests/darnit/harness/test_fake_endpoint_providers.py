@@ -25,6 +25,18 @@ from darnit.sieve.orchestrator import SieveOrchestrator
 class FakeModelServerHandler(BaseHTTPRequestHandler):
     """Local HTTP handler that speaks both Anthropic Messages (SSE) and OpenAI Responses (JSON)."""
 
+    def do_GET(self) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", "2")
+        self.end_headers()
+        self.wfile.write(b"{}")
+
+    def do_HEAD(self) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+
     def do_POST(self) -> None:
         content_len = int(self.headers.get("Content-Length", 0))
         body_bytes = self.rfile.read(content_len) if content_len > 0 else b""
@@ -192,20 +204,54 @@ def _format_openai_json(judgment_data: dict[str, Any]) -> bytes:
     return json.dumps(resp).encode("utf-8")
 
 
+def _format_openai_chat_completions(judgment_data: dict[str, Any]) -> bytes:
+    """Format an OpenAI Chat Completions API JSON response with a tool call."""
+    resp = {
+        "id": "chatcmpl_test",
+        "object": "chat.completion",
+        "created": 1700000000,
+        "model": "qwen2.5-coder:1.5b",
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "type": "function",
+                            "function": {
+                                "name": "final_result",
+                                "arguments": json.dumps(judgment_data),
+                            },
+                        }
+                    ],
+                },
+                "finish_reason": "tool_calls",
+            }
+        ],
+        "usage": {"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20},
+    }
+    return json.dumps(resp).encode("utf-8")
+
+
 @pytest.fixture
-def repo_with_operator_config(tmp_path: Path):
+def repo_with_operator_config(tmp_path: Path, fake_endpoint):
     """Helper to write an operator config and fixture repo for a provider."""
 
-    def _create(provider: str, model: str) -> tuple[Path, Path]:
+    def _create(provider: str, model: str, base_url: str | None = None) -> tuple[Path, Path]:
         repo_dir = tmp_path / f"repo_{provider}"
         repo_dir.mkdir(parents=True, exist_ok=True)
         (repo_dir / "README.md").write_text(
             "# test-repo\n\nFor security issues contact: security@example.com\n", encoding="utf-8"
         )
+        port = fake_endpoint.server_address[1]
+        effective_base_url = base_url or (f"http://127.0.0.1:{port}/v1" if provider == "openai" else f"http://127.0.0.1:{port}")
         # Operator configuration MUST live outside the audited repository (containment rule)
         op_path = tmp_path / f"operator_{provider}.toml"
         op_path.write_text(
-            f'schema_version = 1\n\n[llm]\nprovider = "{provider}"\nmodel = "{model}"\n',
+            f'schema_version = 1\n\n[llm]\nprovider = "{provider}"\nmodel = "{model}"\nbase_url = "{effective_base_url}"\n',
             encoding="utf-8",
         )
         return repo_dir, op_path
@@ -513,3 +559,104 @@ class TestFakeEndpointProviders:
         assert sieve_res.status == "ERROR"
         assert sieve_res.error_class in ("evaluation", "unavailable")
         assert sieve_res.evidence["llm_model"] == f"{provider}:{model}"
+
+
+class TestLocalModelBaseUrl:
+    """Issue #764: Test local models via operator config [llm] base_url without API keys."""
+
+    def test_local_model_chat_completions_no_api_key(
+        self,
+        fake_endpoint,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Local model server works without an API key and records local endpoint in evidence."""
+        port = fake_endpoint.server_address[1]
+        base_url = f"http://127.0.0.1:{port}/v1"
+
+        # Explicitly remove all API keys from environment
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+        repo_dir = tmp_path / "repo_local"
+        repo_dir.mkdir(parents=True, exist_ok=True)
+        (repo_dir / "README.md").write_text(
+            "# test-repo\n\nFor security issues contact: security@example.com\n", encoding="utf-8"
+        )
+        op_path = tmp_path / "operator_local.toml"
+        op_path.write_text(
+            f'schema_version = 1\n\n[llm]\nprovider = "openai"\nmodel = "qwen2.5-coder:1.5b"\nbase_url = "{base_url}"\n',
+            encoding="utf-8",
+        )
+        set_launch_options(op_path)
+
+        judgment_data = {
+            "outcome": "yes",
+            "confidence": 0.95,
+            "reasoning": "Found security contact in README",
+            "cited_evidence": ["For security issues contact: security@example.com"],
+        }
+
+        def response_handler(path: str, body: str) -> tuple[int, str, bytes]:
+            return 200, "application/json", _format_openai_chat_completions(judgment_data)
+
+        fake_endpoint.response_handler = response_handler
+
+        consultation_req = {
+            "control_id": "SEC-01",
+            "prompt": "Does the README declare a security contact?",
+            "analysis_hints": ["Look for security email"],
+        }
+        llm_resp, sieve_res = _run_harness_step(
+            repo_dir,
+            consultation_req,
+            file_contents={"README.md": "For security issues contact: security@example.com"},
+        )
+
+        assert llm_resp.status == PassOutcome.PASS
+        assert sieve_res.status == "PENDING"
+        assert sieve_res.pending == {"kind": "confirmation"}
+        assert sieve_res.evidence["llm_model"] == "openai:qwen2.5-coder:1.5b"
+        assert sieve_res.evidence["llm_endpoint"] == f"127.0.0.1:{port}"
+        assert sieve_res.evidence["llm_endpoint_kind"] == "local"
+
+    def test_local_model_malformed_output_stays_non_compliant(
+        self,
+        fake_endpoint,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Issue #764: Malformed output from a local model stays ERROR/INCONCLUSIVE, never candidate."""
+        port = fake_endpoint.server_address[1]
+        base_url = f"http://127.0.0.1:{port}/v1"
+
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+        repo_dir = tmp_path / "repo_local_malformed"
+        repo_dir.mkdir(parents=True, exist_ok=True)
+        (repo_dir / "README.md").write_text("# test-repo\n", encoding="utf-8")
+        op_path = tmp_path / "operator_local_malformed.toml"
+        op_path.write_text(
+            f'schema_version = 1\n\n[llm]\nprovider = "openai"\nmodel = "qwen2.5-coder:1.5b"\nbase_url = "{base_url}"\n',
+            encoding="utf-8",
+        )
+        set_launch_options(op_path)
+
+        def response_handler(path: str, body: str) -> tuple[int, str, bytes]:
+            # Return malformed JSON body
+            return 200, "application/json", b"{invalid json response"
+
+        fake_endpoint.response_handler = response_handler
+
+        consultation_req = {"control_id": "SEC-01", "prompt": "Check"}
+        llm_resp, sieve_res = _run_harness_step(
+            repo_dir,
+            consultation_req,
+            file_contents={"README.md": "test"},
+        )
+
+        assert llm_resp.status == PassOutcome.ERROR
+        assert sieve_res.status == "ERROR"
+        # Crucial requirement: NEVER a PASS candidate
+        assert sieve_res.pending is None or sieve_res.pending.get("kind") != "confirmation"

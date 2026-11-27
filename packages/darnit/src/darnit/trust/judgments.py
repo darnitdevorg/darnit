@@ -46,6 +46,7 @@ class Judgment:
     model: str = ""
     model_version: str = ""
     confidence: float | None = None
+    endpoint: str = ""
 
 
 @dataclass(frozen=True)

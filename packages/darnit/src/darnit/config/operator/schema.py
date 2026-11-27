@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr, field_validator, model_validator
 
 from darnit.config.framework_schema import (
     ControlConfig,
@@ -62,7 +62,23 @@ class LlmSettings(BaseModel):
 
     provider: StrictStr | None = None
     model: StrictStr | None = None
+    base_url: StrictStr | None = None
     max_cost_usd_per_run: float | None = Field(default=None, ge=0)
+
+    @field_validator("base_url")
+    @classmethod
+    def _validate_base_url(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        from urllib.parse import urlsplit
+
+        parsed = urlsplit(v if "://" in v else f"http://{v}")
+        if parsed.username or parsed.password:
+            raise ValueError(
+                "operator configuration llm.base_url must not contain credentials (username or password); "
+                "API keys belong in the environment"
+            )
+        return v
 
 
 class CiTrustRule(BaseModel):

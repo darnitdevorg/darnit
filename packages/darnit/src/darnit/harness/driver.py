@@ -122,6 +122,7 @@ class HarnessRun:
     # Counters populated during .run()
     llm_calls_total: int = 0
     llm_provider: str = "anthropic:claude-sonnet-5"
+    llm_base_url: str | None = None
 
     # ------------------------------------------------------------------
     # Factory for the standard file-based resolver composition (T024)
@@ -184,16 +185,41 @@ class HarnessRun:
     # Startup checks (T010, T011)
     # ------------------------------------------------------------------
 
+    def _check_endpoint_reachable(self, url: str, timeout: float = 2.0) -> str | None:
+        """Ping a configured LLM base_url to verify reachability in <2s (SC-002).
+
+        Any HTTP status response (including 401, 404, 405) indicates that the
+        server is live and accepting connections. Only network connection
+        refusals, timeouts, and host resolution failures report as unreachable.
+        """
+        import urllib.error
+        import urllib.request
+
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "darnit-preflight"})
+            with urllib.request.urlopen(req, timeout=timeout):
+                return None
+        except urllib.error.HTTPError:
+            return None
+        except urllib.error.URLError as exc:
+            return f"configured LLM base_url {url!r} is unreachable: {exc.reason}; ensure your model server is running"
+        except (TimeoutError, OSError) as exc:
+            return f"configured LLM base_url {url!r} timed out or failed to connect: {exc}; ensure your model server is running"
+
     def _check_credentials(self) -> str | None:
         """Return None on success or an error message string on failure.
 
         Fails fast in <2s per SC-002. Two checks (both required):
 
-        1. The configured provider's API key env var is set
+        1. When base_url is configured (#764):
+           Check reachability of the endpoint fast (<2s). The API key in the
+           environment is optional and missing-key check is skipped.
+           When base_url is absent (hosted providers):
+           The configured provider's API key env var is set
            (``ANTHROPIC_API_KEY`` for ``anthropic``, ``OPENAI_API_KEY`` for
            ``openai``; #764). Runs after the operator's ``[llm]`` settings are
            applied, so it checks the provider the run will actually call.
-           Does NOT ping the API; a real check would add per-run latency and cost. If the key is invalid,
+           Does NOT ping the hosted API; a real check would add per-run latency and cost. If the key is invalid,
            the first LLM call surfaces the 401 via R6's INCONCLUSIVE-on-error
            path.
 
@@ -205,11 +231,16 @@ class HarnessRun:
            a misleading "complete, exit 0" report where every LLM step
            silently degraded to WARN.
         """
-        env_var = api_key_env(self.llm_provider)
-        if env_var is None:
-            return f"unsupported LLM model {self.llm_provider!r}"
-        if not os.environ.get(env_var):
-            return f"missing {env_var} environment variable (llm provider {model_provider(self.llm_provider)!r})"
+        if self.llm_base_url:
+            reachable_err = self._check_endpoint_reachable(self.llm_base_url)
+            if reachable_err:
+                return reachable_err
+        else:
+            env_var = api_key_env(self.llm_provider)
+            if env_var is None:
+                return f"unsupported LLM model {self.llm_provider!r}"
+            if not os.environ.get(env_var):
+                return f"missing {env_var} environment variable (llm provider {model_provider(self.llm_provider)!r})"
         # If the default LLM step is PydanticAILLMStep, verify its SDK is
         # importable. Callers who inject a MockLLMStep (tests) skip this
         # check because their step doesn't need pydantic_ai.
@@ -260,8 +291,24 @@ class HarnessRun:
                     f"operator configuration llm.provider {provider!r} needs llm.model; "
                     "darnit has no default model for it"
                 )
+            if llm.base_url:
+                if not (llm.base_url.startswith("http://") or llm.base_url.startswith("https://")):
+                    raise HarnessSetupError(
+                        f"operator configuration llm.base_url {llm.base_url!r} must start with http:// or https://"
+                    )
+                from urllib.parse import urlsplit
+
+                parsed = urlsplit(llm.base_url)
+                if parsed.username or parsed.password:
+                    raise HarnessSetupError(
+                        "operator configuration llm.base_url must not contain credentials (username or password); "
+                        "API keys belong in the environment"
+                    )
+                self.llm_base_url = llm.base_url
             if llm.model and isinstance(self.llm_step, PydanticAILLMStep):
                 self.llm_step.model = f"{provider}:{llm.model}"
+            if llm.base_url and isinstance(self.llm_step, PydanticAILLMStep):
+                self.llm_step.base_url = llm.base_url
         # The report, the evidence fallback and the credential check all name
         # the model the default step will call.
         if isinstance(self.llm_step, PydanticAILLMStep):
@@ -352,6 +399,12 @@ class HarnessRun:
             confidence_threshold=consultation_request.get("confidence_threshold"),
         )
 
+        effective_ep = (
+            getattr(self.llm_step, "effective_endpoint", None)
+            or self.llm_base_url
+            or ""
+        )
+
         try:
             judgment: LLMJudgment = await asyncio.wait_for(
                 self.llm_step.evaluate(request),
@@ -370,6 +423,7 @@ class HarnessRun:
                 reasoning=f"LLM call failed: timeout after {self.per_call_timeout_s}s",
                 model=self.llm_provider,
                 error_class="unavailable",
+                endpoint=effective_ep,
             )
         except Exception as exc:
             safe_exc_msg = _redact_secrets(str(exc))
@@ -388,6 +442,7 @@ class HarnessRun:
                 # A ValueError (pydantic's ValidationError included) means the
                 # model answered but its answer could not be used.
                 error_class="evaluation" if isinstance(exc, ValueError) else "unavailable",
+                endpoint=effective_ep,
             )
 
         # Map LLMJudgment.outcome -> PassOutcome for the sieve.
@@ -405,6 +460,7 @@ class HarnessRun:
             evidence_cited=list(judgment.cited_evidence),
             model=judgment.model or self.llm_provider,
             model_version=judgment.model_version,
+            endpoint=judgment.endpoint or effective_ep,
         )
 
     async def _llm_continuation_loop(

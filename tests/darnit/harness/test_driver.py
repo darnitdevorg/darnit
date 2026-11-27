@@ -645,6 +645,38 @@ class TestSetupErrors:
             _run(run.run())
         assert "ANTHROPIC_API_KEY" in str(excinfo.value)
 
+    def test_unreachable_base_url_raises_setup_error(
+        self,
+        minimal_llm_repo_tree: Path,
+        harness_run_factory: Callable[..., HarnessRun],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Issue #764: configured base_url that cannot be reached fails fast in preflight."""
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        run = harness_run_factory(str(minimal_llm_repo_tree))
+        run.llm_base_url = "http://127.0.0.1:59999"
+        run.llm_provider = "openai:qwen2.5-coder:1.5b"
+        with pytest.raises(HarnessSetupError, match="is unreachable|failed to connect|timed out"):
+            _run(run.run())
+
+    def test_base_url_with_credentials_raises_setup_error(
+        self,
+        minimal_llm_repo_tree: Path,
+        harness_run_factory: Callable[..., HarnessRun],
+    ) -> None:
+        """Review fix: base_url containing credentials fails before audit with clear message."""
+        from darnit.config.operator.loader import LoadedOperatorConfig
+        from darnit.config.operator.schema import OperatorConfig
+
+        run = harness_run_factory(str(minimal_llm_repo_tree))
+        # Direct operator config model bypassing schema validator for harness test
+        op_cfg = OperatorConfig(schema_version=1)
+        object.__setattr__(op_cfg.llm, "base_url", "http://user:s3cret@127.0.0.1:18799/v1")
+        run.operator_config = LoadedOperatorConfig(config=op_cfg, source="/fake/config.toml", digest="sha256:fake", permission_check="ok", strict=False)
+        with pytest.raises(HarnessSetupError, match="must not contain credentials"):
+            run._apply_operator_llm_settings()
+
     def test_missing_repo_path_raises_setup_error(
         self,
         tmp_path: Path,

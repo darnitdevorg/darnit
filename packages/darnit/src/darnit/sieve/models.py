@@ -99,6 +99,7 @@ class LLMConsultationResponse:
     model_version: str = ""
     # With status ERROR: ``unavailable`` or ``evaluation`` (feature 041).
     error_class: str | None = None
+    endpoint: str = ""
 
 
 # The six string labels used across the sieve orchestrator, tools/audit.py, and
