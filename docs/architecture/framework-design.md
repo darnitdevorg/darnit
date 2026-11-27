@@ -1,8 +1,8 @@
 # Darnit Framework Design Specification
 
-> **Version**: 1.0.0-alpha.32
+> **Version**: 1.0.0-alpha.33
 > **Status**: Authoritative
-> **Last Updated**: 2026-11-26
+> **Last Updated**: 2026-11-27
 
 This specification defines the authoritative design of the Darnit framework, including the sieve orchestrator, TOML schema, built-in pass types, remediation actions, and plugin protocol.
 
@@ -486,6 +486,8 @@ These are the step type's declared `settings` (section 3.0.3); any other key fai
 **Child environment** (#752): the command receives a copy of the parent environment, then the step's `env` overrides. After those overrides, `GH_TOKEN` and `GITHUB_TOKEN` are omitted when the value is exactly `""`. Any other value is kept. The parent environment is not modified. An exec remediation uses this same handler, including its scratch-copy preview and its apply (section 4.4).
 
 **Broken measurements**: a command whose binary is not installed is ERROR, class `missing_tool`; a timeout is ERROR, class `timeout`. Neither is FAIL.
+
+**No repository identity** (#334): when the command uses `$OWNER` or `$REPO` and the context has no value for it (no git remote, and none was given), the handler returns ERROR, class `unavailable`, and does not run the command, even when the step declares `fail_exit_codes`. The `mcp` handler does the same for a string argument that uses them, without calling the tool.
 
 **Undeclared exit codes**: an exit code in neither `pass_exit_codes` nor `fail_exit_codes` is not PASS or FAIL. Its class comes from the command's exit code and stderr, first match wins (#562, #752):
 
@@ -2680,6 +2682,7 @@ The following requirements have been superseded: by the handler dispatch archite
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.0.0-alpha.33 | 2026-11-27 | An `exec` command or `mcp` string argument that uses `$OWNER` or `$REPO` with no value for it is ERROR, class `unavailable`, before anything runs, as `gh_api` already was (Sections 3.3, 3.8; #334) |
 | 1.0.0-alpha.32 | 2026-11-26 | One creation per path in a remediation run: a later control planning a path another control creates reports `created_by_other_control`, in preview and apply alike (Section 15.2; `FileChange` reasons) |
 | 1.0.0-alpha.31 | 2026-11-24 | `gh_api` step setting `auth_fields`: when an HTTP 2xx response omits any declared field, reports ERROR with error class `auth` naming the elevated permission requirement (Section 3.8; #753) |
 | 1.0.0-alpha.30 | 2026-11-24 | An `exec` remediation step previewed in a scratch copy marks files that have uncommitted user changes in the checkout with `action = "none"` and `reason = "user_changes_present"`, reports that the command will not run, and omits files the command will not touch, matching what the apply does (Section 4.4; #543) |

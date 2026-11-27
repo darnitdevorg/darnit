@@ -182,6 +182,36 @@ def _log_environmental_failure(
     )
 
 
+def _unknown_repository(
+    texts: list[str], context: HandlerContext, handler: str, what: str, evidence: dict[str, Any]
+) -> HandlerResult | None:
+    """ERROR ``unavailable`` when ``texts`` use ``$OWNER``/``$REPO`` and that value is unknown (#334).
+
+    A checkout with no remote has no owner or name (``detect_owner_repo``
+    returns ""). Substituting the empty string would ask about
+    ``/repos//name`` or ``--repo /``, and whatever comes back says nothing
+    about this repository, so the step must not run at all.
+    """
+    missing = [
+        var
+        for var, val in (("$OWNER", context.owner), ("$REPO", context.repo))
+        if not val and any(var in text for text in texts)
+    ]
+    if not missing:
+        return None
+    message = (
+        f"{what} needs {' and '.join(missing)}, but no repository owner or name is known "
+        "(no git remote, and none was given); it was not run"
+    )
+    _log_environmental_failure(context.control_id, handler, "unavailable", message)
+    return HandlerResult(
+        status=HandlerResultStatus.ERROR,
+        message=message,
+        evidence=evidence,
+        error_class="unavailable",
+    )
+
+
 # =============================================================================
 # Verification Handlers
 # =============================================================================
@@ -420,6 +450,10 @@ def exec_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResu
     env_extra = config.get("env", {})
     cwd = config.get("cwd", context.local_path)
 
+    command = [str(arg) for arg in command]
+    if unknown := _unknown_repository(command, context, "exec", f"Command {command[0]}", {"command": command}):
+        return unknown
+
     # Substitute variables in command
     substitutions = {
         "$OWNER": context.owner,
@@ -643,23 +677,12 @@ def gh_api_handler(config: dict[str, Any], context: HandlerContext) -> HandlerRe
             message="No endpoint specified for gh_api handler",
             error_class="evaluation",
         )
-    # A checkout with no remote has no owner (detect_owner_repo returns "").
-    # Substituting it would ask the platform about "/repos//name", and the 404
-    # that comes back says nothing about this repository. It must not be
-    # reported as a platform answer, and never as a declared failure.
-    missing = [var for var, val in (("$OWNER", context.owner), ("$REPO", context.repo)) if var in endpoint and not val]
-    if missing:
-        message = (
-            f"Platform API call {endpoint} needs {' and '.join(missing)}, but no "
-            "repository owner or name is known (no git remote, and none was given)"
-        )
-        _log_environmental_failure(context.control_id, "gh_api", "unavailable", message)
-        return HandlerResult(
-            status=HandlerResultStatus.ERROR,
-            message=message,
-            evidence={"endpoint": endpoint},
-            error_class="unavailable",
-        )
+    # The 404 that "/repos//name" would get must not be reported as a
+    # platform answer, and never as a declared failure.
+    if unknown := _unknown_repository(
+        [endpoint], context, "gh_api", f"Platform API call {endpoint}", {"endpoint": endpoint}
+    ):
+        return unknown
     for var, val in (("$OWNER", context.owner), ("$REPO", context.repo), ("$BRANCH", context.default_branch)):
         endpoint = endpoint.replace(var, val or "")
 
@@ -1746,6 +1769,15 @@ def mcp_handler(config: dict[str, Any], context: HandlerContext) -> HandlerResul
             status=HandlerResultStatus.ERROR,
             message="mcp handler invoked without pool wiring (internal error)",
         )
+
+    if unknown := _unknown_repository(
+        [value for value in args.values() if isinstance(value, str)],
+        context,
+        "mcp",
+        f"MCP tool {server_name}/{tool_name}",
+        {"server": server_name, "tool": tool_name},
+    ):
+        return unknown
 
     server_config = _lookup_mcp_server(context, server_name)
     substituted_args = _substitute_mcp_args(args, context)
