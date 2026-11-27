@@ -8,12 +8,11 @@ from pathlib import Path
 
 
 class OSPSBaselineImplementation:
-    """OpenSSF Baseline (OSPS v2026.02.19) implementation for darnit.
+    """OpenSSF Baseline implementation for darnit.
 
-    This implementation provides 62 controls across 3 maturity levels:
-    - Level 1: 24 controls (basic security hygiene)
-    - Level 2: 19 controls (intermediate security)
-    - Level 3: 19 controls (advanced security)
+    The controls, their maturity levels, and the Baseline version they
+    implement (``[metadata] spec_version``) come from ``openssf-baseline.toml``;
+    see ``spec_version`` below.
     """
 
     @property

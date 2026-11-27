@@ -404,7 +404,7 @@ name = "RequireMFA"
 description = "Require multi-factor authentication for organization members"
 tags = { level = 1, domain = "AC", security_severity = 9.0, access-control = true, authentication = true }
 when = { platform = "github" }
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-AC-01.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-ac-0101"
 help_md = """Enable MFA for all organization members (or for a solo-maintainer user account).
 
 **Two valid paths depending on repository ownership:**
@@ -491,7 +491,7 @@ description = "Require explicit collaborator roles or minimal default access"
 tags = { level = 1, domain = "AC", access-control = true, collaboration = true }
 when = { platform = "github" }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-AC-02.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-ac-0201"
 help_md = """Configure the repository to use minimal default permissions.
 Organization base permissions apply to organization members. Verify outside
 collaborator invitations separately.
@@ -528,7 +528,7 @@ name = "PreventDirectCommits"
 description = "Prevent direct commits to primary branch"
 tags = { level = 1, domain = "AC", security_severity = 8.0, access-control = true, branch-protection = true }
 when = { platform = "github" }
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-AC-03.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-ac-0301"
 help_md = """Enable branch protection to require pull requests.
 
 **Auto-remediation (recommended):**
@@ -584,7 +584,7 @@ tags = { level = 1, domain = "AC", access-control = true, branch-protection = tr
 when = { platform = "github" }
 
 # ExecPass: Check if branch deletion is prevented via branch protection
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-AC-03.02"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-ac-0302"
 location_hint = ".github/settings.yml"
 help_md = """Protect primary branch from deletion.
 
@@ -671,7 +671,7 @@ run: |
 # Exit codes: 0=clean, 10=info, 11=low, 12=medium, 13=high, 14=mixed severity
 # All are valid — CEL expr evaluates JSON findings, not exit code, and
 # decides on its own (expr_decides): a template-injection finding is FAIL
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-BR-01.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-br-0101"
 location_hint = ".github/workflows"
 
 # No workflow file means nothing to audit (#584): WARN with that reason, and
@@ -750,7 +750,7 @@ name = "IsolateUntrustedCIInputs"
 description = "CI/CD pipelines isolate untrusted code from privileged credentials"
 tags = { level = 1, domain = "BR", build = true, security = true, ci-cd = true }
 when = { ci_provider = "github" }
-docs_url = "https://baseline.openssf.org/versions/2026-02-19#OSPS-BR-01.03"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-br-0103"
 location_hint = ".github/workflows"
 help_md = """CI/CD pipelines that operate on untrusted code snapshots MUST prevent access to privileged credentials and assets.
 
@@ -798,7 +798,7 @@ name = "SanitizeCollaboratorInput"
 description = "CI/CD pipelines sanitize collaborator input before use"
 tags = { level = 3, domain = "BR", build = true, security = true, ci-cd = true }
 when = { ci_provider = "github" }
-docs_url = "https://baseline.openssf.org/versions/2026-02-19#OSPS-BR-01.04"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-br-0104"
 location_hint = ".github/workflows"
 help_md = """CI/CD pipelines that accept trusted collaborator input MUST sanitize and validate that input before use.
 
@@ -839,7 +839,7 @@ description = "Repository URL uses HTTPS"
 tags = { level = 1, domain = "BR", build = true, security = true }
 when = { platform = "github" }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-BR-03.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-br-0301"
 location_hint = "README.md"
 help_md = """Ensure all project URIs use HTTPS.
 
@@ -874,7 +874,7 @@ description = "Official distribution channels use encrypted connections (HTTPS)"
 tags = { level = 1, domain = "BR", build = true, security = true }
 
 # Pattern: Check that README download links use HTTPS
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-BR-03.02"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-br-0302"
 location_hint = "README.md"
 help_md = """Ensure all distribution URIs use HTTPS.
 
@@ -904,7 +904,7 @@ name = "GitignoreSecrets"
 description = "Secret files are properly gitignored"
 tags = { level = 1, domain = "BR", build = true, secrets = true }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-BR-07.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-br-0701"
 location_hint = ".gitignore"
 help_md = """Configure secret scanning and .gitignore to prevent secret leaks.
 
@@ -961,7 +961,7 @@ tags = { level = 2, domain = "BR", build = true, releases = true }
 when = { has_releases = true, platform = "github" }
 contradicted_by = { context = "has_releases", when_value = true }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-BR-02.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-br-0201"
 help_md = """Use semantic versioning for releases.
 
 **Remediation:**
@@ -1019,7 +1019,7 @@ help_md = """This control can be satisfied in two ways:
 **Note:** If you use GitHub releases for release notes, you do NOT need a CHANGELOG.md file.
 """
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-BR-04.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-br-0401"
 location_hint = "CHANGELOG.md"
 
 [controls."OSPS-BR-04.01".locator]
@@ -1083,7 +1083,7 @@ description = "Use standardized tooling for dependency ingestion"
 tags = { level = 2, domain = "BR", build = true, dependencies = true }
 
 # Deterministic: Check for standard dependency manifest files
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-BR-05.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-br-0501"
 location_hint = "package-lock.json"
 help_md = """Use standard package managers and lockfiles.
 
@@ -1146,7 +1146,7 @@ when = { has_releases = true }
 contradicted_by = { context = "has_releases", when_value = true }
 
 # Pattern: Check workflows or docs for signing mentions
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-BR-06.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-br-0601"
 help_md = """Sign releases or provide checksums.
 
 **Remediation:**
@@ -1199,7 +1199,7 @@ name = "HasReadme"
 description = "Repository has a README file"
 tags = { level = 1, domain = "DO", documentation = true }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-DO-01.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-do-0101"
 location_hint = "README.md"
 help_md = """Create user documentation for basic functionality.
 
@@ -1273,7 +1273,7 @@ name = "BugReportingProcess"
 description = "Document bug reporting process"
 tags = { level = 1, domain = "DO", documentation = true, issues = true }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-DO-02.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-do-0201"
 location_hint = ".github/ISSUE_TEMPLATE"
 help_md = """Create a guide for reporting bugs and defects.
 
@@ -1363,7 +1363,7 @@ name = "DependencyDocumentation"
 description = "Document how project selects, obtains, and tracks dependencies"
 tags = { level = 2, domain = "DO", documentation = true, dependencies = true }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-DO-06.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-do-0601"
 location_hint = "README.md"
 help_md = """Document dependency management process.
 
@@ -1440,7 +1440,7 @@ steps = [
 name = "BuildInstructions"
 description = "Documentation includes instructions to build the software"
 tags = { level = 2, domain = "DO", documentation = true }
-docs_url = "https://baseline.openssf.org/versions/2026-02-19#OSPS-DO-07.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-do-0701"
 location_hint = "README.md"
 help_md = """Project documentation MUST include instructions on how to build the software, including required libraries, frameworks, SDKs, and dependencies.
 
@@ -1504,7 +1504,7 @@ description = "Enable public discussion mechanisms"
 tags = { level = 1, domain = "GV", governance = true, community = true }
 when = { platform = "github" }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-GV-02.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-gv-0201"
 location_hint = "CONTRIBUTING.md"
 help_md = """Enable public discussion channels.
 
@@ -1535,7 +1535,7 @@ name = "HasContributing"
 description = "Repository has contributing guidelines"
 tags = { level = 1, domain = "GV", governance = true, documentation = true }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-GV-03.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-gv-0301"
 location_hint = "CONTRIBUTING.md"
 help_md = """Document the contribution process.
 
@@ -1612,7 +1612,7 @@ name = "HasLicense"
 description = "Repository has a license file"
 tags = { level = 2, domain = "LE", legal = true, license = true }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-LE-01.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-le-0101"
 location_hint = "CONTRIBUTING.md"
 help_md = """Implement DCO or CLA for contributions.
 
@@ -1681,7 +1681,7 @@ description = "License is OSI-approved"
 tags = { level = 1, domain = "LE", legal = true, license = true }
 when = { platform = "github" }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-LE-02.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-le-0201"
 location_hint = "LICENSE"
 help_md = """Use an OSI-approved open source license.
 
@@ -1772,7 +1772,7 @@ when = { platform = "github" }
 # LE-03.01 (a license file exists) would not show the license is OSI/FSF.
 inferred_from = "OSPS-LE-02.01"
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-LE-02.02"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-le-0202"
 location_hint = "LICENSE"
 help_md = """Include OSI-approved license with releases.
 
@@ -1804,7 +1804,7 @@ name = "LicenseInRepo"
 description = "License file present in repository root"
 tags = { level = 1, domain = "LE", legal = true, license = true }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-LE-03.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-le-0301"
 location_hint = "LICENSE"
 help_md = """Add license file to repository.
 
@@ -1892,7 +1892,7 @@ when = { has_releases = true, platform = "github" }
 contradicted_by = { context = "has_releases", when_value = true }
 inferred_from = "OSPS-LE-03.01"  # If LICENSE exists in repo, GitHub auto-includes it in source archives
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-LE-03.02"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-le-0302"
 location_hint = "LICENSE"
 help_md = """Include license file in release artifacts.
 
@@ -1935,7 +1935,7 @@ description = "Repository is publicly accessible"
 tags = { level = 1, domain = "QA", quality = true, transparency = true }
 when = { platform = "github" }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-QA-01.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-qa-0101"
 help_md = """Ensure repository is publicly accessible.
 
 **Remediation:**
@@ -1982,7 +1982,7 @@ description = "Commit history is publicly visible"
 tags = { level = 1, domain = "QA", quality = true, transparency = true }
 when = { platform = "github" }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-QA-01.02"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-qa-0102"
 help_md = """Maintain public git history.
 
 **Remediation:**
@@ -2027,7 +2027,7 @@ tags = { level = 1, domain = "QA", quality = true, dependencies = true }
 # shell tools; when darnit cannot tell, the key is absent and the control runs.
 when = { package_manager_support = "supported" }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-QA-02.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-qa-0201"
 location_hint = "package.json"
 help_md = """Maintain dependency list in repository.
 
@@ -2088,7 +2088,7 @@ tags = { level = 1, domain = "QA", quality = true, documentation = true }
 when = { has_subprojects = true }
 
 # Pattern: Look for subproject/module documentation
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-QA-04.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-qa-0401"
 location_hint = "README.md"
 help_md = """Document subprojects and dependencies.
 
@@ -2143,7 +2143,7 @@ description = "No generated executables in repository"
 tags = { level = 1, domain = "QA", quality = true, security = true }
 
 # Pattern: Check for absence of executable extensions in tracked files
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-QA-05.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-qa-0501"
 location_hint = ".gitignore"
 help_md = """Remove generated executables from repository.
 
@@ -2187,7 +2187,7 @@ description = "No unreviewable binary artifacts"
 tags = { level = 1, domain = "QA", quality = true, security = true }
 
 # Pattern: Check for absence of large binary files
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-QA-05.02"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-qa-0502"
 location_hint = ".gitignore"
 help_md = """Remove unreviewable binary files from repository.
 
@@ -2233,7 +2233,7 @@ name = "HasSecurityPolicy"
 description = "Repository has a security policy"
 tags = { level = 1, domain = "VM", security_severity = 7.0, security = true, vulnerability-management = true }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-VM-02.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-vm-0201"
 location_hint = "SECURITY.md"
 help_md = """Add security contacts to SECURITY.md.
 
@@ -2319,7 +2319,7 @@ description = "Default GitHub Actions token permissions are restricted"
 tags = { level = 2, domain = "AC", security_severity = 6.5, access-control = true, ci-cd = true }
 when = { ci_provider = "github" }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-AC-04.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-ac-0401"
 help_md = """In Repository Settings → Actions → General → Workflow permissions,
 select 'Read repository contents and packages permissions'. If the setting
 is enforced by the organization, review the policy with an organization owner.
@@ -2354,7 +2354,7 @@ name = "HasGovernance"
 description = "Project has governance documentation"
 tags = { level = 2, domain = "GV", governance = true }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-GV-01.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-gv-0101"
 location_hint = "MAINTAINERS.md"
 help_md = """Document members with elevated access.
 
@@ -2439,7 +2439,7 @@ name = "DocumentedRoles"
 description = "Roles and responsibilities are documented"
 tags = { level = 2, domain = "GV", governance = true }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-GV-01.02"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-gv-0102"
 location_hint = "GOVERNANCE.md"
 help_md = """Document roles and responsibilities.
 
@@ -2500,7 +2500,7 @@ name = "ContributionRequirements"
 description = "Contribution requirements are documented"
 tags = { level = 2, domain = "GV", governance = true, contributing = true }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-GV-03.02"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-gv-0302"
 location_hint = "CONTRIBUTING.md"
 help_md = """Document contribution requirements.
 
@@ -2562,7 +2562,7 @@ when = { platform = "github" }
 depends_on = ["OSPS-AC-03.01"]  # Requires branch protection to be enabled
 
 # ExecPass: Use gh CLI to check required status checks
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-QA-03.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-qa-0301"
 location_hint = ".github/settings.yml"
 help_md = """Configure required status checks.
 
@@ -2604,7 +2604,7 @@ name = "AutomatedTests"
 description = "CI workflows include automated tests"
 tags = { level = 2, domain = "QA", quality = true, testing = true }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-QA-06.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-qa-0601"
 location_hint = ".github/workflows"
 help_md = """Add automated tests to CI pipeline.
 
@@ -2679,7 +2679,7 @@ description = "Security policy includes disclosure process"
 tags = { level = 2, domain = "VM", security = true, vulnerability-management = true }
 depends_on = ["OSPS-VM-02.01"]  # Needs SECURITY.md to exist first
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-VM-01.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-vm-0101"
 location_hint = "SECURITY.md"
 help_md = """Create CVD policy in SECURITY.md.
 
@@ -2755,7 +2755,7 @@ description = "Private vulnerability reporting is enabled"
 tags = { level = 2, domain = "VM", security = true, vulnerability-management = true }
 when = { platform = "github" }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-VM-03.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-vm-0301"
 location_hint = "SECURITY.md"
 help_md = """Enable private vulnerability reporting.
 
@@ -2845,7 +2845,7 @@ description = "Repository supports security advisories"
 tags = { level = 2, domain = "VM", security = true, vulnerability-management = true }
 when = { platform = "github" }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-VM-04.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-vm-0401"
 location_hint = "SECURITY.md"
 help_md = """Publish vulnerability information.
 
@@ -2911,7 +2911,7 @@ tags = { level = 3, domain = "AC", security_severity = 7.0, access-control = tru
 when = { ci_provider = "github" }
 depends_on = ["OSPS-AC-04.01"]  # Scoped permissions builds on explicit permissions
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-AC-04.02"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-ac-0402"
 location_hint = ".github/workflows"
 help_md = """Minimize CI/CD job permissions.
 
@@ -2997,7 +2997,7 @@ description = "Clearly associate all release assets with release identifiers"
 tags = { level = 3, domain = "BR", build = true, releases = true }
 when = { platform = "github" }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-BR-02.02"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-br-0202"
 help_md = """Ensure release assets are properly versioned.
 
 **Remediation:**
@@ -3047,7 +3047,7 @@ name = "SecretsManagementPolicy"
 description = "Define policy for managing secrets and credentials"
 tags = { level = 3, domain = "BR", build = true, secrets = true, security = true }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-BR-07.02"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-br-0702"
 location_hint = "SECURITY.md"
 help_md = """Document secrets management policy.
 
@@ -3121,7 +3121,7 @@ description = "Deliver compiled assets with Software Bill of Materials (SBOM)"
 tags = { level = 3, domain = "QA", quality = true, releases = true, supply-chain = true }
 when = { has_compiled_assets = true }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-QA-02.02"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-qa-0202"
 help_md = """Include SBOM with releases.
 
 **Remediation:**
@@ -3171,7 +3171,7 @@ tags = { level = 3, domain = "QA", quality = true, security = true }
 when = { has_subprojects = true }
 
 # Pattern: Check for consistent security configuration across subprojects
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-QA-04.02"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-qa-0402"
 help_md = """Ensure consistent security across subprojects.
 
 **Remediation:**
@@ -3215,7 +3215,7 @@ tags = { level = 3, domain = "QA", quality = true, code-review = true }
 when = { platform = "github" }
 
 # ExecPass: Check if branch protection requires approvals
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-QA-07.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-qa-0701"
 location_hint = ".github/settings.yml"
 help_md = """Require code review approval.
 
@@ -3263,7 +3263,7 @@ name = "DocumentedTesting"
 description = "Testing instructions are documented"
 tags = { level = 3, domain = "QA", quality = true, testing = true, documentation = true }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-QA-06.02"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-qa-0602"
 location_hint = "CONTRIBUTING.md"
 help_md = """Document testing process.
 
@@ -3346,7 +3346,7 @@ name = "TestRequirements"
 description = "Test requirements for contributions are documented"
 tags = { level = 3, domain = "QA", quality = true, testing = true, contributing = true }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-QA-06.03"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-qa-0603"
 location_hint = "CONTRIBUTING.md"
 help_md = """Document test requirements for contributions.
 
@@ -3411,7 +3411,7 @@ description = "VEX policy documented in SECURITY.md"
 tags = { level = 3, domain = "VM", security = true, vulnerability-management = true, policy = true }
 
 # PatternPass: Check for VEX policy section in SECURITY.md (preferred method)
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-VM-04.02"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-vm-0402"
 location_hint = "SECURITY.md"
 help_md = """Document your VEX (Vulnerability Exploitability eXchange) policy.
 
@@ -3485,7 +3485,7 @@ name = "SCARemediationPolicy"
 description = "SCA remediation policy documented"
 tags = { level = 3, domain = "VM", security = true, dependencies = true }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-VM-05.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-vm-0501"
 location_hint = "SECURITY.md"
 help_md = """Define SCA remediation policy.
 
@@ -3551,7 +3551,7 @@ name = "PreReleaseSCA"
 description = "Pre-release SCA workflow configured"
 tags = { level = 3, domain = "VM", security = true, ci-cd = true, dependencies = true }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-VM-05.02"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-vm-0502"
 location_hint = ".github/workflows"
 help_md = """Require SCA checks before release.
 
@@ -3629,7 +3629,7 @@ name = "AutomatedDependencyScanning"
 description = "Automated dependency scanning configured"
 tags = { level = 3, domain = "VM", security = true, dependencies = true }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-VM-05.03"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-vm-0503"
 location_hint = ".github/dependabot.yml"
 help_md = """Enable automated dependency scanning.
 
@@ -3707,7 +3707,7 @@ name = "SASTRemediationPolicy"
 description = "SAST remediation policy documented"
 tags = { level = 3, domain = "VM", security = true, code-analysis = true }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-VM-06.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-vm-0601"
 location_hint = "SECURITY.md"
 help_md = """Define SAST remediation policy.
 
@@ -3773,7 +3773,7 @@ name = "AutomatedSAST"
 description = "Automated SAST in CI pipeline"
 tags = { level = 3, domain = "VM", security = true, ci-cd = true, code-analysis = true }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-VM-06.02"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-vm-0602"
 location_hint = ".github/workflows"
 help_md = """Enable automated SAST in CI.
 
@@ -3841,7 +3841,7 @@ name = "SupportDocumentation"
 description = "Support documentation available"
 tags = { level = 3, domain = "DO", documentation = true, support = true }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-DO-03.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-do-0301"
 location_hint = "README.md"
 help_md = """Document how to verify releases.
 
@@ -3910,7 +3910,7 @@ name = "VerifyReleaseAuthor"
 description = "Provide instructions to verify release author identity"
 tags = { level = 3, domain = "DO", documentation = true, releases = true, security = true }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-DO-03.02"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-do-0302"
 location_hint = "README.md"
 help_md = """Document how to verify release author.
 
@@ -3970,7 +3970,7 @@ name = "SupportScopeStatement"
 description = "Document scope and duration of support"
 tags = { level = 3, domain = "DO", documentation = true, support = true }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-DO-04.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-do-0401"
 location_hint = "SUPPORT.md"
 help_md = """Document support policy.
 
@@ -4036,7 +4036,7 @@ name = "EndOfSupportPolicy"
 description = "End-of-support policy documented"
 tags = { level = 3, domain = "DO", documentation = true, support = true }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-DO-05.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-do-0501"
 location_hint = "SUPPORT.md"
 help_md = """Document end-of-life policy.
 
@@ -4107,7 +4107,7 @@ description = "Collaborator review policy documented"
 tags = { level = 3, domain = "GV", governance = true, code-review = true }
 
 # FileExistsPass: CODEOWNERS file indicates a review policy is in place
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-GV-04.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-gv-0401"
 location_hint = "GOVERNANCE.md"
 help_md = """Document collaborator vetting process.
 
@@ -4180,7 +4180,7 @@ name = "DesignDocumentation"
 description = "Provide design documentation showing actions and actors"
 tags = { level = 2, domain = "SA", documentation = true, architecture = true }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-SA-01.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-sa-0101"
 location_hint = "docs/ARCHITECTURE.md"
 help_md = """Create architecture/design documentation.
 
@@ -4256,7 +4256,7 @@ name = "APIDocumentation"
 description = "API/interface documentation available"
 tags = { level = 2, domain = "SA", documentation = true, api = true }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-SA-02.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-sa-0201"
 location_hint = "docs/API.md"
 help_md = """Document external APIs and interfaces.
 
@@ -4334,7 +4334,7 @@ tags = { level = 2, domain = "SA", security = true, releases = true }
 when = { has_releases = true }
 contradicted_by = { context = "has_releases", when_value = true }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-SA-03.01"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-sa-0301"
 location_hint = "SECURITY.md"
 help_md = """Perform and document security assessment.
 
@@ -4396,7 +4396,7 @@ name = "ThreatModel"
 description = "Threat model documentation available"
 tags = { level = 3, domain = "SA", security = true, threat-modeling = true }
 
-docs_url = "https://baseline.openssf.org/versions/2025-10-10#OSPS-SA-03.02"
+docs_url = "https://baseline.openssf.org/versions/2026-02-19#osps-sa-0302"
 location_hint = "docs/THREAT_MODEL.md"
 help_md = """Perform and document threat modeling.
 
