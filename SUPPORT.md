@@ -13,8 +13,8 @@ Thanks for using darnit! Here are some ways to get help:
 ### Issues
 
 If you've found a bug or have a feature request:
-1. Search [existing issues](https://github.com/kusari-oss/darnit/issues) first
-2. If not found, [open a new issue](https://github.com/kusari-oss/darnit/issues/new)
+1. Search [existing issues](https://github.com/darnitdevorg/darnit/issues) first
+2. If not found, [open a new issue](https://github.com/darnitdevorg/darnit/issues/new)
 
 ### Security Issues
 

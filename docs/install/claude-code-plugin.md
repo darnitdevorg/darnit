@@ -34,17 +34,17 @@ If neither is present, the plugin's MCP server exits with `127` and prints a cle
 
 ### From the GitHub release asset
 
-Download `darnit-claude-plugin-0.1.0.zip` from the [release page](https://github.com/kusari-oss/darnit/releases/tag/v0.1.0) and install via the Claude Code plugin URL flag (substitute the actual flag your Claude Code version expects):
+Download `darnit-claude-plugin-0.1.0.zip` from the [release page](https://github.com/darnitdevorg/darnit/releases/tag/v0.1.0) and install via the Claude Code plugin URL flag (substitute the actual flag your Claude Code version expects):
 
 ```bash
 claude --plugin-url \
-  https://github.com/kusari-oss/darnit/releases/download/v0.1.0/darnit-claude-plugin-0.1.0.zip
+  https://github.com/darnitdevorg/darnit/releases/download/v0.1.0/darnit-claude-plugin-0.1.0.zip
 ```
 
 ### From an unzipped local directory (development)
 
 ```bash
-curl -L https://github.com/kusari-oss/darnit/releases/download/v0.1.0/darnit-claude-plugin-0.1.0.zip \
+curl -L https://github.com/darnitdevorg/darnit/releases/download/v0.1.0/darnit-claude-plugin-0.1.0.zip \
   -o darnit-plugin.zip
 unzip darnit-plugin.zip   # produces a `darnit/` directory
 claude --plugin-dir ./darnit/
@@ -123,6 +123,6 @@ You could register the darnit MCP server in Claude Code manually (set `mcpServer
 
 ## Source and license
 
-- Plugin source: [`packaging/claude-plugin/`](https://github.com/kusari-oss/darnit/tree/main/packaging/claude-plugin) in `kusari-oss/darnit`
-- Skill source: [`packages/darnit/src/darnit/skills/`](https://github.com/kusari-oss/darnit/tree/main/packages/darnit/src/darnit/skills)
+- Plugin source: [`packaging/claude-plugin/`](https://github.com/darnitdevorg/darnit/tree/main/packaging/claude-plugin) in `darnitdevorg/darnit`
+- Skill source: [`packages/darnit/src/darnit/skills/`](https://github.com/darnitdevorg/darnit/tree/main/packages/darnit/src/darnit/skills)
 - License: Apache-2.0

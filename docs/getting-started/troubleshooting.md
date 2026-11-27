@@ -122,7 +122,7 @@ Both should print paths within the `packages/` directory (editable installs).
 
 **Solution**:
 ```bash
-git remote add upstream https://github.com/kusari-oss/darnit.git
+git remote add upstream https://github.com/darnitdevorg/darnit.git
 git fetch upstream
 ```
 
@@ -199,6 +199,6 @@ See the [CEL Reference](cel-reference.md) for complete syntax documentation.
 
 If you're stuck:
 - Check the [Framework Development](framework-development.md) guide for architecture details
-- Open a [GitHub Issue](https://github.com/kusari-oss/darnit/issues)
-- Start a [Discussion](https://github.com/kusari-oss/darnit/discussions)
+- Open a [GitHub Issue](https://github.com/darnitdevorg/darnit/issues)
+- Start a [Discussion](https://github.com/darnitdevorg/darnit/discussions)
 - Back to [Getting Started](README.md)

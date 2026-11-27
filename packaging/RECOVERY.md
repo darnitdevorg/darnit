@@ -64,8 +64,8 @@ After any recovery action, re-run the smoke jobs against the published artifacts
 
 ```bash
 # Find the smoke workflow run that corresponds to the recovered release
-gh run list --repo kusari-oss/darnit --workflow "Release Smoke Tests" --limit 5
-gh run rerun <smoke-run-id> --repo kusari-oss/darnit
+gh run list --repo darnitdevorg/darnit --workflow "Release Smoke Tests" --limit 5
+gh run rerun <smoke-run-id> --repo darnitdevorg/darnit
 ```
 
 The smoke job is read-only and safe to re-run any number of times.
@@ -78,7 +78,7 @@ The `container_build_push` job pushes a multi-arch manifest, signs each digest w
 
 ### Failure mode 1 — Multi-arch incomplete (one platform pushed, the other failed)
 
-**Symptom**: `docker manifest inspect ghcr.io/kusari-oss/darnit:v<X.Y.Z>` returns only one platform manifest entry instead of two, OR `docker pull --platform linux/arm64 ...` fails while `linux/amd64` works.
+**Symptom**: `docker manifest inspect ghcr.io/darnitdevorg/darnit:v<X.Y.Z>` returns only one platform manifest entry instead of two, OR `docker pull --platform linux/arm64 ...` fails while `linux/amd64` works.
 
 **Important**: GHCR tags are technically mutable. We treat them as immutable by convention to give users a stable signing chain to verify against.
 
@@ -106,7 +106,7 @@ The `container_build_push` job pushes a multi-arch manifest, signs each digest w
 
 **Symptom**: `cosign verify` succeeds but `cosign verify-attestation --type spdx ...` returns "no matching attestations". `cosign download attestation` returns empty.
 
-**Important**: SBOM absence is less severe than signature absence — the artifact is still trustworthy, just lacks the supply-chain manifest. Users can regenerate the SBOM locally via `syft ghcr.io/kusari-oss/darnit:v<X.Y.Z> -o spdx-json`.
+**Important**: SBOM absence is less severe than signature absence — the artifact is still trustworthy, just lacks the supply-chain manifest. Users can regenerate the SBOM locally via `syft ghcr.io/darnitdevorg/darnit:v<X.Y.Z> -o spdx-json`.
 
 **Procedure**:
 
@@ -114,14 +114,14 @@ The `container_build_push` job pushes a multi-arch manifest, signs each digest w
 2. Re-run only the SBOM attestation step locally with the appropriate OIDC token:
    ```bash
    # On a machine with cosign and a fresh OIDC token for the release workflow
-   syft ghcr.io/kusari-oss/darnit:v<X.Y.Z> -o spdx-json > sbom.spdx.json
-   cosign attest --yes --predicate sbom.spdx.json --type spdx ghcr.io/kusari-oss/darnit:v<X.Y.Z>
+   syft ghcr.io/darnitdevorg/darnit:v<X.Y.Z> -o spdx-json > sbom.spdx.json
+   cosign attest --yes --predicate sbom.spdx.json --type spdx ghcr.io/darnitdevorg/darnit:v<X.Y.Z>
    ```
 3. If a manual attestation cannot be produced with the canonical workflow identity, document the gap in the release notes and roll forward in `v<X.Y.Z+1>`.
 
 ### Failure mode 4 — :latest still pointing at the previous release after a stable push
 
-**Symptom**: `docker pull ghcr.io/kusari-oss/darnit:latest` returns the previous version's digest.
+**Symptom**: `docker pull ghcr.io/darnitdevorg/darnit:latest` returns the previous version's digest.
 
 **Important**: `:latest` movement is part of the release workflow. If it didn't move, the push itself likely failed silently.
 
@@ -131,31 +131,31 @@ The `container_build_push` job pushes a multi-arch manifest, signs each digest w
 2. Manually re-push `:latest` to the new digest **only if** the immutable tag verification passes:
    ```bash
    docker buildx imagetools create \
-     -t ghcr.io/kusari-oss/darnit:latest \
-     ghcr.io/kusari-oss/darnit:v<X.Y.Z>
+     -t ghcr.io/darnitdevorg/darnit:latest \
+     ghcr.io/darnitdevorg/darnit:v<X.Y.Z>
    ```
-3. Verify the move: `cosign verify ghcr.io/kusari-oss/darnit:latest ...` must produce the same identity as `:v<X.Y.Z>`.
+3. Verify the move: `cosign verify ghcr.io/darnitdevorg/darnit:latest ...` must produce the same identity as `:v<X.Y.Z>`.
 
 ### Verification after recovery
 
 ```bash
 # Pull both platforms
-docker pull --platform linux/amd64 ghcr.io/kusari-oss/darnit:v<X.Y.Z>
-docker pull --platform linux/arm64 ghcr.io/kusari-oss/darnit:v<X.Y.Z>
+docker pull --platform linux/amd64 ghcr.io/darnitdevorg/darnit:v<X.Y.Z>
+docker pull --platform linux/arm64 ghcr.io/darnitdevorg/darnit:v<X.Y.Z>
 
 # Verify signing identity
-cosign verify ghcr.io/kusari-oss/darnit:v<X.Y.Z> \
-  --certificate-identity-regexp '^https://github\.com/kusari-oss/darnit/\.github/workflows/release\.yml@' \
+cosign verify ghcr.io/darnitdevorg/darnit:v<X.Y.Z> \
+  --certificate-identity-regexp '^https://github\.com/darnitdevorg/darnit/\.github/workflows/release\.yml@' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
 # Verify SBOM attestation
-cosign verify-attestation ghcr.io/kusari-oss/darnit:v<X.Y.Z> \
+cosign verify-attestation ghcr.io/darnitdevorg/darnit:v<X.Y.Z> \
   --type spdx \
-  --certificate-identity-regexp '^https://github\.com/kusari-oss/darnit/\.github/workflows/release\.yml@' \
+  --certificate-identity-regexp '^https://github\.com/darnitdevorg/darnit/\.github/workflows/release\.yml@' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
-Then re-run the smoke job: `gh run rerun <smoke-run-id> --repo kusari-oss/darnit`.
+Then re-run the smoke job: `gh run rerun <smoke-run-id> --repo darnitdevorg/darnit`.
 
 ---
 
@@ -180,7 +180,7 @@ The `binary_matrix` job builds on four native runners in parallel (macOS arm64/a
      darnit-<X.Y.Z>-<os>-<arch> \
      darnit-<X.Y.Z>-<os>-<arch>.sigstore \
      darnit-<X.Y.Z>-<os>-<arch>.sbom.spdx.json \
-     --repo kusari-oss/darnit
+     --repo darnitdevorg/darnit
    ```
 5. Re-run the `binary_smoke` matrix to verify the new asset's signature.
 
@@ -207,10 +207,10 @@ If the failure cannot be recovered (e.g., a runner image change broke the build 
 **Procedure**:
 
 1. Investigate via the failed job's log. Usual cause: a transient GH API hiccup or a `gh release create` race (if a stale release exists from a prior aborted attempt).
-2. If a partial GH release exists (created but missing assets), delete it: `gh release delete v<X.Y.Z> --repo kusari-oss/darnit --yes` (this does NOT delete the tag).
+2. If a partial GH release exists (created but missing assets), delete it: `gh release delete v<X.Y.Z> --repo darnitdevorg/darnit --yes` (this does NOT delete the tag).
 3. Download the workflow artifacts to a local machine:
    ```bash
-   gh run download <run-id> --repo kusari-oss/darnit --pattern 'binary-*'
+   gh run download <run-id> --repo darnitdevorg/darnit --pattern 'binary-*'
    ```
 4. Create the release manually with all assets:
    ```bash
@@ -222,7 +222,7 @@ If the failure cannot be recovered (e.g., a runner image change broke the build 
      --title "darnit <X.Y.Z>" \
      --notes "Manually created after release_attach_binaries failed; see workflow run <url>" \
      --latest \
-     --repo kusari-oss/darnit
+     --repo darnitdevorg/darnit
    ```
 5. Re-run `binary_smoke` to verify everything.
 
@@ -230,7 +230,7 @@ If the failure cannot be recovered (e.g., a runner image change broke the build 
 
 ```bash
 # For each platform:
-gh release download v<X.Y.Z> --repo kusari-oss/darnit \
+gh release download v<X.Y.Z> --repo darnitdevorg/darnit \
   --pattern 'darnit-<X.Y.Z>-<os>-<arch>*'
 
 chmod +x darnit-<X.Y.Z>-<os>-<arch>
@@ -238,7 +238,7 @@ chmod +x darnit-<X.Y.Z>-<os>-<arch>
 
 cosign verify-blob \
   --bundle darnit-<X.Y.Z>-<os>-<arch>.sigstore \
-  --certificate-identity-regexp '^https://github\.com/kusari-oss/darnit/\.github/workflows/release\.yml@' \
+  --certificate-identity-regexp '^https://github\.com/darnitdevorg/darnit/\.github/workflows/release\.yml@' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   darnit-<X.Y.Z>-<os>-<arch>
 ```
@@ -249,7 +249,7 @@ cosign verify-blob \
 
 The Homebrew flow has three steps and three corresponding failure surfaces:
 
-1. **In `kusari-oss/darnit::release.yml`**: `homebrew_dispatch` job sends a `repository_dispatch` event to `kusari-oss/homebrew-tap` with the version + per-platform SHA-256s + the binary URL set.
+1. **In `darnitdevorg/darnit::release.yml`**: `homebrew_dispatch` job sends a `repository_dispatch` event to `kusari-oss/homebrew-tap` with the version + per-platform SHA-256s + the binary URL set.
 2. **In `kusari-oss/homebrew-tap::.github/workflows/bump-formula.yml`**: renders `Formula/darnit.rb` from the template, runs `brew style` + `brew install --build-from-source`, opens an auto-merging PR.
 3. **In `kusari-oss/homebrew-tap::.github/workflows/ci.yml`**: gates the auto-merge with `brew install --build-from-source` on macOS arm64 + Linux amd64.
 
@@ -349,7 +349,7 @@ Recovery is generally simpler than for the other channels because the zip is ful
    ```bash
    gh release upload v<X.Y.Z> \
      dist/claude-plugin/darnit-claude-plugin-<X.Y.Z>.zip \
-     --repo kusari-oss/darnit
+     --repo darnitdevorg/darnit
    ```
 3. Re-run `plugin_structural_smoke` and `plugin_behavioral_smoke` from the smoke workflow.
 
@@ -408,7 +408,7 @@ Recovery is generally simpler than for the other channels because the zip is ful
 ```bash
 # Download the published zip
 gh release download v<X.Y.Z> \
-  --repo kusari-oss/darnit \
+  --repo darnitdevorg/darnit \
   --pattern "darnit-claude-plugin-<X.Y.Z>.zip" \
   --dir /tmp/plugin-verify
 unzip -q /tmp/plugin-verify/darnit-claude-plugin-<X.Y.Z>.zip -d /tmp/plugin-verify

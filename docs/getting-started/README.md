@@ -56,4 +56,4 @@ Composition — TOML-only mix of slices from already-installed implementations (
 
 ## Having Issues?
 
-Check the [Troubleshooting Guide](troubleshooting.md) first. If that doesn't help, [open an issue](https://github.com/kusari-oss/darnit/issues).
+Check the [Troubleshooting Guide](troubleshooting.md) first. If that doesn't help, [open an issue](https://github.com/darnitdevorg/darnit/issues).

@@ -96,9 +96,9 @@ All participants are expected to uphold a welcoming, harassment-free environment
 
 ## Community Assets
 
-- **Source repository**: <https://github.com/kusari-oss/darnit>
-- **Issues**: [GitHub Issues](https://github.com/kusari-oss/darnit/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/kusari-oss/darnit/discussions)
+- **Source repository**: <https://github.com/darnitdevorg/darnit>
+- **Issues**: [GitHub Issues](https://github.com/darnitdevorg/darnit/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/darnitdevorg/darnit/discussions)
 - **Security**: See [SECURITY.md](SECURITY.md) for vulnerability reporting
 
 The Project develops and owns its GitHub and social media accounts and domain registrations under license from LF Projects. Trade and service marks used by the Project are held by LF Projects (or an associated hosting entity) on the Project's behalf, per Charter Section 5. Additional assets — mailing lists, chat channels, meeting venues — may be added by TSC decision and announced through the Project's existing channels.

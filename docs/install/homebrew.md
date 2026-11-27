@@ -20,7 +20,7 @@ brew update
 brew upgrade darnit
 ```
 
-The Homebrew tap auto-updates within 30 minutes of each stable release. If `brew upgrade` doesn't see a new version you expected, check [release-failure issues](https://github.com/kusari-oss/darnit/labels/release-failure) on the upstream repo.
+The Homebrew tap auto-updates within 30 minutes of each stable release. If `brew upgrade` doesn't see a new version you expected, check [release-failure issues](https://github.com/darnitdevorg/darnit/labels/release-failure) on the upstream repo.
 
 ## Uninstall
 
@@ -72,4 +72,4 @@ If you want to verify the binary's [cosign signature](binary.md#verify-the-cosig
 | `brew tap kusari-oss/tap` fails with 404 | The tap repository may not exist yet, or you typo'd the org. Confirm `kusari-oss/homebrew-tap` exists on GitHub. |
 | `brew install darnit` succeeds but `darnit --version` says command not found | Linux brew often isn't on your shell's PATH by default. Run `eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"` and add that line to your shell rc file. |
 | `darnit --version` reports the previous version after `brew upgrade` | Brew's formula cache may be stale. Run `brew update` first, then `brew upgrade darnit`. |
-| Formula doesn't bump within 30 minutes of a stable release | A release-failure issue should exist; see [upstream `release-failure` label](https://github.com/kusari-oss/darnit/labels/release-failure). |
+| Formula doesn't bump within 30 minutes of a stable release | A release-failure issue should exist; see [upstream `release-failure` label](https://github.com/darnitdevorg/darnit/labels/release-failure). |

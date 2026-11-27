@@ -56,7 +56,7 @@ This project uses a fork-based workflow. All contributions come through pull req
 
 ### 1. Fork the repository
 
-Go to [github.com/kusari-oss/darnit](https://github.com/kusari-oss/darnit) and click **Fork**.
+Go to [github.com/darnitdevorg/darnit](https://github.com/darnitdevorg/darnit) and click **Fork**.
 
 ### 2. Clone your fork
 
@@ -68,7 +68,7 @@ cd darnit
 ### 3. Add the upstream remote
 
 ```bash
-git remote add upstream https://github.com/kusari-oss/darnit.git
+git remote add upstream https://github.com/darnitdevorg/darnit.git
 ```
 
 ### 4. Verify remotes
@@ -81,8 +81,8 @@ Expected output:
 ```
 origin    https://github.com/YOUR-USERNAME/darnit.git (fetch)
 origin    https://github.com/YOUR-USERNAME/darnit.git (push)
-upstream  https://github.com/kusari-oss/darnit.git (fetch)
-upstream  https://github.com/kusari-oss/darnit.git (push)
+upstream  https://github.com/darnitdevorg/darnit.git (fetch)
+upstream  https://github.com/darnitdevorg/darnit.git (push)
 ```
 
 ## Install Dependencies

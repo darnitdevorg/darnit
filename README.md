@@ -112,12 +112,12 @@ The tree-sitter discovery pipeline is tuned for **web-service shapes**. What wor
 | Go HTTP service (`net/http`, chi, gorilla) | Thin — HTTP route registration + `sql.Open` only |
 | Go CLI built on [`spf13/cobra`](https://github.com/spf13/cobra) | Moderate — command families discovered, STRIDE assigned heuristically by import set; `needs reviewer attention` marker on every finding ([feature 014](specs/014-cobra-threat-model/spec.md)) |
 | YAML / GitHub Actions workflows | Some — overly-broad permissions and similar config issues |
-| Python CLI frameworks (argparse, click, typer) | Not modeled — sibling to the Go cobra work ([#264](https://github.com/kusari-oss/darnit/issues/264)) |
-| Other Go CLI frameworks (urfave/cli, kingpin) / message handlers / gRPC | Not modeled — out of scope for the cobra pass ([#262](https://github.com/kusari-oss/darnit/issues/262)) |
+| Python CLI frameworks (argparse, click, typer) | Not modeled — sibling to the Go cobra work ([#264](https://github.com/darnitdevorg/darnit/issues/264)) |
+| Other Go CLI frameworks (urfave/cli, kingpin) / message handlers / gRPC | Not modeled — out of scope for the cobra pass ([#262](https://github.com/darnitdevorg/darnit/issues/262)) |
 | Crypto/signing **client** libraries (sigstore-python, in-toto) | Out of scope — these call out rather than receive; entry-point queries don't fire |
 | Systems software, daemons, libraries, ML pipelines | Not modeled |
 
-If your project doesn't match a supported shape, the generator will still write a report — but it will likely show "Total findings: 0" because no entry points were discovered. That's a coverage gap on our side, not a clean bill of health. Expanding the query set is [tracked in our issue tracker](https://github.com/kusari-oss/darnit/issues?q=is%3Aissue+threat-model+coverage).
+If your project doesn't match a supported shape, the generator will still write a report — but it will likely show "Total findings: 0" because no entry points were discovered. That's a coverage gap on our side, not a clean bill of health. Expanding the query set is [tracked in our issue tracker](https://github.com/darnitdevorg/darnit/issues?q=is%3Aissue+threat-model+coverage).
 
 ## How to Use Darnit
 

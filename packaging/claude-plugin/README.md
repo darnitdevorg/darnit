@@ -37,7 +37,7 @@ At least one of those must be on `PATH` when Claude Code launches the plugin's M
 
 ```bash
 claude --plugin-url \
-  https://github.com/kusari-oss/darnit/releases/download/v__VERSION__/darnit-claude-plugin-__VERSION__.zip
+  https://github.com/darnitdevorg/darnit/releases/download/v__VERSION__/darnit-claude-plugin-__VERSION__.zip
 ```
 
 (Or the equivalent `claude --plugin-dir ./darnit/` after unzipping locally — useful for development.)
@@ -98,10 +98,10 @@ This plugin targets Claude Code's plugin schema with `.claude-plugin/plugin.json
 
 ## Source
 
-- Plugin source: `packaging/claude-plugin/` in [kusari-oss/darnit](https://github.com/kusari-oss/darnit)
+- Plugin source: `packaging/claude-plugin/` in [darnitdevorg/darnit](https://github.com/darnitdevorg/darnit)
 - Skill source: `packages/darnit/src/darnit/skills/` (same repo)
 - darnit framework: `packages/darnit/`
-- Issue tracker: https://github.com/kusari-oss/darnit/issues
+- Issue tracker: https://github.com/darnitdevorg/darnit/issues
 
 ## License
 

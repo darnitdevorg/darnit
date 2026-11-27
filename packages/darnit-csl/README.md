@@ -1,7 +1,7 @@
 # darnit-csl
 
 Community Specification License (CSL 1.0) compliance for
-[darnit](https://github.com/kusari-oss/darnit).
+[darnit](https://github.com/darnitdevorg/darnit).
 
 It audits — and remediates — the file set the Linux Foundation / Joint
 Development Foundation asks for in a repository that develops a specification

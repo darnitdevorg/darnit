@@ -6,8 +6,8 @@
     "name": "Kusari",
     "email": "info@kusari.dev"
   },
-  "homepage": "https://github.com/kusari-oss/darnit",
-  "repository": "https://github.com/kusari-oss/darnit",
+  "homepage": "https://github.com/darnitdevorg/darnit",
+  "repository": "https://github.com/darnitdevorg/darnit",
   "license": "Apache-2.0",
   "keywords": ["security", "compliance", "openssf", "baseline", "audit"],
   "mcpServers": {

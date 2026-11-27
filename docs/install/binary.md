@@ -16,7 +16,7 @@ Examples assume version `0.1.0` — substitute the version you want.
 
 ```bash
 # macOS arm64
-curl -LO https://github.com/kusari-oss/darnit/releases/download/v0.1.0/darnit-0.1.0-macos-arm64
+curl -LO https://github.com/darnitdevorg/darnit/releases/download/v0.1.0/darnit-0.1.0-macos-arm64
 chmod +x darnit-0.1.0-macos-arm64
 sudo mv darnit-0.1.0-macos-arm64 /usr/local/bin/darnit
 
@@ -33,21 +33,21 @@ If you don't have Python on the host, use the [container image](container.md) or
 
 ## Verify the cosign signature
 
-Every binary asset is signed with cosign keyless OIDC, bound to the canonical `release.yml` workflow in `kusari-oss/darnit`. Download the `.sigstore` bundle alongside the binary:
+Every binary asset is signed with cosign keyless OIDC, bound to the canonical `release.yml` workflow in `darnitdevorg/darnit`. Download the `.sigstore` bundle alongside the binary:
 
 ```bash
-curl -LO https://github.com/kusari-oss/darnit/releases/download/v0.1.0/darnit-0.1.0-macos-arm64.sigstore
+curl -LO https://github.com/darnitdevorg/darnit/releases/download/v0.1.0/darnit-0.1.0-macos-arm64.sigstore
 
 cosign verify-blob \
   --bundle darnit-0.1.0-macos-arm64.sigstore \
-  --certificate-identity-regexp '^https://github\.com/kusari-oss/darnit/\.github/workflows/release\.yml@' \
+  --certificate-identity-regexp '^https://github\.com/darnitdevorg/darnit/\.github/workflows/release\.yml@' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   darnit-0.1.0-macos-arm64
 ```
 
 A passing verification proves:
 - The binary bytes match exactly what was signed.
-- The signer was the `release.yml` workflow in `kusari-oss/darnit`.
+- The signer was the `release.yml` workflow in `darnitdevorg/darnit`.
 - The OIDC issuer was GitHub Actions.
 
 ## SBOM
@@ -57,14 +57,14 @@ Each binary ships with an SPDX-JSON SBOM as a sibling file (`darnit-<...>.sbom.s
 Download the SBOM directly:
 
 ```bash
-curl -LO https://github.com/kusari-oss/darnit/releases/download/v0.1.0/darnit-0.1.0-macos-arm64.sbom.spdx.json
+curl -LO https://github.com/darnitdevorg/darnit/releases/download/v0.1.0/darnit-0.1.0-macos-arm64.sbom.spdx.json
 ```
 
 Verify the attestation via `gh`:
 
 ```bash
 gh attestation verify \
-  --repo kusari-oss/darnit \
+  --repo darnitdevorg/darnit \
   darnit-0.1.0-macos-arm64
 ```
 

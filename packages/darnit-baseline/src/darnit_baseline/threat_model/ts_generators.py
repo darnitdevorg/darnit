@@ -892,7 +892,7 @@ def generate_sarif_threat_model(
                 "tool": {
                     "driver": {
                         "name": "darnit-baseline",
-                        "informationUri": "https://github.com/kusari-oss/darnit",
+                        "informationUri": "https://github.com/darnitdevorg/darnit",
                         "rules": rules,
                     }
                 },

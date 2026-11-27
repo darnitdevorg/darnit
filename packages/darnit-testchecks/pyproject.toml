@@ -40,8 +40,8 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/kusari-oss/darnit"
-Repository = "https://github.com/kusari-oss/darnit"
+Homepage = "https://github.com/darnitdevorg/darnit"
+Repository = "https://github.com/darnitdevorg/darnit"
 
 # Entry points for darnit plugin discovery. `testchecks` uses only built-in
 # step types; `testchecks-steps` is the implementation that registers plugin

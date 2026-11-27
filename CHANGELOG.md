@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Update stale `kusari-oss/darnit` references to `darnitdevorg/darnit` across package metadata manifests, container documentation, install guides, and recovery runbooks, setting canonical Homepage, Repository, and Issues URLs for future PyPI releases (fixes #583).
 - In previewable exec remediations, preview files with uncommitted user changes
   as action `none` with reason `user_changes_present`, and omit files the command
   will not touch when refused, matching what apply does (fixes #543).
