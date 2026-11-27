@@ -59,7 +59,7 @@ from darnit.config.framework_schema import (
 from darnit.config.when_evaluator import evaluate_when
 from darnit.core.logging import get_logger
 from darnit.core.repo_files import within_repository
-from darnit.core.utils import detect_repo_from_git
+from darnit.core.utils import clear_dir_entries_cache, detect_repo_from_git
 from darnit.remediation import git_state, manifest
 from darnit.remediation.plan import Approval, FileChange, PlanItem, content_digest, normalize_repo_path
 
@@ -136,6 +136,7 @@ class RemediationResult:
     # ``approvals`` are the individual approvals the apply used.
     needs_approval: list[str] = field(default_factory=list)
     approvals: list[Approval] = field(default_factory=list)
+    refused: list[str] = field(default_factory=list)
 
 
 class RemediationExecutor:
@@ -183,6 +184,7 @@ class RemediationExecutor:
         item_approver: ItemApprover | None = None,
         host: str | None = None,
         claimed_paths: dict[str, str] | None = None,
+        scratch_path: str | None = None,
     ):
         """Initialize the executor.
 
@@ -252,6 +254,7 @@ class RemediationExecutor:
         self._item_approver = item_approver
         self._granted: dict[str, Approval] = {}
         self._in_git: bool | None = None
+        self.scratch_path = os.path.abspath(scratch_path) if scratch_path else None
 
         # Auto-detect owner/repo if not provided
         if not owner or not repo:
@@ -458,6 +461,7 @@ class RemediationExecutor:
         control_id: str,
         config: RemediationConfig,
         dry_run: bool = True,
+        approve: Collection[str] | None = None,
     ) -> RemediationResult:
         """Preview (``dry_run=True``) or apply a remediation.
 
@@ -471,6 +475,9 @@ class RemediationExecutor:
             control_id: The control ID being remediated
             config: Remediation configuration from TOML
             dry_run: True for plan mode, False for apply mode
+            approve: Optional collection of approved digests from preview.
+                At apply time, any previewable item with changes whose digest
+                is not in ``approve`` is refused with ``stale_preview``.
 
         Returns:
             RemediationResult with execution outcome
@@ -497,6 +504,28 @@ class RemediationExecutor:
                     details=planned.details,
                     plan=planned.plan,
                 )
+            if not dry_run and approve is not None:
+                unapproved_items = [
+                    item
+                    for item in planned.plan
+                    if item.previewable and item.changes and not self._item_is_approved(item, approve)
+                ]
+                if unapproved_items:
+                    refused_digests = [item.digest for item in unapproved_items]
+                    return RemediationResult(
+                        success=False,
+                        message=(
+                            f"Plan item for {control_id} ({unapproved_items[0].step}) differs from approved "
+                            f"preview (digest {unapproved_items[0].digest}); re-run preview"
+                        ),
+                        control_id=control_id,
+                        remediation_type="handler_pipeline",
+                        dry_run=False,
+                        changed=False,
+                        refused=refused_digests,
+                        details={"refused": refused_digests, "reason": "stale_preview"},
+                        plan=planned.plan,
+                    )
             if not dry_run and (unapproved := self._unapproved(planned.plan, config.safe)):
                 return RemediationResult(
                     success=False,
@@ -523,20 +552,47 @@ class RemediationExecutor:
                 confirmation_required=needed.key,
             )
         if not dry_run:
-            from darnit.core.utils import clear_dir_entries_cache
-
             clear_dir_entries_cache()
             result.plan = planned.plan
             result.approvals = self._used_approvals(planned.plan)
 
         if result.success and config.project_update and config.project_update.set:
             self._project_update(control_id, config.project_update, result)
-            if not dry_run:
-                from darnit.core.utils import clear_dir_entries_cache
-
-                clear_dir_entries_cache()
+            clear_dir_entries_cache()
 
         return result
+
+    def _item_is_approved(self, item: PlanItem, approvals: Collection[str] | None = None) -> bool:
+        approved = set(approvals) if approvals is not None else self._approved_digests()
+        if item.digest in approved:
+            return True
+        if item.change_sets:
+            if self.platform is not None and self.platform.approver is not None:
+                return True
+            op_change_sets = [cs for cs in item.change_sets if cs.get("operations")]
+            if op_change_sets and all(cs["digest"] in approved for cs in op_change_sets):
+                return True
+        if item.file_changes:
+            for change in item.file_changes:
+                if change.action == "create" and change.after_digest:
+                    enhancement_step = f"llm_enhance[{change.path}] of {change.after_digest}"
+                    enhancement_item = PlanItem(
+                        control_id=item.control_id,
+                        step=enhancement_step,
+                        previewable=False,
+                        requires_individual_approval=True,
+                    )
+                    if enhancement_item.digest in approved:
+                        return True
+        return False
+
+    def _simulate_write_to_scratch(self, change: FileChange) -> None:
+        if self.scratch_path and change.changes and change.content is not None:
+            root = os.path.realpath(self.scratch_path)
+            full_path = os.path.join(root, change.path)
+            if within_repository(root, full_path):
+                os.makedirs(os.path.dirname(full_path), exist_ok=True)
+                _write_bytes_atomic(full_path, change.content.encode("utf-8"))
 
     def _approved_digests(self) -> frozenset[str]:
         platform = self.platform.approvals if self.platform is not None else frozenset()
@@ -610,8 +666,9 @@ class RemediationExecutor:
         self, control_id: str, project_update: ProjectUpdateRemediationConfig, result: RemediationResult
     ) -> None:
         try:
+            tree = self.scratch_path or self.local_path
             changes = plan_project_update(
-                self.local_path, project_update.set, create=project_update.create_if_missing
+                tree, project_update.set, create=project_update.create_if_missing
             )
             if result.dry_run:
                 changes = [self._planned_write(c) for c in changes]
@@ -631,6 +688,10 @@ class RemediationExecutor:
                 PlanItem(control_id=control_id, step="project_update", file_changes=changes, previewable=True)
             )
             result.file_changes.extend(changes)
+            if self.scratch_path:
+                for c in changes:
+                    self._simulate_write_to_scratch(c)
+                clear_dir_entries_cache()
             return
 
         written = False
@@ -811,8 +872,9 @@ class RemediationExecutor:
     def _reference_changes(self, reference: str, path: str) -> tuple[list[FileChange], str | None]:
         from darnit.config.resolver import render_reference_update
 
-        rendered, kept = render_reference_update(self.local_path, reference, path)
-        return _rendered_file_changes(self.local_path, rendered), kept
+        tree = self.scratch_path or self.local_path
+        rendered, kept = render_reference_update(tree, reference, path)
+        return _rendered_file_changes(tree, rendered), kept
 
     def _planned_references(self, changes: list[FileChange], entry: dict[str, Any]) -> list[FileChange]:
         """The ``.project/`` changes that would record each planned create's ``project_reference``."""
@@ -830,6 +892,10 @@ class RemediationExecutor:
                 kept = f"{', '.join(blocked)} has uncommitted changes"
             planned += references
             entry["project_reference"] = _reference_note(change, kept)
+            if self.scratch_path:
+                for ref_change in references:
+                    self._simulate_write_to_scratch(ref_change)
+                clear_dir_entries_cache()
         return planned
 
     def _record_reference(self, created: FileChange, entry: dict[str, Any]) -> list[FileChange]:
@@ -1006,8 +1072,9 @@ class RemediationExecutor:
         )
 
         registry = get_sieve_handler_registry()
+        tree = self.scratch_path or self.local_path
         handler_ctx = HandlerContext(
-            local_path=self.local_path,
+            local_path=tree,
             owner=self.owner or "",
             repo=self.repo or "",
             default_branch=self.default_branch,
@@ -1209,6 +1276,10 @@ class RemediationExecutor:
                     result_entry["message"] = f"Not written: {e}"
                     all_success = False
                     changes = []
+                if self.scratch_path:
+                    for c in changes:
+                        self._simulate_write_to_scratch(c)
+                    clear_dir_entries_cache()
                 previewed = not _is_exec(handler_info) or handler_result.status == HandlerResultStatus.PASS
                 plan_item(
                     step,

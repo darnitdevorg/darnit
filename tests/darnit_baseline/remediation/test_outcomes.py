@@ -237,7 +237,9 @@ def test_run_sieve_audit_without_cache_write(repo: Path) -> None:
     cache_file = audit_cache._get_cache_dir(str(repo)) / audit_cache.CACHE_FILENAME
     cache_file.unlink(missing_ok=True)
 
-    audit.run_sieve_audit(OWNER, REPO, str(repo), "main", controls=_specs(), framework_name="openssf-baseline", write_cache=False)
+    audit.run_sieve_audit(
+        OWNER, REPO, str(repo), "main", controls=_specs(), framework_name="openssf-baseline", write_cache=False
+    )
     assert not cache_file.exists()
 
     # cache_filtered=False: a caller that passes its own controls says whether
@@ -341,3 +343,31 @@ def test_changed_outcome_lists_files_kept_for_user_changes(repo: Path, monkeypat
     changes = {c["path"]: (c["action"], c["reason"]) for c in outcome["file_changes"]}
     assert changes == {"NEW.md": ("create", None), "SECURITY.md": ("none", "user_changes_present")}
     assert (repo / "SECURITY.md").read_text(encoding="utf-8") == "# Policy being edited\n"
+
+
+@pytest.mark.integration
+def test_changed_plan_since_preview_reports_unchanged_stale_preview(repo: Path) -> None:
+    preview_output = orchestrator.remediate_audit_findings(local_path=str(repo), owner=OWNER, repo=REPO, dry_run=True)
+    preview_run = _run_block(preview_output)
+
+    # Approve everything EXCEPT T-CONTRIB has a stale/different digest approved
+    stale_approvals = [
+        item["digest"]
+        if item["control_id"] != "T-CONTRIB"
+        else "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        for item in preview_run["plan"]
+    ]
+
+    output = orchestrator.remediate_audit_findings(
+        local_path=str(repo),
+        owner=OWNER,
+        repo=REPO,
+        dry_run=False,
+        approve=stale_approvals,
+    )
+    run = _run_block(output)
+    contrib = next(o for o in run["outcomes"] if o["control_id"] == "T-CONTRIB")
+    assert contrib["kind"] == "unchanged"
+    assert contrib["reason"] == "stale_preview"
+    assert not (repo / "CONTRIBUTING.md").exists()
+

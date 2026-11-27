@@ -10,6 +10,7 @@ iterates *controls*, not hardcoded categories.
 
 import json
 import os
+import tempfile
 from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from datetime import datetime
@@ -319,6 +320,8 @@ def _apply_control_remediation(
     run_id: str | None = None,
     scheduled_paths: Collection[str] | None = None,
     claimed_paths: dict[str, str] | None = None,
+    approve: Collection[str] | None = None,
+    scratch_path: str | None = None,
 ) -> dict[str, Any]:
     """Apply remediation for a single control, driven entirely by TOML.
 
@@ -337,6 +340,10 @@ def _apply_control_remediation(
         scheduled_paths: Files this remediation run will create. Templates may
             link to them; a path that is neither here nor already in the tree
             is not linked.
+        approve: Digests of the previewed change sets (and plan items) the
+            person approved
+        scratch_path: In preview mode, temporary working tree accumulating
+            prior controls' planned writes without touching local_path
 
     Returns:
         Dict with control_id, status, and result details
@@ -413,6 +420,8 @@ def _apply_control_remediation(
             run_id=run_id,
             scheduled_paths=scheduled_paths,
             claimed_paths=claimed_paths,
+            approve=approve,
+            scratch_path=scratch_path,
         )
         # Tag unsafe remediations for review
         if not remediation_config.safe:
@@ -455,6 +464,8 @@ def _apply_declarative_remediation(
     run_id: str | None = None,
     scheduled_paths: Collection[str] | None = None,
     claimed_paths: dict[str, str] | None = None,
+    approve: Collection[str] | None = None,
+    scratch_path: str | None = None,
 ) -> dict[str, Any]:
     """Apply a declarative remediation from TOML config.
 
@@ -552,6 +563,8 @@ def _apply_declarative_remediation(
             run_id=run_id,
             platform=platform,
             claimed_paths=claimed_paths,
+            approvals=approve or [],
+            scratch_path=scratch_path,
         )
 
         # Execute the remediation
@@ -559,6 +572,7 @@ def _apply_declarative_remediation(
             control_id=control_id,
             config=remediation_config,
             dry_run=dry_run,
+            approve=approve,
         )
 
         if result.confirmation_required:
@@ -594,6 +608,20 @@ def _apply_declarative_remediation(
                 "declarative": True,
                 "plan": plan_items,
                 "references": _unrecorded_references(result.details),
+            }
+
+        if result.refused:
+            return {
+                "control_id": control_id,
+                "status": "unchanged",
+                "reason": "stale_preview",
+                "description": description,
+                "controls": [control_id],
+                "result": result.message,
+                "message": result.message,
+                "declarative": True,
+                "plan": plan_items,
+                "refused": list(result.refused),
             }
 
         if result.needs_approval:
@@ -1338,32 +1366,50 @@ def run_remediation(
     # ------------------------------------------------------------------
     # Apply remediations
     # ------------------------------------------------------------------
-    scheduled_paths = _scheduled_file_create_paths(framework, remediable_ids, skipped=honored_claims)
-    results = []
-    claimed_paths: dict[str, str] = {}  # one creation per path across the controls of this run (#755)
-    for control_id in remediable_ids:
-        if control_id in honored_claims:
-            results.append({
-                "control_id": control_id,
-                "status": "skipped",
-                "description": framework.controls[control_id].description or control_id,
-                "message": f"Not applicable (asserted, honored): {honored_claims[control_id]}",
-            })
-            continue
-        result = _apply_control_remediation(
-            control_id=control_id,
-            local_path=local_path,
-            owner=owner,
-            repo=repo,
-            dry_run=dry_run,
-            enhance_with_llm=enhance_with_llm,
-            target=target,
-            platform=session,
-            run_id=None if dry_run else run_id,
-            scheduled_paths=scheduled_paths,
-            claimed_paths=claimed_paths,
-        )
-        results.append(result)
+    scratch_dir: tempfile.TemporaryDirectory | None = None
+    scratch_path: str | None = None
+    if dry_run:
+        from darnit.remediation import git_state, working_tree
+
+        scratch_dir = tempfile.TemporaryDirectory(prefix=".darnit-preview-")
+        scratch_path = scratch_dir.name
+        try:
+            working_tree.copy_files(local_path, scratch_path, working_tree.visible_files(local_path))
+        except (git_state.GitStateError, OSError) as e:
+            logger.warning("Could not populate preview scratch tree: %s", e)
+
+    try:
+        scheduled_paths = _scheduled_file_create_paths(framework, remediable_ids, skipped=honored_claims)
+        results = []
+        claimed_paths: dict[str, str] = {}  # one creation per path across the controls of this run (#755)
+        for control_id in remediable_ids:
+            if control_id in honored_claims:
+                results.append({
+                    "control_id": control_id,
+                    "status": "skipped",
+                    "description": framework.controls[control_id].description or control_id,
+                    "message": f"Not applicable (asserted, honored): {honored_claims[control_id]}",
+                })
+                continue
+            result = _apply_control_remediation(
+                control_id=control_id,
+                local_path=local_path,
+                owner=owner,
+                repo=repo,
+                dry_run=dry_run,
+                enhance_with_llm=enhance_with_llm,
+                target=target,
+                platform=session,
+                run_id=None if dry_run else run_id,
+                scheduled_paths=scheduled_paths,
+                claimed_paths=claimed_paths,
+                approve=approve,
+                scratch_path=scratch_path,
+            )
+            results.append(result)
+    finally:
+        if scratch_dir is not None:
+            scratch_dir.cleanup()
 
     # ------------------------------------------------------------------
     # Outcomes: re-check what changed, then invalidate the stale cache
@@ -1430,13 +1476,15 @@ def _reclassify_stale_previews(results: list[dict[str, Any]], approvals: Collect
     for r in results:
         platform_results = r.get("platform") or []
         stale = [p for p in platform_results if p["kind"] == "unchanged" and p.get("reason") == "stale_preview"]
-        if not stale:
-            continue
-        for p in stale:
-            p["kind"], p["reason"] = "needs_approval", None
-        if r.get("status") == "unchanged":
-            r["status"] = _platform_status(platform_results, bool(_written(r))) or r["status"]
-            r["result"] = _platform_summary(platform_results)
+        if stale:
+            for p in stale:
+                p["kind"], p["reason"] = "needs_approval", None
+            if r.get("status") == "unchanged":
+                r["status"] = _platform_status(platform_results, bool(_written(r))) or r["status"]
+                r["result"] = _platform_summary(platform_results)
+        if r.get("declarative") and r.get("status") == "unchanged" and r.get("reason") == "stale_preview":
+            r["status"] = "needs_approval"
+            r["reason"] = None
 
 
 def _run_approvals(platform_approvals: list[Approval], results: list[dict[str, Any]]) -> list[Approval]:
@@ -1539,6 +1587,8 @@ def _settled_outcome(r: dict[str, Any]) -> RemediationOutcome | None:
         for h in r.get("handlers", [])
         if h.get("status") != "pass"
     ]
+    if r.get("reason"):
+        reasons.append(r["reason"])
     return RemediationOutcome(
         control_id=control_id,
         kind="unchanged",
@@ -1826,6 +1876,8 @@ def _outcome_lines(run: RemediationRun, results: list[dict[str, Any]]) -> list[s
             md.append(f"- **Awaiting:** {_AWAITING[outcome.pending_kind]}")
         if outcome.reason and outcome.kind != "manual":
             md.append(f"- **Reason:** {outcome.reason}")
+        if r.get("refused") and r.get("message"):
+            md.append(f"- {r['message']}")
         for item in r.get("plan", []):
             if item["digest"] in r.get("enhancement_needs_approval", []):
                 md += _plan_item_lines(PlanItem.model_validate(item))

@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- At apply time, verify that every previewable item's fresh plan digest was
+  approved, refusing any item whose plan diverged with an `unchanged` outcome and
+  reason `stale_preview`, preventing apply from writing unreviewed content;
+  multi-control preview runs plan against a scratch tree so earlier planned
+  changes are reflected in subsequent controls without touching the repository
+  (fixes #699).
 - In previewable exec remediations, preview files with uncommitted user changes
   as action `none` with reason `user_changes_present`, and omit files the command
   will not touch when refused, matching what apply does (fixes #543).
