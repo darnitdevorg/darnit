@@ -1091,17 +1091,30 @@ class TestLlmEvalHandler:
         content = list(consultation["file_contents"].values())[0]
         assert "security@example.com" in content
 
-    def test_files_to_include_skips_missing_files(self, ctx):
-        """Missing files should be silently skipped."""
+    def test_files_to_include_skips_missing_files(self, ctx, tmp_path):
+        """Missing files are skipped; the files that exist are given."""
+        (tmp_path / "README.md").write_text("# Readme")
+        result = llm_eval_handler(
+            {"prompt": "Evaluate", "files_to_include": ["DOES_NOT_EXIST.md", "README.md"]},
+            ctx,
+        )
+        consultation = result.details["consultation_request"]
+        assert consultation["file_contents"] == {"README.md": "# Readme"}
+
+    def test_no_existing_file_is_not_a_consultation(self, ctx):
+        """With none of its files present there is no document to evaluate (#485)."""
         result = llm_eval_handler(
             {"prompt": "Evaluate", "files_to_include": ["DOES_NOT_EXIST.md"]},
             ctx,
         )
-        consultation = result.details["consultation_request"]
-        assert consultation["file_contents"] == {}
+        assert "consultation_request" not in result.details
+        assert result.status == HandlerResultStatus.INCONCLUSIVE
+        assert result.evidence["no_document"] is True
+        assert result.evidence["files_to_include"] == ["DOES_NOT_EXIST.md"]
+        assert "not asked" in result.message
 
     def test_files_to_include_truncates_large_files(self, ctx, tmp_path):
-        """Files over 10KB should be truncated."""
+        """Files over 10,000 characters are cut, and the cut is marked and recorded (#485)."""
         big_file = tmp_path / "big.txt"
         big_file.write_text("x" * 20000)
 
@@ -1109,8 +1122,20 @@ class TestLlmEvalHandler:
             {"prompt": "Evaluate", "files_to_include": ["big.txt"]},
             ctx,
         )
-        content = result.details["consultation_request"]["file_contents"]["big.txt"]
-        assert len(content) == 10000
+        consultation = result.details["consultation_request"]
+        content = consultation["file_contents"]["big.txt"]
+        assert content.startswith("x" * 10000)
+        assert content[10000:] == "\n\n[darnit: file truncated here; the first 10,000 of 20,000 characters are shown]\n"
+        assert consultation["truncated_files"] == {"big.txt": 20000}
+        assert result.evidence["truncated_files"] == {"big.txt": 20000}
+
+    def test_files_within_the_limit_are_not_marked(self, ctx, tmp_path):
+        (tmp_path / "small.txt").write_text("x" * 10000)
+        result = llm_eval_handler({"prompt": "Evaluate", "files_to_include": ["small.txt"]}, ctx)
+        consultation = result.details["consultation_request"]
+        assert consultation["file_contents"]["small.txt"] == "x" * 10000
+        assert "truncated_files" not in consultation
+        assert "truncated_files" not in result.evidence
 
     def test_files_to_include_max_five_files(self, ctx, tmp_path):
         """At most 5 files should be read."""
@@ -1124,7 +1149,20 @@ class TestLlmEvalHandler:
             },
             ctx,
         )
-        assert len(result.details["consultation_request"]["file_contents"]) == 5
+        consultation = result.details["consultation_request"]
+        assert len(consultation["file_contents"]) == 5
+        assert consultation["omitted_files"] == ["file5.txt", "file6.txt", "file7.txt"]
+        assert result.evidence["omitted_files"] == ["file5.txt", "file6.txt", "file7.txt"]
+
+    def test_resolved_files_beyond_five_are_listed_as_omitted(self, ctx, tmp_path):
+        """A $RESOLVED_FILES fan-out past the cap is not dropped silently (#485)."""
+        for i in range(7):
+            (tmp_path / f"doc{i}.md").write_text(f"doc {i}")
+        ctx.gathered_evidence["resolved_files"] = [str(tmp_path / f"doc{i}.md") for i in range(7)]
+        result = llm_eval_handler({"prompt": "Evaluate", "files_to_include": ["$RESOLVED_FILES"]}, ctx)
+        consultation = result.details["consultation_request"]
+        assert sorted(consultation["file_contents"]) == [f"doc{i}.md" for i in range(5)]
+        assert consultation["omitted_files"] == ["doc5.md", "doc6.md"]
 
     def test_files_to_include_empty_by_default(self, ctx):
         """When files_to_include is absent, file_contents should be empty."""
@@ -1205,12 +1243,14 @@ class TestLlmEvalHandler:
         assert len(result.details["consultation_request"]["file_contents"]) == 5
 
     def test_no_fallback_when_gathered_evidence_has_no_resolved_files(self, ctx):
-        """Absent `resolved_files` is a no-op, not an error."""
+        """Absent `resolved_files` is not an error; with no document there is no consultation."""
         result = llm_eval_handler(
             {"prompt": "Evaluate", "files_to_include": ["$FOUND_FILE"]},
             ctx,
         )
-        assert result.details["consultation_request"]["file_contents"] == {}
+        assert "consultation_request" not in result.details
+        assert result.status == HandlerResultStatus.INCONCLUSIVE
+        assert result.evidence["no_document"] is True
 
     def test_files_to_include_skips_case_mismatched_paths(self, tmp_path, ctx):
         """Case mismatched paths in files_to_include are not loaded (issue #645)."""
@@ -1223,10 +1263,10 @@ class TestLlmEvalHandler:
             {"prompt": "Evaluate", "files_to_include": ["docs/architecture.md"]},
             ctx,
         )
-        fc = result.details["consultation_request"]["file_contents"]
-        assert "docs/architecture.md" not in fc
-        assert "docs/ARCHITECTURE.md" not in fc
-        assert fc == {}
+        # Neither spelling is loaded, so there is no document to evaluate.
+        assert "consultation_request" not in result.details
+        assert result.status == HandlerResultStatus.INCONCLUSIVE
+        assert result.evidence["no_document"] is True
 
     def test_files_to_include_deduplicates_duplicate_or_alias_files(self, tmp_path, ctx):
         """Duplicate references to same file are only loaded once (issue #645)."""

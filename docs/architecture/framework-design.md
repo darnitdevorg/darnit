@@ -1,8 +1,8 @@
 # Darnit Framework Design Specification
 
-> **Version**: 1.0.0-alpha.32
+> **Version**: 1.0.0-alpha.33
 > **Status**: Authoritative
-> **Last Updated**: 2026-11-26
+> **Last Updated**: 2026-11-27
 
 This specification defines the authoritative design of the Darnit framework, including the sieve orchestrator, TOML schema, built-in pass types, remediation actions, and plugin protocol.
 
@@ -629,13 +629,23 @@ confidence_threshold = 0.8
 | `analysis_hints` | `list[str]` | Hints to guide analysis |
 | `confidence_threshold` | `float` | Passed to the model with the consultation. Since feature 041 a judgment's confidence is recorded with it but is never a decision input: a judgment never concludes a control. |
 
-**`files_to_include` resolution**: The handler MUST resolve `$FOUND_FILE` entries by looking up `found_file` in `context.gathered_evidence`. Each resolved file path MUST be read (up to 10KB per file, max 5 files) and included as `file_contents` in the `consultation_request`. File paths that are not absolute MUST be resolved relative to `context.local_path`. Files that cannot be read MUST be silently skipped. A file that resolves outside the repository MUST NOT be read and is recorded in the result's `skipped_outside_repository` (section 3.0.4). Files to include are resolved case-exactly on every filesystem, and duplicate paths resolving to the same physical file are deduplicated before reading. Similarly, `llm_extract` resolves candidate files case-exactly on every filesystem and deduplicates physical files before gathering content.
+**`files_to_include` resolution**: The handler MUST resolve `$FOUND_FILE` entries by looking up `found_file` in `context.gathered_evidence`. Each resolved file path MUST be read and included as `file_contents` in the `consultation_request`, at most 5 files, each cut to 10,000 characters (#485). A cut file's text MUST end with a marker saying how many of its characters are shown, and the file MUST be listed with its full length in `truncated_files`, in the consultation request and in the result's evidence. Existing files past the fifth MUST be listed in `omitted_files` the same way, never dropped silently. `llm_extract` cuts and marks file text the same way. File paths that are not absolute MUST be resolved relative to `context.local_path`. Files that cannot be read MUST be silently skipped. A file that resolves outside the repository MUST NOT be read and is recorded in the result's `skipped_outside_repository` (section 3.0.4). Files to include are resolved case-exactly on every filesystem, and duplicate paths resolving to the same physical file are deduplicated before reading. Similarly, `llm_extract` resolves candidate files case-exactly on every filesystem and deduplicates physical files before gathering content.
+
+**No document** (#485): when the step names `files_to_include` and none of them (nor the `resolved_files` fallback) is read, there is nothing to evaluate. The handler MUST return INCONCLUSIVE without a `consultation_request`, with evidence `no_document = true` and the `files_to_include` it looked for, so the model is not asked about a document it is not given and evaluation continues with the next step. A step that names no files still consults with the gathered evidence alone.
 
 **Ceiling**: `{}`. The handler returns INCONCLUSIVE with a `consultation_request`; with `stop_on_llm` the control becomes `PENDING` with `pending.kind = "llm_judgment"` (section 5.4). A model judgment never concludes PASS. No promotion to conclude PASS exists for a model judgment.
 
 **Judged content and evidence digest.** The content a judgment is checked against is the step's `file_contents` (the files it read, as capped above). The evidence digest is `sha256:` followed by the SHA-256 of a canonical JSON encoding of that content together with the step's rubric (`prompt` and `analysis_hints`), so a confirmation lapses when either the files or the rubric change. Other gathered evidence (earlier steps' outputs, other controls' statuses) is not part of the digest.
 
 **Citations.** A judgment carries `cited_evidence`: verbatim excerpts of the judged content. An excerpt is found when, after collapsing every run of whitespace to one space in both, it occurs in one of the judged files. A positive judgment MUST cite at least one excerpt. Any cited excerpt that is not found makes the judgment invalid, whatever its verdict.
+
+#### Scenario: None of the files exists
+- **WHEN** an `llm_eval` step has `files_to_include = ["SECURITY.md", "README.md"]` and neither file exists
+- **THEN** the step MUST return INCONCLUSIVE without a `consultation_request`, and no model judgment is requested for it
+
+#### Scenario: Large file
+- **WHEN** a file named in `files_to_include` has 20,000 characters
+- **THEN** its first 10,000 characters MUST be given, followed by a marker that the file was cut, and `truncated_files` MUST map its path to 20000
 
 #### Scenario: Positive judgment
 - **WHEN** a model judgment says the evidence satisfies the control
@@ -2680,6 +2690,7 @@ The following requirements have been superseded: by the handler dispatch archite
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.0.0-alpha.33 | 2026-11-27 | `llm_eval` does not request a consultation when none of the files it names exists; a file cut to 10,000 characters is marked in its text and listed in `truncated_files`, and files past the fifth are listed in `omitted_files`, for `llm_eval` and `llm_extract` (Section 3.5; #485) |
 | 1.0.0-alpha.32 | 2026-11-26 | One creation per path in a remediation run: a later control planning a path another control creates reports `created_by_other_control`, in preview and apply alike (Section 15.2; `FileChange` reasons) |
 | 1.0.0-alpha.31 | 2026-11-24 | `gh_api` step setting `auth_fields`: when an HTTP 2xx response omits any declared field, reports ERROR with error class `auth` naming the elevated permission requirement (Section 3.8; #753) |
 | 1.0.0-alpha.30 | 2026-11-24 | An `exec` remediation step previewed in a scratch copy marks files that have uncommitted user changes in the checkout with `action = "none"` and `reason = "user_changes_present"`, reports that the command will not run, and omits files the command will not touch, matching what the apply does (Section 4.4; #543) |

@@ -1174,19 +1174,25 @@ def llm_eval_handler(config: dict[str, Any], context: HandlerContext) -> Handler
             - ``"$RESOLVED_FILES"`` -> `gathered_evidence["resolved_files"]`
               (list from a preceding `regex`/`pattern` pass). Fans out to
               multiple candidates from a single sentinel (issue #402).
-            Missing files are silently skipped. Capped at 5 file contents
-            total; each capped at 10000 bytes.
+            Missing files are skipped. At most ``CONSULTATION_MAX_FILES``
+            files are given; further existing files are listed in
+            ``omitted_files``. Each is cut to ``CONSULTATION_MAX_CHARS``
+            characters with a marker in the text, and listed with its full
+            length in ``truncated_files`` (#485).
 
             When `files_to_include` produces no file contents at all
             (empty $FOUND_FILE, missing literal paths, and no
             $RESOLVED_FILES sentinel), the handler automatically falls
-            back to `gathered_evidence["resolved_files"]` so a
-            `pattern -> llm_eval` shape without a `file_exists` sibling
-            never ships an empty consultation (issue #402).
+            back to `gathered_evidence["resolved_files"]` (issue #402).
 
     Note: This handler returns INCONCLUSIVE with a consultation request in the details,
-    since actual LLM invocation happens at the MCP server level.
+    since actual LLM invocation happens at the MCP server level. When the
+    step names files and none of them exists, there is no document to
+    evaluate: it returns INCONCLUSIVE without a consultation request, so the
+    model is not asked about a document it is not given (#485).
     """
+    from darnit.core.llm_step import CONSULTATION_MAX_FILES, bound_file_text
+
     prompt = config.get("prompt", "")
     if not prompt:
         return HandlerResult(
@@ -1201,11 +1207,13 @@ def llm_eval_handler(config: dict[str, Any], context: HandlerContext) -> Handler
     # Literal paths are opened directly; missing files are silently skipped.
     files_to_include = config.get("files_to_include", [])
     file_contents: dict[str, str] = {}
+    truncated: dict[str, int] = {}
+    omitted: list[str] = []
     skipped: list[str] = []
     seen_file_ids: set[tuple[int, int] | str] = set()
 
     def _read(resolved: str) -> None:
-        if not resolved or len(file_contents) >= 5:
+        if not resolved:
             return
         cand = os.path.join(context.local_path, resolved) if not os.path.isabs(resolved) else resolved
         if not os.path.lexists(cand) or not _skip_outside([cand], context, skipped):
@@ -1217,14 +1225,19 @@ def llm_eval_handler(config: dict[str, Any], context: HandlerContext) -> Handler
         if file_id in seen_file_ids:
             return
         seen_file_ids.add(file_id)
+        rel = os.path.relpath(full, context.local_path).replace(os.sep, "/")
+        if len(file_contents) >= CONSULTATION_MAX_FILES:
+            omitted.append(rel)
+            return
         try:
             with open_in_repository(context.local_path, full, encoding="utf-8", errors="ignore") as fh:
-                rel = os.path.relpath(full, context.local_path).replace(os.sep, "/")
-                file_contents[rel] = fh.read()[:10000]
+                file_contents[rel], original = bound_file_text(fh.read())
         except OSError:
-            pass
+            return
+        if original is not None:
+            truncated[rel] = original
 
-    for f in files_to_include[:5]:
+    for f in files_to_include:
         if f == "$FOUND_FILE":
             _read(context.gathered_evidence.get("found_file", ""))
         elif f == "$RESOLVED_FILES":
@@ -1242,20 +1255,33 @@ def llm_eval_handler(config: dict[str, Any], context: HandlerContext) -> Handler
         for candidate in context.gathered_evidence.get("resolved_files", []) or []:
             _read(candidate)
 
+    evidence: dict[str, Any] = {}
+    if skipped:
+        evidence["skipped_outside_repository"] = skipped
+    if files_to_include and not file_contents:
+        return HandlerResult(
+            status=HandlerResultStatus.INCONCLUSIVE,
+            message="No document to evaluate: none of the files this step reads exists; the model was not asked",
+            evidence={**evidence, "files_to_include": list(files_to_include), "no_document": True},
+        )
+
+    consultation: dict[str, Any] = {
+        "prompt": prompt,
+        "control_id": context.control_id,
+        "confidence_threshold": config.get("confidence_threshold", 0.8),
+        "analysis_hints": config.get("analysis_hints", []),
+        "gathered_evidence": context.gathered_evidence,
+        "file_contents": file_contents,
+    }
+    if truncated:
+        consultation["truncated_files"] = evidence["truncated_files"] = truncated
+    if omitted:
+        consultation["omitted_files"] = evidence["omitted_files"] = omitted
     return HandlerResult(
         status=HandlerResultStatus.INCONCLUSIVE,
         message="LLM consultation requested",
-        evidence={"skipped_outside_repository": skipped} if skipped else {},
-        details={
-            "consultation_request": {
-                "prompt": prompt,
-                "control_id": context.control_id,
-                "confidence_threshold": config.get("confidence_threshold", 0.8),
-                "analysis_hints": config.get("analysis_hints", []),
-                "gathered_evidence": context.gathered_evidence,
-                "file_contents": file_contents,
-            },
-        },
+        evidence=evidence,
+        details={"consultation_request": consultation},
     )
 
 
@@ -1284,6 +1310,8 @@ def llm_extract_handler(config: dict[str, Any], context: HandlerContext) -> Hand
     """
     import glob as globmod
 
+    from darnit.core.llm_step import bound_file_text
+
     prompt = config.get("prompt", "")
     if not prompt:
         return HandlerResult(
@@ -1294,6 +1322,7 @@ def llm_extract_handler(config: dict[str, Any], context: HandlerContext) -> Hand
     # Resolve files to include (bounded).
     globs = config.get("files", [])
     file_contents: dict[str, str] = {}
+    truncated: dict[str, int] = {}
     skipped: list[str] = []
     seen_file_ids: set[tuple[int, int] | str] = set()
     for pattern in globs[:5]:  # cap breadth
@@ -1311,9 +1340,11 @@ def llm_extract_handler(config: dict[str, Any], context: HandlerContext) -> Hand
             try:
                 with open_in_repository(context.local_path, m, encoding="utf-8", errors="ignore") as fh:
                     rel = os.path.relpath(m, context.local_path).replace(os.sep, "/")
-                    file_contents[rel] = fh.read()[:10000]
+                    file_contents[rel], original = bound_file_text(fh.read())
             except OSError:
                 continue
+            if original is not None:
+                truncated[rel] = original
 
     # Feature 026: also emit `consultation_request` so the sieve's
     # PENDING (llm_judgment) branch triggers when a driver runs with stop_on_llm=True.
@@ -1326,6 +1357,7 @@ def llm_extract_handler(config: dict[str, Any], context: HandlerContext) -> Hand
         "target_key": config.get("target_key"),
         "file_contents": file_contents,
         "gathered_evidence": context.gathered_evidence,
+        **({"truncated_files": truncated} if truncated else {}),
     }
     return HandlerResult(
         status=HandlerResultStatus.INCONCLUSIVE,
@@ -1334,6 +1366,7 @@ def llm_extract_handler(config: dict[str, Any], context: HandlerContext) -> Hand
             "llm_extract_prompt": prompt,
             "llm_extract_files_gathered": sorted(file_contents.keys()),
             **({"skipped_outside_repository": skipped} if skipped else {}),
+            **({"truncated_files": truncated} if truncated else {}),
         },
         details={
             "extraction_request": consultation_payload,
