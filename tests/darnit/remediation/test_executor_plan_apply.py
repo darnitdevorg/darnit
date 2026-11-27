@@ -41,8 +41,8 @@ def repo(tmp_path: Path) -> Path:
     return path
 
 
-def _executor(repo: Path) -> RemediationExecutor:
-    return RemediationExecutor(local_path=str(repo), owner=OWNER, repo=REPO)
+def _executor(repo: Path, **kwargs) -> RemediationExecutor:
+    return RemediationExecutor(local_path=str(repo), owner=OWNER, repo=REPO, **kwargs)
 
 
 def _config(*handlers: HandlerInvocation, **kwargs) -> RemediationConfig:
@@ -92,9 +92,7 @@ class TestPlanMode:
     def test_file_create_plan_carries_the_content(self, repo: Path, data_root: Path) -> None:
         result = _executor(repo).execute("C-1", _config(FILE_CREATE), dry_run=True)
 
-        assert result.plan[0].file_changes == [
-            FileChange(path="SECURITY.md", action="create", content="# Security\n")
-        ]
+        assert result.plan[0].file_changes == [FileChange(path="SECURITY.md", action="create", content="# Security\n")]
 
     def test_yaml_inject_honors_preview(self, repo: Path, data_root: Path) -> None:
         result = _executor(repo).execute("C-1", _config(YAML_INJECT), dry_run=True)
@@ -356,7 +354,9 @@ _DIRTY_TARGETS = {
         PROJECT,
     ),
     "config_project_update": (
-        _config(FILE_CREATE, project_update=ProjectUpdateRemediationConfig(set={"security.policy.path": "SECURITY.md"})),
+        _config(
+            FILE_CREATE, project_update=ProjectUpdateRemediationConfig(set={"security.policy.path": "SECURITY.md"})
+        ),
         PROJECT,
     ),
 }
@@ -580,3 +580,63 @@ def test_every_report_names_the_creating_control():
     assert "  SUPPORT.md: not written (created by OSPS-DO-03.01)" in describe_plan_item(item, [])
     plain = FileChange(path="SUPPORT.md", action="none", reason="already_exists")
     assert plain.not_written_because() == "already_exists"
+
+
+@pytest.mark.unit
+class TestRefuseChangedPreview:
+    """Apply refuses previewable items whose fresh plan differs from the approved preview."""
+
+    def test_executor_with_unapproved_or_diverged_digest_refuses(self, repo: Path) -> None:
+        cfg1 = _config(HandlerInvocation(handler="file_create", path="TEST.md", content="v1\n"))
+        cfg2 = _config(HandlerInvocation(handler="file_create", path="TEST.md", content="v2\n"))
+
+        preview = _executor(repo).execute("C-1", cfg1, dry_run=True)
+        approved_digest = preview.plan[0].digest
+
+        executor = _executor(repo)
+        applied = executor.execute("C-1", cfg2, dry_run=False, approve=[approved_digest])
+        assert applied.success is False
+        assert applied.refused == [applied.plan[0].digest]
+        assert "differs from approved preview" in applied.message
+        assert not (repo / "TEST.md").exists()
+
+    def test_executor_with_matching_approved_digest_succeeds(self, repo: Path) -> None:
+        cfg = _config(HandlerInvocation(handler="file_create", path="TEST.md", content="v1\n"))
+        preview = _executor(repo).execute("C-1", cfg, dry_run=True)
+        approved_digest = preview.plan[0].digest
+
+        executor = _executor(repo)
+        applied = executor.execute("C-1", cfg, dry_run=False, approve=[approved_digest])
+        assert applied.success is True
+        assert applied.refused == []
+        assert (repo / "TEST.md").read_text(encoding="utf-8") == "v1\n"
+
+    def test_scratch_tree_preview_accumulates_writes_without_touching_repo(self, repo: Path, tmp_path: Path) -> None:
+        """In preview mode, a scratch path accumulates planned writes so later controls see them."""
+        scratch = tmp_path / "scratch"
+        scratch.mkdir()
+
+        cfg1 = _config(HandlerInvocation(handler="file_create", path="FIRST.md", content="# First\n"))
+        cfg2 = _config(HandlerInvocation(handler="file_create", path="SECOND.md", content="# Second\n"))
+
+        exec1 = _executor(repo, scratch_path=str(scratch))
+        prev1 = exec1.execute("C-1", cfg1, dry_run=True)
+        assert prev1.success is True
+        assert (scratch / "FIRST.md").read_text(encoding="utf-8") == "# First\n"
+        assert not (repo / "FIRST.md").exists()
+
+        exec2 = _executor(repo, scratch_path=str(scratch))
+        prev2 = exec2.execute("C-2", cfg2, dry_run=True)
+        assert prev2.success is True
+        assert (scratch / "SECOND.md").read_text(encoding="utf-8") == "# Second\n"
+        assert not (repo / "SECOND.md").exists()
+
+    def test_item_whose_fresh_plan_writes_nothing_is_never_stale(self, repo: Path) -> None:
+        """An item whose fresh plan has all action none cannot write unpreviewed content."""
+        (repo / "EXISTING.md").write_text("# Existing\n", encoding="utf-8")
+        cfg = _config(HandlerInvocation(handler="file_create", path="EXISTING.md", content="# New\n"))
+
+        executor = _executor(repo)
+        applied = executor.execute("C-1", cfg, dry_run=False, approve=["other_digest"])
+        assert applied.refused == []
+        assert applied.success is True

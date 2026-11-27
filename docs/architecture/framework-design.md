@@ -1,8 +1,8 @@
 # Darnit Framework Design Specification
 
-> **Version**: 1.0.0-alpha.32
+> **Version**: 1.0.0-alpha.33
 > **Status**: Authoritative
-> **Last Updated**: 2026-11-26
+> **Last Updated**: 2026-11-28
 
 This specification defines the authoritative design of the Darnit framework, including the sieve orchestrator, TOML schema, built-in pass types, remediation actions, and plugin protocol.
 
@@ -976,6 +976,11 @@ Templates and `when` clauses are evaluated in plan mode exactly as in apply mode
 - **WHEN** the `generate_threat_model` remediation is previewed and then applied on the same UTC date with no intervening change
 - **THEN** its `PlanItem` MUST have `previewable = True`
 - **AND** the files the apply writes MUST equal the files the preview listed
+
+#### Scenario: Changed previewable plan is refused at apply
+- **WHEN** an apply follows a preview and a previewable item's fresh plan differs from the previewed one
+- **THEN** the executor MUST refuse the item and write nothing for that control
+- **AND** the control's outcome MUST be `unchanged` with reason `stale_preview`
 
 #### Scenario: Target file has uncommitted user changes
 - **WHEN** a planned `FileChange` targets a path with uncommitted user changes
@@ -2302,8 +2307,8 @@ A person approves by digest: an apply call carries the approved digests (`approv
 - **AND** the apply MUST write the file once, with DO-03.01's content, and report the other two the same way as the preview
 
 #### Scenario: Stale preview
-- **WHEN** a person approved a change set's digest and the target's settings changed before the apply
-- **THEN** darnit MUST write nothing for that change set
+- **WHEN** a person approved a change set's digest and the target's settings changed before the apply, or when an apply follows a preview and a previewable item's fresh plan differs from the previewed plan
+- **THEN** darnit MUST write nothing for that item or control
 - **AND** the outcome MUST be `unchanged` with reason `stale_preview`
 
 #### Scenario: Approval of another control's item
@@ -2680,6 +2685,7 @@ The following requirements have been superseded: by the handler dispatch archite
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.0.0-alpha.33 | 2026-11-28 | Multi-control remediation preview runs plan against a scratch tree reflecting earlier controls' planned changes; at apply time, previewable items whose fresh plan digest is not in the approved digests are refused with outcome unchanged and reason stale_preview (Sections 15.2, 15.3; #699) |
 | 1.0.0-alpha.32 | 2026-11-26 | One creation per path in a remediation run: a later control planning a path another control creates reports `created_by_other_control`, in preview and apply alike (Section 15.2; `FileChange` reasons) |
 | 1.0.0-alpha.31 | 2026-11-24 | `gh_api` step setting `auth_fields`: when an HTTP 2xx response omits any declared field, reports ERROR with error class `auth` naming the elevated permission requirement (Section 3.8; #753) |
 | 1.0.0-alpha.30 | 2026-11-24 | An `exec` remediation step previewed in a scratch copy marks files that have uncommitted user changes in the checkout with `action = "none"` and `reason = "user_changes_present"`, reports that the command will not run, and omits files the command will not touch, matching what the apply does (Section 4.4; #543) |
