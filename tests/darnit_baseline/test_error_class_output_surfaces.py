@@ -174,9 +174,9 @@ class TestAttestationPredicate:
 class TestUnexpectedExitSurfaces:
     """#562: every surface carries `unexpected_exit` as-is, never as `network`."""
 
-    UNEXPECTED = _result("OSPS-BR-01.02", status="WARN", error_class="unexpected_exit")
+    UNEXPECTED = _result("OSPS-BR-01.01", status="WARN", error_class="unexpected_exit")
     ERRORED = {
-        **_result("OSPS-BR-01.02", status="ERROR", error_class="unexpected_exit"),
+        **_result("OSPS-BR-01.01", status="ERROR", error_class="unexpected_exit"),
         "error": {
             "class": "unexpected_exit",
             "cause": "Command exited with unexpected code 2: grep -r uses: .github/workflows/; stderr: grep: "
@@ -211,7 +211,7 @@ class TestUnexpectedExitSurfaces:
             project_config=None,
             adapters_used=["builtin"],
         )
-        control = next(c for c in predicate["controls"] if c["id"] == "OSPS-BR-01.02")
+        control = next(c for c in predicate["controls"] if c["id"] == "OSPS-BR-01.01")
         assert control["error_class"] == "unexpected_exit"
         assert control["error"]["class"] == "unexpected_exit"
         assert "unexpected code 2" in control["error"]["cause"]
@@ -228,7 +228,7 @@ class TestUnexpectedExitSurfaces:
             compliance={1: False},
             level=1,
         )
-        line = next(ln for ln in md.splitlines() if "OSPS-BR-01.02" in ln)
+        line = next(ln for ln in md.splitlines() if "OSPS-BR-01.01" in ln)
         assert "[unexpected_exit]" in line
         assert "network" not in md
 

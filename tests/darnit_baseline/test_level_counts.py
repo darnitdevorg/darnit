@@ -6,9 +6,9 @@ Blocks CI on drift.
 
 Convention: each upstream control is assigned to its *lowest* applicable
 maturity level. Darnit's single-integer `level` field mirrors that lowest
-level. Controls tagged `deprecated = true` or `darnit_specific = true` are
-excluded from the comparison (they are darnit-only annotations, not upstream
-controls).
+level. Controls tagged `darnit_specific = true` are excluded from the
+comparison (they are darnit-only annotations, not upstream controls). A
+control that upstream retired is not assessed at all (#495).
 
 Bumping the pinned spec_version: update `spec_version` in
 `packages/darnit-baseline/src/darnit_baseline/implementation.py`, re-vendor
@@ -35,13 +35,12 @@ BASELINE_TOML = REPO_ROOT / "packages" / "darnit-baseline" / "src" / "darnit_bas
 # packages/darnit-baseline/src/darnit_baseline/implementation.py.
 EXPECTED_UPSTREAM_TAG = "v2026.02.19"
 
-# Runtime counts a user sees when running `darnit audit --level N`. Includes
-# darnit-retained controls that are deprecated upstream (e.g., BR-01.02).
+# Runtime counts a user sees when running `darnit audit --level N`.
 # Documented in docs/USAGE_GUIDE.md; update alongside a spec_version bump.
-EXPECTED_RUNTIME_COUNTS = {1: 25, 2: 19, 3: 21}
+EXPECTED_RUNTIME_COUNTS = {1: 24, 2: 19, 3: 21}
 
 # Upstream OSPS Baseline per-level counts under the lowest-applicable-level
-# convention. Excludes controls that darnit retains but upstream has retired.
+# convention. Retired controls have no maturity level and are not counted.
 EXPECTED_UPSTREAM_COUNTS = {1: 24, 2: 19, 3: 21}
 
 # Matches "maturity-N" (slug) and "Maturity Level N" (human string).
@@ -81,6 +80,30 @@ def _load_upstream_lowest_levels() -> dict[str, int]:
 
         walk(doc)
     return result
+
+
+def _load_upstream_retired() -> set[str]:
+    """Walk vendored YAML; return the ids upstream marks ``retired``."""
+    retired: set[str] = set()
+    for path in sorted(glob.glob(str(FIXTURE_DIR / "*.yaml"))):
+        with open(path) as fh:
+            doc = yaml.safe_load(fh)
+
+        def walk(node: object) -> None:
+            if isinstance(node, dict):
+                cid = node.get("id")
+                app = node.get("applicability")
+                if isinstance(cid, str) and cid.startswith("OSPS-") and isinstance(app, list):
+                    if any(isinstance(a, str) and a.strip().lower() == "retired" for a in app):
+                        retired.add(cid)
+                for value in node.values():
+                    walk(value)
+            elif isinstance(node, list):
+                for item in node:
+                    walk(item)
+
+        walk(doc)
+    return retired
 
 
 def _load_darnit_levels(exclude_deprecated: bool = False, exclude_darnit_specific: bool = False) -> dict[str, int]:
@@ -207,3 +230,33 @@ def test_upstream_parity_counts_match() -> None:
         f"  Expected (from upstream):                       {EXPECTED_UPSTREAM_COUNTS}\n"
         f"  Reconcile openssf-baseline.toml level tags."
     )
+
+
+@pytest.mark.unit
+def test_no_upstream_retired_control_is_assessed() -> None:
+    """A control upstream retired is no longer part of the OSPS Baseline, so
+    darnit must not evaluate it, count it toward a level, or attest it (#495:
+    OSPS-BR-01.02 was retired in ossf/security-baseline#443 and still counted
+    at Level 1). A ``deprecated`` tag does not exempt it."""
+    retired = _load_upstream_retired()
+    assert "OSPS-BR-01.02" in retired, "vendored fixture no longer marks BR-01.02 retired; check the fixture"
+
+    darnit = _load_darnit_levels()
+    assessed = sorted(retired & set(darnit))
+    assert not assessed, (
+        "openssf-baseline.toml defines controls that upstream OSPS Baseline "
+        f"{EXPECTED_UPSTREAM_TAG} retired: {assessed}. Remove them."
+    )
+
+
+@pytest.mark.unit
+def test_no_control_is_tagged_deprecated() -> None:
+    """``deprecated`` used to exempt a retained retired control from the parity
+    checks while it still counted in audits. Retired controls are removed
+    instead, so the tag should not reappear."""
+    with open(BASELINE_TOML, "rb") as fh:
+        config = tomllib.load(fh)
+    tagged = sorted(
+        cid for cid, ctrl in config.get("controls", {}).items() if (ctrl.get("tags") or {}).get("deprecated")
+    )
+    assert not tagged, f"controls tagged deprecated: {tagged}"

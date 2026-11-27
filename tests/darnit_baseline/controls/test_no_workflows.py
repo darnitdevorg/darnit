@@ -1,7 +1,7 @@
 """#584: controls that audit GitHub Actions workflows, on a repository without any.
 
-OSPS-BR-01.01, OSPS-BR-01.02, and OSPS-AC-04.02 run while ``ci_provider`` is
-unconfirmed. Without workflow files zizmor exits 3 and ``grep`` exits 2, and
+OSPS-BR-01.01 and OSPS-AC-04.02 run while ``ci_provider`` is unconfirmed.
+Without workflow files zizmor exits 3 and ``grep`` exits 2, and
 the controls used to end ``WARN [unexpected_exit]`` with a generic message and
 log an ``unexpected_exit`` WARNING per command. ``github_workflows_present``
 now runs first: it ends them WARN with its reason, and neither command runs.
@@ -37,11 +37,10 @@ from darnit_baseline.github_workflows import NO_WORKFLOWS_MESSAGE, NO_WORKFLOWS_
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 BASELINE_TOML = REPO_ROOT / "packages/darnit-baseline/src/darnit_baseline/openssf-baseline.toml"
-CONTROLS = ("OSPS-BR-01.01", "OSPS-BR-01.02", "OSPS-AC-04.02")
+CONTROLS = ("OSPS-BR-01.01", "OSPS-AC-04.02")
 # BR-01.01's zizmor audit (template-injection) also reads action definitions.
 NOTHING_TO_AUDIT = {
     "OSPS-BR-01.01": NO_WORKFLOWS_OR_ACTIONS_MESSAGE,
-    "OSPS-BR-01.02": NO_WORKFLOWS_MESSAGE,
     "OSPS-AC-04.02": NO_WORKFLOWS_MESSAGE,
 }
 GUARD = "github_workflows_present"
@@ -265,7 +264,6 @@ WORKFLOW_SCENARIOS = {
     "zizmor-no-findings-document": {"zizmor": (0, "", ""), "grep": (1, "", ""), "sh": (0, "", "")},
     "zizmor-unexpected-exit": {"zizmor": (2, "", "error: unrecognized input"), "grep": (1, "", ""), "sh": (0, "", "")},
     "tools-missing": {"zizmor": None, "grep": None, "sh": None},
-    "grep-match-647": {"zizmor": (0, "[]", ""), "grep": (0, ".github/workflows/ci.yml\n", ""), "sh": (0, "", "")},
 }
 
 
@@ -331,25 +329,6 @@ class TestKnownResultsWithWorkflows:
         assert "(evidence only)" not in result.message
         assert result.pass_history[1].result.outcome.value == "error"
         assert len(result.pass_history) > 2
-
-    def test_grep_match_is_evidence_without_unexpected_exit(self, tmp_path, tools) -> None:
-        """#656: grep exit 0 is a declared failure, and concludes = [] leaves it non-conclusive."""
-        tools.outcomes.update(WORKFLOW_SCENARIOS["grep-match-647"])
-
-        result = _verify(_shipped("OSPS-BR-01.02"), _with_workflow(tmp_path, "ci.yml"))
-
-        assert (result.status, result.error_class, result.concluded_by) == ("WARN", None, "none")
-        grep = result.pass_history[1]
-        assert grep.checks_performed == ["handler:exec"]
-        assert grep.result.outcome.value == "fail"
-        assert grep.result.evidence.get("exit_code") == 0
-
-    def test_grep_no_match_is_undetermined_warn(self, tmp_path, tools) -> None:
-        tools.outcomes.update(WORKFLOW_SCENARIOS["zizmor-clean"])
-
-        result = _verify(_shipped("OSPS-BR-01.02"), _with_workflow(tmp_path, "ci.yaml"))
-
-        assert (result.status, result.error_class, result.concluded_by) == ("WARN", None, "none")
 
     @pytest.mark.parametrize("control_id", CONTROLS)
     def test_missing_tools_stay_error(self, control_id, tmp_path, tools) -> None:
@@ -444,9 +423,9 @@ class TestStandaloneActionDefinitions:
 
         assert (result.status, result.error_class) == ("ERROR", "missing_tool")
 
-    @pytest.mark.parametrize("control_id", ["OSPS-BR-01.02", "OSPS-AC-04.02"])
+    @pytest.mark.parametrize("control_id", ["OSPS-AC-04.02"])
     def test_workflow_only_audits_still_warn_without_running(self, layout, control_id, tmp_path, tools, caplog) -> None:
-        """excessive-permissions reads workflows only and grep reads .github/workflows/ only."""
+        """excessive-permissions reads workflows only."""
         tools.outcomes.update(NO_WORKFLOW_TOOLS)
         caplog.set_level(logging.WARNING)
 

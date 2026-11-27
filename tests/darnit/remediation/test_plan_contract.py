@@ -222,7 +222,8 @@ def test_the_fixture_exercises_files_and_platform_settings(repo: Path) -> None:
             if _planned_operations(preview.plan):
                 with_operations.add(control_id)
 
-    assert len(with_files) >= 40
+    # Retiring OSPS-BR-01.02 removed one file-writing zizmor remediation (40 -> 39).
+    assert len(with_files) >= 39
     assert {"OSPS-AC-03.01", "OSPS-AC-03.02", "OSPS-QA-07.01", "OSPS-QA-01.01", "OSPS-VM-03.01"} <= with_operations
 
 
@@ -312,7 +313,7 @@ class TestNotPreviewableSteps:
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("control_id", ["OSPS-BR-01.01", "OSPS-BR-01.02"])
+@pytest.mark.parametrize("control_id", ["OSPS-BR-01.01"])
 def test_zizmor_fix_is_previewed(repo: Path, control_id: str) -> None:
     path = next(p for p, c in REMEDIATIONS if c == control_id)
     before = snapshot(repo)
