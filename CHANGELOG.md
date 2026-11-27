@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- In the `llm_eval` handler, support `generated_marker`, `handwritten_prompt`, and `handwritten_analysis_hints` to select the prompt based on marker presence in evaluated files, and configure `OSPS-SA-03.02` with `generated_marker = "<!-- darnit:verification-prompt-block -->"` so human-authored threat models are judged on coverage and specificity rather than code snippets (fixes #651).
 - In previewable exec remediations, preview files with uncommitted user changes
   as action `none` with reason `user_changes_present`, and omit files the command
   will not touch when refused, matching what apply does (fixes #543).

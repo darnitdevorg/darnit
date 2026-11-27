@@ -4537,6 +4537,24 @@ analysis_hints = [
     "Consider the project's deployment model: a CLI/library has different threats than a web service",
     "An empty threat model (no findings) is valid if the analysis was thorough",
 ]
+# Issue #651: alternative prompt and hints for human-authored threat models (judging coverage and specificity rather than code snippets)
+generated_marker = "<!-- darnit:verification-prompt-block -->"
+handwritten_prompt = """Evaluate whether this threat model document demonstrates adequate coverage and specificity for the project:
+
+1. **System & Scope**: Does it define the project's scope, architecture, key assets, or trust boundaries?
+2. **Threat Coverage**: Does it identify concrete potential threats using STRIDE (Spoofing, Tampering, Repudiation, Information Disclosure, Denial of Service, Elevation of Privilege) or an equivalent threat modeling methodology?
+3. **Specificity & Applicability**: Are the threats and mitigations specific to the project's actual technology, components, and data flows, rather than generic placeholder text?
+4. **Mitigations**: Does it document actionable mitigations or controls for the identified threats?
+
+A document with only TBD/TODO placeholders, empty headings, or purely generic boilerplate without project-specific threats and mitigations MUST FAIL.
+A threat model that covers the system's attack surface and documents plausible threats and mitigations should PASS.
+Report your verification results structured as: overall verdict (PASS/FAIL), summary of coverage, specificity assessment, and reasoning."""
+handwritten_analysis_hints = [
+    "Look for identified assets, trust boundaries, and actors",
+    "Check for coverage across STRIDE categories (Spoofing, Tampering, Repudiation, Info Disclosure, DoS, EoP)",
+    "Verify that threats and mitigations are specific to the project, not generic copy",
+    "TBD or TODO placeholders indicate incomplete threat modeling",
+]
 
 [controls."OSPS-SA-03.02".remediation]
 safe = true
