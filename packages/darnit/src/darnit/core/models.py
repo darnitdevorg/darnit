@@ -86,3 +86,6 @@ class AuditResult:
     commit: str | None = None
     ref: str | None = None
     trust: dict[str, Any] | None = None  # Feature 040: trust decision report block
+    # The URL naming the audited repository (host and full namespace), for
+    # attestations; None means the github.com form of owner/repo (#155).
+    repository_url: str | None = None

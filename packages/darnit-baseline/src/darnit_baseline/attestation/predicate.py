@@ -46,6 +46,7 @@ def build_assessment_predicate(
     project_config: Optional["ProjectConfig"],
     adapters_used: list[str],
     trust: dict[str, Any] | None = None,
+    repository_url: str | None = None,
 ) -> dict[str, Any]:
     """Build the assessment attestation predicate.
 
@@ -62,6 +63,8 @@ def build_assessment_predicate(
         project_config: Project configuration (if any)
         adapters_used: List of adapters used for checks
         trust: Trust decision for the audited repository (feature 040)
+        repository_url: URL naming the audited repository, with its host and
+            full namespace; None means ``https://github.com/{owner}/{repo}`` (#155)
 
     Returns:
         Dictionary containing the attestation predicate
@@ -172,7 +175,7 @@ def build_assessment_predicate(
         },
         "timestamp": datetime.now(UTC).isoformat(),
         "baseline": {"version": baseline_version, "specification": spec_url},
-        "repository": {"url": f"https://github.com/{owner}/{repo}", "commit": commit},
+        "repository": {"url": repository_url or f"https://github.com/{owner}/{repo}", "commit": commit},
         "configuration": config_section,
         "summary": {
             "level_assessed": level,

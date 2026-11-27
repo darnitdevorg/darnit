@@ -79,6 +79,9 @@ def generate_attestation_from_results(
         }, indent=2)
 
     trust = getattr(audit_result, "trust", None)
+    repository_url = getattr(audit_result, "repository_url", None)
+    if not isinstance(repository_url, str) or not repository_url:
+        repository_url = f"https://github.com/{audit_result.owner}/{audit_result.repo}"
 
     # Build the predicate
     predicate = build_assessment_predicate(
@@ -91,10 +94,11 @@ def generate_attestation_from_results(
         project_config=audit_result.project_config,
         adapters_used=["builtin"],
         trust=trust if isinstance(trust, dict) else None,
+        repository_url=repository_url,
     )
 
     predicate_type = BASELINE_PREDICATE_TYPE
-    subject_name = f"git+https://github.com/{audit_result.owner}/{audit_result.repo}"
+    subject_name = f"git+{repository_url}"
 
     if sign:
         if not ATTESTATION_AVAILABLE:
