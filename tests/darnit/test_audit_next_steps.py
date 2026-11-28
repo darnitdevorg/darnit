@@ -156,3 +156,10 @@ class TestGetNextStepsSection:
 
         assert "Step 1: Remediate failures" in output
         assert "Confirm project context" not in output
+
+    @patch("darnit.config.context_storage.get_pending_context", return_value=[])
+    def test_pending_lookup_is_about_the_audited_repository(self, mock_get_pending):
+        """#334: detection asks about the repository the report is for, not "/" when no remote names one."""
+        _get_next_steps_section("/repo", {"FAIL": 1}, target=None, owner="octo", repo="hello")
+
+        mock_get_pending.assert_called_once_with("/repo", owner="octo", repo="hello", target=None)
