@@ -80,6 +80,96 @@ class WriteRefused(Exception):
     """The executor did not write a planned change; nothing was written for it."""
 
 
+class TemplateRenderError(Exception):
+    """A remediation template did not render to usable content (#152).
+
+    Raised while planning, so the remediation stops in the preview and in an
+    apply before any write: a variable the template names does not exist, the
+    template has a syntax error, or a rendered ``.yml``/``.yaml``/``.json``
+    file does not parse.
+    """
+
+    def __init__(self, template: str, reason: str) -> None:
+        super().__init__(f"template {template!r}: {reason}; nothing was written")
+        self.template = template
+
+
+class DetectedValues(dict[str, str]):
+    """A template namespace whose absent keys mean "not detected" (``scan.*``, ``project.*``).
+
+    Templates test these with ``<% if scan.x %>`` or ``| default(...)``, so
+    an absent key renders as an ordinary (empty, false) undefined value.
+    """
+
+
+def _absent_key(obj: Any, name: Any, *, attribute: bool) -> bool:
+    """``name`` is a key a value namespace has no value for (#152).
+
+    The namespaces are ``scan``, ``project`` (:class:`DetectedValues`), and
+    ``context`` (:class:`GuardedContext`). For ``context`` the membership
+    test raises :class:`ConfirmationRequired` for a key that needs
+    confirmation, so such a key still stops the remediation; a key that
+    simply has no value renders as an ordinary undefined value, as it always
+    has. A mapping method such as ``context.get`` is not a key.
+    """
+    if not isinstance(obj, (DetectedValues, GuardedContext)) or not isinstance(name, str):
+        return False
+    if name in obj:
+        return False
+    return not (attribute and hasattr(obj, name))
+
+
+def _template_environment() -> Environment:
+    """The Jinja environment remediation templates render in.
+
+    ``<< >>`` for variables and ``<% %>`` for blocks, so GitHub Actions
+    ``${{ }}`` and shell ``$VAR`` pass through untouched. Undefined names are
+    strict (a misspelled variable or namespace fails the render), except a
+    key of the ``scan``, ``project``, or ``context`` namespace that has no
+    value (see :func:`_absent_key`).
+    """
+    import jinja2
+
+    class _Environment(jinja2.Environment):
+        def getattr(self, obj: Any, attribute: str) -> Any:
+            if _absent_key(obj, attribute, attribute=True):
+                return jinja2.Undefined(obj=obj, name=attribute)
+            return super().getattr(obj, attribute)
+
+        def getitem(self, obj: Any, argument: Any) -> Any:
+            if _absent_key(obj, argument, attribute=False):
+                return jinja2.Undefined(obj=obj, name=argument)
+            return super().getitem(obj, argument)
+
+    return _Environment(
+        variable_start_string="<<",
+        variable_end_string=">>",
+        block_start_string="<%",
+        block_end_string="%>",
+        comment_start_string="<#",
+        comment_end_string="#>",
+        keep_trailing_newline=True,
+        undefined=jinja2.StrictUndefined,
+    )
+
+
+def _check_structured(template: str, path: str, content: str) -> None:
+    """Raise :class:`TemplateRenderError` when rendered YAML or JSON does not parse (#152)."""
+    import json
+
+    import yaml
+
+    suffix = os.path.splitext(path)[1].lower()
+    try:
+        if suffix in (".yml", ".yaml"):
+            list(yaml.safe_load_all(content))
+        elif suffix == ".json":
+            json.loads(content)
+    except (yaml.YAMLError, json.JSONDecodeError) as e:
+        kind = "JSON" if suffix == ".json" else "YAML"
+        raise TemplateRenderError(template, f"rendered {path} is not valid {kind}: {e}") from e
+
+
 class GuardedContext(Mapping[str, Any]):
     """Context values for templates and ``when`` clauses.
 
@@ -305,7 +395,7 @@ class RemediationExecutor:
                     context_ns[key] = str(value)
         ctx["context"] = GuardedContext(context_ns, self._unconfirmed_keys)
 
-        project_ns: dict[str, str] = {}
+        project_ns = DetectedValues()
         if self._project_values:
             for key, value in self._project_values.items():
                 if isinstance(value, str):
@@ -314,7 +404,7 @@ class RemediationExecutor:
                     project_ns[key] = str(value)
         ctx["project"] = project_ns
 
-        scan_ns: dict[str, str] = {}
+        scan_ns = DetectedValues()
         if self._scan_values:
             for key, value in self._scan_values.items():
                 # Strip "scan." prefix if present — the namespace is implicit
@@ -326,35 +416,27 @@ class RemediationExecutor:
         return ctx
 
     def _get_jinja_env(self) -> Environment:
-        """Create a Jinja2 environment with non-colliding delimiters.
+        """The environment templates render in; see :func:`_template_environment`."""
+        return _template_environment()
 
-        Uses ``<< >>`` for variables and ``<% %>`` for blocks so that
-        GitHub Actions ``${{ }}`` and shell ``$VAR`` pass through untouched.
-        """
-        import jinja2
-
-        return jinja2.Environment(
-            variable_start_string="<<",
-            variable_end_string=">>",
-            block_start_string="<%",
-            block_end_string="%>",
-            comment_start_string="<#",
-            comment_end_string="#>",
-            keep_trailing_newline=True,
-            undefined=jinja2.Undefined,  # Missing vars render as empty string
-        )
-
-    def _substitute(self, text: str, control_id: str) -> str:
+    def _substitute(self, text: str, control_id: str, template_name: str = "<inline>") -> str:
         """Render template text using Jinja2.
 
         Uses ``<< var >>`` delimiters for variables and ``<% %>`` for blocks,
         avoiding collisions with GitHub Actions ``${{ }}``, shell ``$VAR``,
-        and other dollar-sign syntaxes.
+        and other dollar-sign syntaxes. A name the template uses that does
+        not exist, or a template syntax error, raises
+        :class:`TemplateRenderError` instead of rendering an empty string.
         """
+        import jinja2
+
         env = self._get_jinja_env()
-        template = env.from_string(text)
-        ctx = self._get_template_context(control_id)
-        return template.render(ctx)
+        try:
+            return env.from_string(text).render(self._get_template_context(control_id))
+        except jinja2.UndefinedError as e:
+            raise TemplateRenderError(template_name, f"uses an undefined variable ({e.message})") from e
+        except jinja2.TemplateSyntaxError as e:
+            raise TemplateRenderError(template_name, f"syntax error on line {e.lineno}: {e.message}") from e
 
     def _substitute_command(self, command: list[str], control_id: str) -> list[str]:
         """Substitute variables in command list using Jinja2."""
@@ -521,6 +603,16 @@ class RemediationExecutor:
                 dry_run=dry_run,
                 details={},
                 confirmation_required=needed.key,
+            )
+        except TemplateRenderError as broken:
+            logger.error(f"Control {control_id}: {broken}")
+            return RemediationResult(
+                success=False,
+                message=str(broken),
+                control_id=control_id,
+                remediation_type="handler_pipeline",
+                dry_run=dry_run,
+                details={"template_error": {"template": broken.template, "message": str(broken)}},
             )
         if not dry_run:
             from darnit.core.utils import clear_dir_entries_cache
@@ -1081,7 +1173,9 @@ class RemediationExecutor:
                 template_name = handler_config["template"]
                 content = self._get_template_content(template_name)
                 if content:
-                    content = self._substitute(content, control_id)
+                    content = self._substitute(content, control_id, template_name)
+                    if isinstance(handler_config.get("path"), str):
+                        _check_structured(template_name, handler_config["path"], content)
                     handler_config["content"] = content
 
             matched_any = True
