@@ -72,7 +72,7 @@
       },
       "OSPS-BR-07.02": {
         "after": "PENDING",
-        "before": "PENDING"
+        "before": "WARN"
       },
       "OSPS-DO-01.01": {
         "after": "PENDING",
@@ -131,7 +131,7 @@
       },
       "OSPS-GV-03.02": {
         "after": "PENDING",
-        "before": "PENDING"
+        "before": "WARN"
       },
       "OSPS-GV-04.01": {
         "after": "PENDING",
@@ -205,7 +205,7 @@
       },
       "OSPS-QA-06.03": {
         "after": "PENDING",
-        "before": "PENDING"
+        "before": "WARN"
       },
       "OSPS-QA-07.01": {
         "after": "ERROR",
@@ -222,7 +222,7 @@
       },
       "OSPS-SA-03.01": {
         "after": "PENDING",
-        "before": "PENDING"
+        "before": "WARN"
       },
       "OSPS-SA-03.02": {
         "after": "PENDING",
@@ -248,11 +248,11 @@
       },
       "OSPS-VM-04.02": {
         "after": "PENDING",
-        "before": "PENDING"
+        "before": "WARN"
       },
       "OSPS-VM-05.01": {
         "after": "PENDING",
-        "before": "PENDING"
+        "before": "WARN"
       },
       "OSPS-VM-05.02": {
         "after": "PENDING",
@@ -265,7 +265,7 @@
       },
       "OSPS-VM-06.01": {
         "after": "PENDING",
-        "before": "PENDING"
+        "before": "WARN"
       },
       "OSPS-VM-06.02": {
         "after": "WARN",
