@@ -71,6 +71,38 @@ def _compact_result(r: dict[str, Any]) -> dict[str, Any]:
     return compact
 
 
+def _detect_repository(repo_path: Path, *, prefer_upstream: bool = False) -> tuple[str, str, str | None]:
+    """``(owner, repo, identity)`` detected from the checkout's git remotes.
+
+    ``identity`` is the remote's canonical ``host/namespace/name`` (None when
+    it cannot be read). With no usable remote, owner is "" and repo is the
+    directory name, as :func:`darnit.core.utils.detect_owner_repo` returns.
+    """
+    from darnit.core.utils import detect_repo_from_git
+
+    info = detect_repo_from_git(str(repo_path), prefer_upstream=prefer_upstream)
+    if not info:
+        return "", repo_path.name, None
+    return info["owner"], info["repo"], info.get("identity")
+
+
+def _repository_url(target: str | None, owner: str, repo: str, detected: tuple[str, str, str | None]) -> str:
+    """The URL that names the audited repository in an attestation or badge (#155).
+
+    The repository the caller named (``owner``/``repo`` and ``host``, the
+    run's ``target``) wins. Otherwise the URL is the git remote's canonical
+    identity, which keeps its host and full namespace (a GitLab subgroup is
+    not turned into a github.com path). Only when neither is known is it the
+    github.com form of ``owner``/``repo``.
+    """
+    if target:
+        return f"https://{target}"
+    detected_owner, detected_repo, identity = detected
+    if identity and (owner, repo) == (detected_owner, detected_repo):
+        return f"https://{identity}"
+    return f"https://github.com/{owner}/{repo}"
+
+
 def _build_audit_result(
     owner: str,
     repo: str,
@@ -80,6 +112,7 @@ def _build_audit_result(
     results: list[dict],
     summary: dict[str, int],
     level_compliance: dict[int, bool],
+    repository_url: str | None = None,
 ):
     """Assemble an AuditResult from sieve audit output for SARIF/attestation."""
     from darnit.core.models import AuditResult
@@ -96,6 +129,7 @@ def _build_audit_result(
         level_compliance=level_compliance,
         commit=get_git_commit(str(repo_path)),
         ref=get_git_ref(str(repo_path)),
+        repository_url=repository_url,
     )
 
 
@@ -177,13 +211,10 @@ def audit_openssf_baseline(
     target = target_from_owner_repo(owner, repo, host)
 
     # Auto-detect owner/repo from git (origin first)
-    from darnit.core.utils import detect_owner_repo
-
-    detected_owner, detected_repo = detect_owner_repo(
-        str(repo_path), prefer_upstream=prefer_upstream
-    )
-    owner = owner or detected_owner
-    repo = repo or detected_repo
+    detected = _detect_repository(repo_path, prefer_upstream=prefer_upstream)
+    owner = owner or detected[0]
+    repo = repo or detected[1]
+    repository_url = _repository_url(target, owner, repo, detected) if owner and repo else None
 
     # Load framework config
     try:
@@ -256,9 +287,7 @@ def audit_openssf_baseline(
         from .formatters.badge import generate_badge_url
 
         # Resolve project URL: explicit arg > auto-detected from git remote
-        resolved_project_url = project_url or ""
-        if not resolved_project_url and owner and repo:
-            resolved_project_url = f"https://github.com/{owner}/{repo}"
+        resolved_project_url = project_url or repository_url or ""
 
         return generate_badge_url(results, resolved_project_url)
     elif output_format == "summary":
@@ -318,7 +347,7 @@ def audit_openssf_baseline(
         attest_note = _attest_audit(
             owner, repo, repo_path, level, default_branch,
             results, summary, sign=sign_attestation, staging=staging,
-            trust=metadata["trust"],
+            trust=metadata["trust"], repository_url=repository_url,
         )
         # Only markdown output can carry the note without breaking the
         # format; for JSON/SARIF the attestation file is still written.
@@ -340,6 +369,7 @@ def _attest_audit(
     sign: bool,
     staging: bool,
     trust: dict | None = None,
+    repository_url: str | None = None,
 ) -> str:
     """Generate an attestation from completed audit results.
 
@@ -355,7 +385,7 @@ def _attest_audit(
         compliance = calculate_compliance(results, level)
         audit_result = _build_audit_result(
             owner, repo, repo_path, level, default_branch,
-            results, summary, compliance,
+            results, summary, compliance, repository_url,
         )
         audit_result.trust = trust
         message = generate_attestation_from_results(
@@ -1312,17 +1342,17 @@ def generate_attestation(
     if not repo_path.exists():
         return f"❌ Error: Repository path not found: {repo_path}"
 
-    from darnit.core.utils import detect_owner_repo
     from darnit.trust.decision import target_from_owner_repo
 
     target = target_from_owner_repo(owner, repo, host)
 
-    detected_owner, detected_repo = detect_owner_repo(str(repo_path))
-    owner = owner or detected_owner
-    repo = repo or detected_repo
+    detected = _detect_repository(repo_path)
+    owner = owner or detected[0]
+    repo = repo or detected[1]
 
     if not owner or not repo:
         return "❌ Error: owner/repo could not be determined. Pass them explicitly."
+    repository_url = _repository_url(target, owner, repo, detected)
 
     try:
         from darnit.config.operator.loader import resolve_operator_config
@@ -1345,7 +1375,7 @@ def generate_attestation(
         compliance = calculate_compliance(results, level)
         audit_result = _build_audit_result(
             owner, repo, repo_path, level, default_branch,
-            results, summary, compliance,
+            results, summary, compliance, repository_url,
         )
         audit_result.trust = decide_trust(target, operator_config.config, repo_path).report()
         return generate_attestation_from_results(

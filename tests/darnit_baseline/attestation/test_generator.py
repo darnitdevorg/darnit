@@ -128,6 +128,20 @@ class TestGenerateAttestationFromResults:
         subject = attestation["subject"][0]
         assert subject["name"] == "git+https://github.com/testorg/testrepo"
         assert subject["digest"]["gitCommit"] == "abc123def456"
+        assert attestation["predicate"]["repository"]["url"] == "https://github.com/testorg/testrepo"
+
+    @pytest.mark.unit
+    def test_repository_url_names_the_subject_and_the_predicate(self, sample_audit_result, temp_dir: Path):
+        """A repository on another host is not named as a github.com path (#155)."""
+        sample_audit_result.repository_url = "https://gitlab.com/group/sub/testrepo"
+        generate_attestation_from_results(
+            audit_result=sample_audit_result, sign=False, output_path=str(temp_dir / "test.intoto.json")
+        )
+
+        attestation = json.loads((temp_dir / "test.intoto.json").read_text())
+
+        assert attestation["subject"][0]["name"] == "git+https://gitlab.com/group/sub/testrepo"
+        assert attestation["predicate"]["repository"]["url"] == "https://gitlab.com/group/sub/testrepo"
 
     @pytest.mark.unit
     def test_unsigned_attestation_predicate(self, sample_audit_result, temp_dir: Path):
