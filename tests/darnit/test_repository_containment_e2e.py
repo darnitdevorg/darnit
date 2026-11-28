@@ -156,5 +156,7 @@ def test_links_outside_never_reach_a_judgment_regather(linked_out_repo: Path) ->
         "project",
         None,
     )
-    assert any(consultations.values())
+    # Every document is a link outside the repository, so none is read and no
+    # model judgment is requested about a document it is not given (#485).
+    assert not any(consultations.values())
     assert OUTSIDE_MARKER not in json.dumps(consultations, default=str)
