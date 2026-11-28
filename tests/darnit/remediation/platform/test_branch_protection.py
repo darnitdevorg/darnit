@@ -307,19 +307,17 @@ class TestSubProtectionNotEnabled:
         assert op.body == expected
         assert op.changes == [FieldChange(field="required_status_checks", before=None, after={"contexts": ["ci/build"]})]
 
-    def test_review_requirement_goes_into_the_full_put(self, gh_platform) -> None:
+    def test_review_requirement_uses_patch_even_when_not_previously_enabled(self, gh_platform) -> None:
         protection = _without("required_pull_request_reviews")
         gh_platform(_base(protection=protection))
 
         [op] = only(plan(REPOSITORY, [AC_03_01, QA_07_01])).change_set.operations
 
-        assert (op.method, op.endpoint) == ("PUT", PROTECTION)
-        expected = protection_get_to_put(protection)
-        expected["required_pull_request_reviews"] = {"required_approving_review_count": 1}
-        assert op.body == expected
+        assert (op.method, op.endpoint) == ("PATCH", f"{PROTECTION}/required_pull_request_reviews")
+        assert op.body == {"required_approving_review_count": 1}
         assert op.changes == [
             FieldChange(
-                field="required_pull_request_reviews", before=None, after={"required_approving_review_count": 1}
+                field="required_pull_request_reviews.required_approving_review_count", before=0, after=1
             )
         ]
 
@@ -331,10 +329,30 @@ class TestSubProtectionNotEnabled:
         [result] = apply(REPOSITORY, [AC_03_01, QA_07_01, bp(require_status_checks=["ci/build"])], policy=auto)
 
         assert result.kind == "applied", result.error
-        assert [(w.method, w.endpoint) for w in gh.writes] == [("PUT", PROTECTION)]
+        assert [(w.method, w.endpoint) for w in gh.writes] == [
+            ("PATCH", f"{PROTECTION}/required_pull_request_reviews"),
+            ("PUT", PROTECTION),
+        ]
         after = gh.protection()
         assert after["required_pull_request_reviews"]["required_approving_review_count"] == 1
         assert after["required_status_checks"]["contexts"] == ["ci/build"]
+        assert after["restrictions"]["users"] == protection["restrictions"]["users"]
+        assert after["required_linear_history"] == {"enabled": True}
+        assert after["enforce_admins"]["enabled"] is True
+
+    def test_apply_review_requirement_when_absent_uses_patch_only(self, simulated_gh) -> None:
+        protection = _without("required_pull_request_reviews")
+        gh = simulated_gh(_base(protection=protection))
+        auto = ResolvedPolicy(settings=RemediationSettings(platform="auto"), operator_config_digest=None, operator="a")
+
+        [result] = apply(REPOSITORY, [AC_03_01, QA_07_01], policy=auto)
+
+        assert result.kind == "applied", result.error
+        assert [(w.method, w.endpoint) for w in gh.writes] == [
+            ("PATCH", f"{PROTECTION}/required_pull_request_reviews")
+        ]
+        after = gh.protection()
+        assert after["required_pull_request_reviews"]["required_approving_review_count"] == 1
         assert after["restrictions"]["users"] == protection["restrictions"]["users"]
         assert after["required_linear_history"] == {"enabled": True}
         assert after["enforce_admins"]["enabled"] is True

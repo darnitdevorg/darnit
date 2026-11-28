@@ -530,26 +530,21 @@ def _plan_branch(state: ObservedState, missing: dict[str, Any]) -> list[ChangeOp
         return [ChangeOperation(method="PUT", endpoint=endpoint, body=body, changes=changes)]
 
     operations: list[ChangeOperation] = []
-    reviews = fields.get("required_pull_request_reviews")
     target_count = max(approvals, _review_count(fields))
-    fold_reviews = needs_reviews and reviews is None
     fold_checks = bool(contexts) and fields.get("required_status_checks") is None
     put_changes: list[FieldChange] = []
     if needs_reviews:
         patch = {"required_approving_review_count": target_count}
-        if fold_reviews:
-            put_changes.append(FieldChange(field="required_pull_request_reviews", before=None, after=patch))
-        else:
-            change = FieldChange(
-                field="required_pull_request_reviews.required_approving_review_count",
-                before=_review_count(fields),
-                after=target_count,
+        change = FieldChange(
+            field="required_pull_request_reviews.required_approving_review_count",
+            before=_review_count(fields),
+            after=target_count,
+        )
+        operations.append(
+            ChangeOperation(
+                method="PATCH", endpoint=f"{endpoint}/required_pull_request_reviews", body=patch, changes=[change]
             )
-            operations.append(
-                ChangeOperation(
-                    method="PATCH", endpoint=f"{endpoint}/required_pull_request_reviews", body=patch, changes=[change]
-                )
-            )
+        )
     if "enforce_admins" in missing:
         operations.append(
             ChangeOperation(
