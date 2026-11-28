@@ -29,6 +29,7 @@ class PinKind(str, Enum):
 #: Kinds that do not weaken the build environment. A digest is immutable,
 #: `scratch` is the empty image, and a stage reference is not an image at all.
 _ACCEPTABLE: frozenset[PinKind] = frozenset({PinKind.DIGEST, PinKind.SCRATCH, PinKind.STAGE_REF})
+ACCEPTABLE_PINS = _ACCEPTABLE
 
 
 class ContainerClassification(str, Enum):
@@ -68,8 +69,112 @@ def _strip_comment(line: str) -> str:
     return line.split("#", 1)[0] if line.lstrip().startswith("#") else line
 
 
-def _classify_reference(image: str, known_stages: set[str]) -> PinKind:
-    if image.lower() in known_stages:
+FLAGS_WITH_ARGS: frozenset[str] = frozenset({
+    "-v",
+    "--volume",
+    "-p",
+    "--publish",
+    "-e",
+    "--env",
+    "--env-file",
+    "-w",
+    "--workdir",
+    "-u",
+    "--user",
+    "--name",
+    "--platform",
+    "--network",
+    "--entrypoint",
+    "--mount",
+    "-m",
+    "--memory",
+    "--cpus",
+    "--shm-size",
+    "--hostname",
+    "-h",
+    "--gpus",
+})
+
+PULL_FLAGS_WITH_ARGS: frozenset[str] = frozenset({
+    "--platform",
+})
+
+_PULL_RE = re.compile(r"\b(?:docker|podman)\s+pull\s+(?P<args>.+)")
+_RUN_RE = re.compile(r"\b(?:docker|podman)\s+run\s+(?P<args>.+)")
+
+
+def _extract_image_from_pull(args_str: str) -> str | None:
+    tokens = args_str.strip().split()
+    idx = 0
+    while idx < len(tokens):
+        tok = tokens[idx]
+        if tok in PULL_FLAGS_WITH_ARGS and idx + 1 < len(tokens):
+            idx += 2
+        elif tok.startswith("-"):
+            idx += 1
+        else:
+            break
+    if idx < len(tokens):
+        candidate = tokens[idx].strip("`\"';,")
+        if candidate and not candidate.startswith(("-", "<", "[")):
+            if candidate == candidate.lower() or "@sha256:" in candidate:
+                return candidate
+    return None
+
+
+def _extract_image_from_run(args_str: str) -> str | None:
+    tokens = args_str.strip().split()
+    idx = 0
+    while idx < len(tokens):
+        tok = tokens[idx]
+        if tok in FLAGS_WITH_ARGS and idx + 1 < len(tokens):
+            idx += 2
+        elif tok.startswith("-"):
+            idx += 1
+        else:
+            break
+    if idx < len(tokens):
+        candidate = tokens[idx].strip("`\"';,")
+        if candidate and not candidate.startswith(("-", "<", "[")):
+            if candidate == candidate.lower() or "@sha256:" in candidate:
+                return candidate
+    return None
+
+
+def extract_documented_containers(text: str) -> list[tuple[str, str]]:
+    """Extract (command_snippet, image_reference) pairs from documentation text (fixes #535)."""
+    results: list[tuple[str, str]] = []
+    seen_images: set[str] = set()
+
+    for raw_line in text.splitlines():
+        line_clean = raw_line.strip()
+        if not line_clean or line_clean.startswith("#"):
+            continue
+
+        # Split commands on semicolon or logical operators if chained
+        segments = re.split(r"\s*(?:&&|\|\||;)\s*", line_clean)
+        for segment in segments:
+            seg_clean = segment.strip().strip("`$#% ")
+            m_pull = _PULL_RE.search(seg_clean)
+            if m_pull:
+                img = _extract_image_from_pull(m_pull.group("args"))
+                if img and img not in seen_images:
+                    seen_images.add(img)
+                    results.append((seg_clean, img))
+                    continue
+
+            m_run = _RUN_RE.search(seg_clean)
+            if m_run:
+                img = _extract_image_from_run(m_run.group("args"))
+                if img and img not in seen_images:
+                    seen_images.add(img)
+                    results.append((seg_clean, img))
+
+    return results
+
+
+def _classify_reference(image: str, known_stages: set[str] | None = None) -> PinKind:
+    if known_stages and image.lower() in known_stages:
         # A multi-stage build refers back to an earlier stage by name. This is
         # not a registry image, and reporting it as unpinned produces a spurious
         # finding on every multi-stage Dockerfile -- including this repository's
@@ -84,6 +189,9 @@ def _classify_reference(image: str, known_stages: set[str]) -> PinKind:
     if _DIGEST.search(image):
         return PinKind.DIGEST
     return PinKind.TAG
+
+
+classify_reference = _classify_reference
 
 
 def parse(text: str) -> list[ImageReference]:

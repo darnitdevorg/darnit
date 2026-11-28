@@ -107,3 +107,92 @@ def test_root_strong_declaration_keeps_precedence(tmp_path: Path) -> None:
     write_file(tmp_path, "flake.nix", "{}")
     write_file(tmp_path, "docker/Dockerfile", "FROM alpine:latest\n")
     assert repro_build_env_declared_handler({}, repro_ctx(tmp_path)).status == HandlerResultStatus.PASS
+
+
+def test_documented_container_in_readme_unpinned_warns(tmp_path: Path) -> None:
+    readme_content = (
+        "# AEADProtocols Artifact\n\n"
+        "To reproduce our findings in an isolated environment:\n"
+        "```bash\n"
+        "$ docker pull aeads/tamarin\n"
+        "$ docker run -it -v $PWD:/opt/case-studies aeads/tamarin bash\n"
+        "```\n"
+    )
+    write_file(tmp_path, "README.md", readme_content)
+    result = repro_build_env_declared_handler({}, repro_ctx(tmp_path))
+    assert result.status == HandlerResultStatus.INCONCLUSIVE
+    assert (
+        "Build environment is declared in README.md (docker pull aeads/tamarin) but not pinned"
+        in result.message
+    )
+    assert result.evidence["unpinned_images"] == ["README.md: aeads/tamarin"]
+    assert result.evidence["containers_inspected"] == ["README.md"]
+    assert len(result.evidence["documented_containers"]) == 1
+    assert result.evidence["documented_containers"][0]["image"] == "aeads/tamarin"
+
+
+def test_documented_container_in_readme_digest_pinned_passes(tmp_path: Path) -> None:
+    digest = "sha256:" + "a" * 64
+    readme_content = (
+        "# Reproducible Container\n\n"
+        "```sh\n"
+        f"docker pull aeads/tamarin@{digest}\n"
+        f"docker run -it -v $PWD:/work aeads/tamarin@{digest} bash\n"
+        "```\n"
+    )
+    write_file(tmp_path, "README.md", readme_content)
+    result = repro_build_env_declared_handler({}, repro_ctx(tmp_path))
+    assert result.status == HandlerResultStatus.PASS
+    assert result.message == "Build environment declared via: README.md (documented container)"
+    assert result.evidence["containers_inspected"] == ["README.md"]
+    assert result.evidence["env_files_found"] == ["README.md (documented container)"]
+
+
+def test_documented_container_via_docker_run_only(tmp_path: Path) -> None:
+    readme_content = "Run `docker run -it -v $PWD:/opt/case-studies aeads/tamarin bash` to start."
+    write_file(tmp_path, "README.md", readme_content)
+    result = repro_build_env_declared_handler({}, repro_ctx(tmp_path))
+    assert result.status == HandlerResultStatus.INCONCLUSIVE
+    assert "docker run -it -v $PWD:/opt/case-studies aeads/tamarin bash" in result.message
+    assert result.evidence["unpinned_images"] == ["README.md: aeads/tamarin"]
+
+
+def test_documented_container_podman_supported(tmp_path: Path) -> None:
+    readme_content = "$ podman pull quay.io/example/analysis:v1.0\n"
+    write_file(tmp_path, "README.md", readme_content)
+    result = repro_build_env_declared_handler({}, repro_ctx(tmp_path))
+    assert result.status == HandlerResultStatus.INCONCLUSIVE
+    assert "quay.io/example/analysis:v1.0" in result.message
+
+
+def test_physical_container_file_takes_precedence_over_readme(tmp_path: Path) -> None:
+    write_file(tmp_path, "Dockerfile", PINNED)
+    write_file(tmp_path, "README.md", "$ docker pull unpinned/tool:latest\n")
+    result = repro_build_env_declared_handler({}, repro_ctx(tmp_path))
+    assert result.status == HandlerResultStatus.PASS
+    assert result.evidence["containers_inspected"] == ["Dockerfile"]
+    assert "documented_containers" not in result.evidence
+
+
+def test_no_build_env_records_searched_evidence(tmp_path: Path) -> None:
+    result = repro_build_env_declared_handler({}, repro_ctx(tmp_path))
+    assert result.status == HandlerResultStatus.INCONCLUSIVE
+    assert result.message == "No build environment declaration found"
+    assert "README*" in result.evidence["searched"]
+    assert "Dockerfile" in result.evidence["searched"]
+    assert "flake.nix" in result.evidence["searched"]
+
+
+def test_extract_documented_containers_filters_headings_and_placeholders() -> None:
+    from darnit_amber.container_pinning import extract_documented_containers
+
+    text = (
+        "# Docker Pull Tutorial\n"
+        "## docker run guide\n"
+        "Run `docker run <image-name>` or `docker pull [image]`.\n"
+        "To execute tests:\n"
+        "$ docker pull --platform linux/amd64 myorg/test-runner:1.2\n"
+    )
+    extracted = extract_documented_containers(text)
+    assert len(extracted) == 1
+    assert extracted[0][1] == "myorg/test-runner:1.2"

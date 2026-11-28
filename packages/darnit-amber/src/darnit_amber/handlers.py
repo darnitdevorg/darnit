@@ -301,7 +301,13 @@ def repro_build_env_declared_handler(
     A stronger declaration wins: a repository with a flake and a floating
     Dockerfile passes on the flake.
     """
-    from .container_pinning import ContainerClassification, classify
+    from .container_pinning import (
+        ACCEPTABLE_PINS,
+        ContainerClassification,
+        classify,
+        classify_reference,
+        extract_documented_containers,
+    )
 
     path = Path(ctx.local_path)
 
@@ -434,6 +440,82 @@ def repro_build_env_declared_handler(
     if found_deferred:
         return _pass()
 
+    # When no container build files or deferred files are present (or all have
+    # NO_IMAGES), check root documentation for declared containers (fixes #535).
+    doc_candidates: list[Path] = []
+    try:
+        doc_candidates = sorted(
+            [
+                entry
+                for entry in path.iterdir()
+                if entry.is_file()
+                and not entry.is_symlink()
+                and entry.name.lower().startswith("readme")
+            ],
+            key=lambda p: p.name,
+        )
+    except OSError as exc:
+        logger.debug("could not search documentation files in %s: %s", path, exc)
+
+    for doc_path in doc_candidates:
+        doc_name = doc_path.relative_to(path).as_posix()
+        try:
+            content = read_repository_text(path, doc_path)
+        except (OSError, UnicodeDecodeError) as exc:
+            logger.debug("could not read %s: %s", doc_path, exc)
+            continue
+
+        pairs = extract_documented_containers(content)
+        if not pairs:
+            continue
+
+        documented: list[dict[str, Any]] = []
+        doc_unpinned: list[tuple[str, str]] = []
+        for snippet, image in pairs:
+            kind = classify_reference(image)
+            documented.append({
+                "file": doc_name,
+                "command": snippet,
+                "image": image,
+                "classification": kind.value,
+            })
+            if kind not in ACCEPTABLE_PINS:
+                doc_unpinned.append((snippet, image))
+
+        evidence["documented_containers"] = documented
+        evidence["containers_inspected"] = [doc_name]
+
+        if doc_unpinned:
+            unpinned_images = [f"{doc_name}: {img}" for _, img in doc_unpinned]
+            evidence["unpinned_images"] = unpinned_images
+            first_snippet, _ = doc_unpinned[0]
+            return HandlerResult(
+                status=HandlerResultStatus.INCONCLUSIVE,
+                message=(
+                    f"Build environment is declared in {doc_name} ({first_snippet}) "
+                    f"but not pinned: {'; '.join(unpinned_images)} -- a tag is mutable, "
+                    "so the environment resolves differently on different builds. "
+                    "Pin by digest (image@sha256:...)"
+                ),
+                confidence=0.85,
+                evidence=evidence,
+            )
+
+        evidence["env_files_found"] = [f"{doc_name} (documented container)"]
+        return HandlerResult(
+            status=HandlerResultStatus.PASS,
+            message=f"Build environment declared via: {doc_name} (documented container)",
+            confidence=0.85,
+            evidence=evidence,
+        )
+
+    searched = (
+        list(inherently_pinned.keys())
+        + list(container_files.keys())
+        + list(deferred.keys())
+        + ["README*"]
+    )
+    evidence["searched"] = searched
     return HandlerResult(
         status=HandlerResultStatus.INCONCLUSIVE,
         message="No build environment declaration found",
