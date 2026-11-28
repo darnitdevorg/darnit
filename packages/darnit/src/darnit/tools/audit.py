@@ -1659,7 +1659,7 @@ def format_results_markdown(
         lines.append("")
 
     # Add "Next Steps" section with ordered agent directives
-    next_steps_lines = _get_next_steps_section(local_path, summary, target=target)
+    next_steps_lines = _get_next_steps_section(local_path, summary, target=target, owner=owner, repo=repo)
     if next_steps_lines:
         lines.extend(next_steps_lines)
 
@@ -1787,6 +1787,8 @@ def _get_next_steps_section(
     summary: dict[str, int],
     *,
     target: str | None = None,
+    owner: str | None = None,
+    repo: str | None = None,
 ) -> list[str]:
     """Get the "Next Steps" section with ordered agent directives.
 
@@ -1802,6 +1804,8 @@ def _get_next_steps_section(
         summary: Status summary dict with FAIL, WARN counts etc.
         target: Repository identity the caller named; without it, answers
             confirmed operator-side for an untrusted repository are not seen
+        owner, repo: The audited repository, so detection asks the platform
+            about it rather than about whatever the git remote names (#334)
 
     Returns:
         List of markdown lines, or empty list when no steps apply
@@ -1816,7 +1820,7 @@ def _get_next_steps_section(
         try:
             from darnit.config.context_storage import get_pending_context
 
-            pending_context = get_pending_context(local_path, target=target)
+            pending_context = get_pending_context(local_path, owner=owner or None, repo=repo or None, target=target)
         except ImportError:
             logger.debug("Context storage not available for next steps section")
         except Exception as e:
