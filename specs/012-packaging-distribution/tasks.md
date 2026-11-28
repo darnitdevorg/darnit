@@ -62,15 +62,15 @@ description: "Task list for 012-packaging-distribution"
 
 **Goal**: `pip install darnit-mcp==<version>` and `pipx install darnit-mcp==<version>` succeed against PyPI; pre-releases work against TestPyPI. Sigstore signatures attached.
 
-**Independent Test**: Tag `v0.0.0rc1` from a clean branch → workflow publishes 4 sdist+wheel pairs to TestPyPI → on a clean container, `pip install --index-url https://test.pypi.org/simple/ --pre darnit-mcp==0.0.0rc1` succeeds → `darnit --version` returns `0.0.0rc1` → `python -m sigstore verify identity --bundle ... darnit_mcp-0.0.0rc1-...whl` verifies.
+**Independent Test**: Tag `v0.0.0rc1` from a clean branch → workflow publishes 4 sdist+wheel pairs to TestPyPI → on a clean container, `pip install --index-url https://test.pypi.org/simple/ --pre darnit-mcp==0.0.0rc1` succeeds → `darnit --version` returns `0.0.0rc1` → `pypi-attestations verify pypi --repository https://github.com/darnitdevorg/darnit --provenance-file /tmp/provenance.json darnit_mcp-0.0.0rc1-...whl` verifies.
 
 ### Implementation for User Story 1
 
 - [X] T013 [US1] Add a `pypi_publish` job to `.github/workflows/release.yml` that runs after `preflight`. For each package in `packaging/pypi/public-packages.txt`: `uv build --package <pkg> --out-dir dist/<pkg>/`. Assert that the package name appears in `public-packages.txt` before any upload (refuse to publish unlisted packages).
 - [X] T014 [US1] In the `pypi_publish` job, use `pypa/gh-action-pypi-publish@release/v1` with `attestations: true`. Target `https://upload.pypi.org/legacy/` for stable tags and `https://test.pypi.org/legacy/` for pre-release tags (detected via the `rc` suffix in `github.ref_name`).
 - [X] T015 [US1] Add a `pypi_smoke` job to `.github/workflows/release-smoke.yml` that triggers after the release workflow's `pypi_publish` completes. In a clean Python container, `pip install --index-url <selected> --pre <pkg>==<version>` for each public package and run a per-package smoke (for `darnit-mcp`: `darnit --version` matches `<version>`; for others: import smoke).
-- [X] T016 [US1] Extend `pypi_smoke` to verify the Sigstore bundle for `darnit_mcp` via `python -m sigstore verify identity --cert-identity-regexp '^https://github\\.com/kusari-oss/darnit/' --cert-oidc-issuer https://token.actions.githubusercontent.com`. Fail the smoke if the signature does not verify.
-- [X] T017 [P] [US1] Write `docs/install/pypi.md` per the PyPI section of `quickstart.md`, including the Sigstore verification command
+- [X] T016 [US1] Extend `pypi_smoke` to verify the PEP 740 provenance attestation for `darnit_mcp` via `pypi-attestations verify pypi --repository https://github.com/darnitdevorg/darnit --provenance-file /tmp/provenance.json "$wheel"`. Fail the smoke if the signature does not verify.
+- [X] T017 [P] [US1] Write `docs/install/pypi.md` per the PyPI section of `quickstart.md`, including the `pypi-attestations` verification command
 - [X] T018 [P] [US1] Populate the `pypi` section of `packaging/RECOVERY.md` with the manual yank-and-retry recipe when an upload fails mid-flight
 - [ ] T019 [US1] Run the end-to-end test from the Independent Test above against a real `v0.0.0rc1` tag; confirm all assertions hold
 

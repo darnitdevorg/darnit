@@ -49,7 +49,7 @@ Uses `pypa/gh-action-pypi-publish` with Trusted Publishing (OIDC) — no API tok
 
 ## Attestations
 
-Sigstore bundle (`*.sigstore.json`) is generated and uploaded alongside each wheel and sdist. The signing identity is the release workflow's OIDC identity at the tagged commit.
+PEP 740 provenance attestations (`attestation_bundles`) are generated and published alongside each wheel and sdist via PyPI's Trusted Publishing. The signing identity is the release workflow's OIDC identity at the tagged commit in the `release` environment.
 
 ## Smoke test
 
