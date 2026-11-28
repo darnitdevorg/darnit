@@ -570,15 +570,25 @@ class RemediationExecutor:
             item for item in plan if item.requires_individual_approval and not self._individually_approved(item, safe)
         ]
         if self._item_approver is None:
-            return [item.digest for item in unapproved]
-        granted: dict[str, Approval] = {}
-        for index, item in enumerate(unapproved):
-            if not self._item_approver(item, _approval_reasons(item, safe)):
-                return [i.digest for i in unapproved[index:]]
-            granted[item.digest] = Approval(
-                digest=item.digest, approved_by=self._operator(), approved_at=datetime.now(UTC)
+            if unapproved:
+                return [item.digest for item in unapproved]
+        else:
+            granted: dict[str, Approval] = {}
+            for index, item in enumerate(unapproved):
+                if not self._item_approver(item, _approval_reasons(item, safe)):
+                    return [i.digest for i in unapproved[index:]]
+                granted[item.digest] = Approval(
+                    digest=item.digest, approved_by=self._operator(), approved_at=datetime.now(UTC)
+                )
+            self._granted.update(granted)
+        if self.platform is not None:
+            approved = self._approved_digests()
+            self.platform.approve_change_sets(
+                digest
+                for item in plan
+                if item.requires_individual_approval and item.digest in approved
+                for digest in _change_sets_approved_with(item)
             )
-        self._granted.update(granted)
         return []
 
     def approve_item(self, item: PlanItem) -> Approval | None:
@@ -1294,6 +1304,25 @@ def _approval_reasons(item: PlanItem, safe: bool) -> list[str]:
     if any(cs["target"]["impact"] == "high_impact" for cs in item.change_sets if cs.get("operations")):
         reasons.append("it holds a high-impact platform change")
     return reasons
+
+
+def _change_sets_approved_with(item: PlanItem) -> list[str]:
+    """Change set digests that an approval of ``item``'s own digest also approves (#547).
+
+    When the item's only actions are platform change sets, the person who
+    approved it saw exactly those change sets (``PlanItem.digest`` covers
+    them, and the prompt shows each one), so asking again for each change set
+    asks twice for one change. A high-impact change set still needs its own
+    digest (framework-design 15.2), and an item that also writes files or
+    runs commands, or cannot be previewed, covers nothing.
+    """
+    if not item.previewable or item.commands or any(change.changes for change in item.file_changes):
+        return []
+    return [
+        cs["digest"]
+        for cs in item.change_sets
+        if cs.get("operations") and cs["target"]["impact"] != "high_impact"
+    ]
 
 
 def _is_exec(handler_info: SieveHandlerInfo) -> bool:

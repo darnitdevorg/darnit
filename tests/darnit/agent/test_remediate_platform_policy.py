@@ -375,3 +375,104 @@ class TestTerminalApproverForPlanItems:
 
     def test_eof_is_a_refusal(self) -> None:
         assert TerminalApprover(io.StringIO(""), io.StringIO()).approve_item(self._item(), []) is False
+
+
+UNSAFE_PLATFORM = FrameworkConfig(
+    metadata=FrameworkMetadata(name="t", display_name="T", version="1.0"),
+    controls={
+        "T-PLATFORM": ControlConfig(
+            name="Unsafe platform change",
+            description="A safe = false remediation whose only action is a platform change",
+            level=1,
+            passes=[HandlerInvocation(handler="file_exists", files=["NEVER.md"], existence=True)],
+            remediation=RemediationConfig(
+                safe=False,
+                handlers=[
+                    HandlerInvocation(
+                        handler="platform_setting", target="branch_protection", require={"prevent_deletion": True}
+                    )
+                ],
+            ),
+        ),
+    },
+)
+
+
+@pytest.fixture()
+def unsafe_platform_framework(monkeypatch: pytest.MonkeyPatch) -> None:
+    from darnit.agent import graph
+
+    monkeypatch.setattr(graph, "_load_framework_config", lambda _name: UNSAFE_PLATFORM)
+    monkeypatch.setattr(graph, "_get_framework_path", lambda _name: None)
+
+
+@pytest.mark.unit
+class TestOneApprovalPerStep:
+    """#547: approving a step whose only action is a platform change does not ask again for the change."""
+
+    def _state(self, tmp_path: Path) -> AuditState:
+        return AuditState(
+            local_path=str(tmp_path), owner="o", repo="r", audit_results=[{"id": "T-PLATFORM", "status": "FAIL"}]
+        )
+
+    def test_yes_to_the_step_applies_its_change_without_asking_again(
+        self, tmp_path: Path, simulated_gh, unsafe_platform_framework: None
+    ) -> None:
+        gh = simulated_gh("stricter")
+        items: list[PlanItem] = []
+
+        def change_set_approver(_change_set) -> bool:
+            raise AssertionError("the change set was approved with its step; it must not be asked for again")
+
+        def item_approver(item: PlanItem, _reasons) -> bool:
+            items.append(item)
+            return True
+
+        state = remediate(
+            self._state(tmp_path), dry_run=False, approver=change_set_approver, item_approver=item_approver
+        )
+
+        [item] = items
+        assert [cs["digest"] for cs in item.change_sets if cs.get("operations")]
+        assert [(w.method, w.endpoint) for w in gh.writes] == [("PUT", PROTECTION)]
+        assert _platform_kinds(state) == ["applied"]
+
+    def test_no_to_the_step_writes_nothing_and_asks_nothing_more(
+        self, tmp_path: Path, simulated_gh, unsafe_platform_framework: None
+    ) -> None:
+        gh = simulated_gh("stricter")
+
+        def change_set_approver(_change_set) -> bool:
+            raise AssertionError("a refused step is not asked about again")
+
+        state = remediate(
+            self._state(tmp_path),
+            dry_run=False,
+            approver=change_set_approver,
+            item_approver=lambda _item, _reasons: False,
+        )
+
+        [result] = state.remediation_results
+        assert gh.writes == []
+        assert len(result["needs_approval"]) == 1
+
+    def test_a_listed_step_digest_covers_its_change_set(
+        self, tmp_path: Path, simulated_gh, unsafe_platform_framework: None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An apply that carries only the step's digest (no person at a terminal) applies its change set."""
+        from darnit.agent import graph
+
+        simulated_gh("stricter")
+        preview = remediate(self._state(tmp_path), dry_run=True)
+        [planned] = preview.remediation_results
+        [item_digest] = [i["digest"] for i in planned["plan"] if i["requires_individual_approval"]]
+
+        gh = simulated_gh("stricter")
+        session = graph.PlatformSession
+        monkeypatch.setattr(
+            graph, "PlatformSession", lambda *a, **kw: session(*a, **{**kw, "approvals": [item_digest]})
+        )
+        state = remediate(self._state(tmp_path), dry_run=False, approver=None, item_approver=None)
+
+        assert [(w.method, w.endpoint) for w in gh.writes] == [("PUT", PROTECTION)]
+        assert _platform_kinds(state) == ["applied"]
