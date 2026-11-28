@@ -54,7 +54,7 @@ A future hardened-image variant (Chainguard- or distroless-based) is tracked as 
 - The same cosign workflow signs detached blobs for binary downloads. Users verify with `cosign verify-blob`.
 
 **Verification surfaces** (must be documented in `docs/install/`):
-- PyPI: `python -m sigstore verify identity --bundle <bundle> --cert-identity <workflow-uri> --cert-oidc-issuer https://token.actions.githubusercontent.com <wheel>`
+- PyPI: `pypi-attestations verify pypi --repository https://github.com/darnitdevorg/darnit --provenance-file <provenance.json> <wheel>`
 - GHCR: `cosign verify ghcr.io/kusari-oss/darnit:<tag> --certificate-identity-regexp '^https://github\.com/kusari-oss/darnit/' --certificate-oidc-issuer https://token.actions.githubusercontent.com`
 - Binary blob: `cosign verify-blob --bundle <.sigstore> --certificate-identity-regexp ... <binary>`
 

@@ -46,15 +46,18 @@ pip install --index-url https://test.pypi.org/simple/ \
             --pre darnit-mcp==0.1.0rc1
 ```
 
-### Verify the Sigstore attestation
+### Verify the PEP 740 attestation
 
 ```bash
-pip install sigstore
-python -m sigstore verify identity \
-    --bundle darnit_mcp-0.1.0-py3-none-any.whl.sigstore.json \
-    --cert-identity-regexp '^https://github\.com/kusari-oss/darnit/' \
-    --cert-oidc-issuer https://token.actions.githubusercontent.com \
-    darnit_mcp-0.1.0-py3-none-any.whl
+pip install 'pypi-attestations>=0.0.30'
+pip download --no-deps darnit-mcp==0.1.0
+curl -fsSL \
+  "https://pypi.org/integrity/darnit-mcp/0.1.0/darnit_mcp-0.1.0-py3-none-any.whl/provenance" \
+  -o provenance.json
+pypi-attestations verify pypi \
+  --repository https://github.com/darnitdevorg/darnit \
+  --provenance-file provenance.json \
+  darnit_mcp-0.1.0-py3-none-any.whl
 ```
 
 The signing identity should match the `release.yml` workflow at the tagged commit.

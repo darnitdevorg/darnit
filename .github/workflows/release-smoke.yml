@@ -64,7 +64,7 @@ jobs:
   # T015: install each public package from the selected index in a clean venv,
   # then run a per-package smoke check (CLI version for darnit-mcp, import for
   # the others).
-  # T016: verify each package's Sigstore attestation against the release
+  # T016: verify each package's PEP 740 provenance attestation against the release
   # workflow's OIDC identity.
   pypi_smoke:
     name: pypi_smoke (${{ matrix.package }})
@@ -161,7 +161,7 @@ jobs:
               ;;
           esac
 
-      - name: Verify Sigstore attestation (T016)
+      - name: Verify PEP 740 provenance attestation (T016)
         env:
           PKG: ${{ matrix.package }}
           VERSION: ${{ needs.parse-trigger.outputs.version }}

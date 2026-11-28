@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- In release smoke and packaging documentation, verify PyPI PEP 740 provenance
+  attestations with `pypi-attestations` instead of unsupported `sigstore` flags
+  (fixes #607).
 - In previewable exec remediations, preview files with uncommitted user changes
   as action `none` with reason `user_changes_present`, and omit files the command
   will not touch when refused, matching what apply does (fixes #543).
