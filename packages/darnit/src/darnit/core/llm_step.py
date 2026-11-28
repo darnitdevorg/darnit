@@ -18,6 +18,27 @@ from typing import Any, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel
 
+#: At most this many files' contents go to one model consultation (#485).
+CONSULTATION_MAX_FILES = 5
+#: Each file's text is cut to this many characters (#485).
+CONSULTATION_MAX_CHARS = 10_000
+
+
+def bound_file_text(text: str) -> tuple[str, int | None]:
+    """Cut ``text`` to :data:`CONSULTATION_MAX_CHARS`, saying so in the text (#485).
+
+    Returns the text to send and, when it was cut, the original length in
+    characters. The marker is part of the content, so the model and anyone
+    reading the consultation can see that the rest of the file was not given.
+    """
+    if len(text) <= CONSULTATION_MAX_CHARS:
+        return text, None
+    marker = (
+        f"\n\n[darnit: file truncated here; the first {CONSULTATION_MAX_CHARS:,} of "
+        f"{len(text):,} characters are shown]\n"
+    )
+    return text[:CONSULTATION_MAX_CHARS] + marker, len(text)
+
 
 class ConsultationRequest(BaseModel):
     """Input to an ``LLMStep``. See data-model.md section 8."""
@@ -150,7 +171,7 @@ class PydanticAILLMStep:
             self._agent = self._build_agent()
 
         # Assemble the user prompt from the request. Include file contents
-        # if provided; cap each at 10K chars to bound context usage.
+        # if provided; each is cut to CONSULTATION_MAX_CHARS, with a marker.
         parts: list[str] = [f"Control: {request.control_id}", "", request.prompt]
         if request.analysis_hints:
             parts.extend(["", "Analysis hints:", *[f"- {h}" for h in request.analysis_hints]])
@@ -158,14 +179,13 @@ class PydanticAILLMStep:
             parts.extend(["", "Evidence from prior passes:"])
             for k, v in request.gathered_evidence.items():
                 parts.append(f"- {k}: {v}")
-        # File contents pre-read by the sieve (per-file 10K cap already applied).
+        # File contents pre-read by the sieve (already bounded and marked).
         for name, content in request.file_contents.items():
             parts.extend(["", f"--- {name} ---", content])
-        # File paths the caller wants the LLM to read directly. Cap at 5 and
-        # 10K chars per file.
-        for path in request.files_to_include[:5]:
+        # File paths the caller wants the LLM to read directly, bounded the same way.
+        for path in request.files_to_include[:CONSULTATION_MAX_FILES]:
             try:
-                content = path.read_text(encoding="utf-8", errors="ignore")[:10000]
+                content, _ = bound_file_text(path.read_text(encoding="utf-8", errors="ignore"))
                 parts.extend(["", f"--- {path.name} ---", content])
             except OSError:
                 continue

@@ -183,13 +183,16 @@ class TestLlmSteps:
     def test_llm_eval_fallback_does_not_read_outside(self, ctx: HandlerContext, repo: Path) -> None:
         ctx.gathered_evidence["resolved_files"] = [str(repo / "linked" / "notes.md")]
         result = llm_eval_handler({"prompt": "judge", "files_to_include": ["$FOUND_FILE"]}, ctx)
-        assert result.details["consultation_request"]["file_contents"] == {}
+        # Nothing inside the repository was read, so no model judgment is requested (#485).
+        assert "consultation_request" not in result.details
+        assert result.evidence["no_document"] is True
         assert result.evidence["skipped_outside_repository"] == ["linked"]
         assert MARKER not in _dump(result)
 
     def test_llm_eval_absolute_path_outside(self, ctx: HandlerContext, outside: Path) -> None:
         result = llm_eval_handler({"prompt": "judge", "files_to_include": [str(outside / "secret.txt")]}, ctx)
-        assert result.details["consultation_request"]["file_contents"] == {}
+        assert "consultation_request" not in result.details
+        assert result.evidence["no_document"] is True
         assert MARKER not in _dump(result)
 
     def test_llm_extract_skips_links_outside(self, ctx: HandlerContext) -> None:
