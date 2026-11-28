@@ -714,8 +714,21 @@ def confirm_project_data(
     """
     from darnit.server.procedures import data_next_step
     from darnit.server.tools.project_data import confirm_project_data_impl
+    from darnit.trust.decision import target_from_owner_repo
+    from darnit_baseline.pending_data import checkout_digest, question_audit, retain_question_audit
 
-    return confirm_project_data_impl(
+    target = target_from_owner_repo(owner, repo, host)
+    cached = None
+    before_digest = None
+    if target and not confirm_not_applicable and not confirm_pass_candidate:
+        try:
+            cached = question_audit(local_path, target)
+            if cached is not None:
+                before_digest = checkout_digest(local_path)
+        except Exception:
+            cached = None
+
+    result = confirm_project_data_impl(
         local_path=local_path,
         accept_candidates=accept_candidates,
         confirm_stored=confirm_stored,
@@ -730,6 +743,19 @@ def confirm_project_data(
         next_step=data_next_step(owner, repo, str(Path(local_path).resolve())),
         **values,
     )
+
+    if cached is not None and before_digest is not None and target is not None:
+        try:
+            if checkout_digest(local_path) == before_digest:
+                changed_keys = (
+                    set(values) | set(accept_candidates or {}) | set(confirm_stored or [])
+                    | set(reject_stored or []) | set(expires_at or {})
+                )
+                retain_question_audit(local_path, target, cached, changed_keys)
+        except Exception:
+            # A failed snapshot never makes a question disappear.
+            pass
+    return result
 
 
 def confirm_project_data_tool():
@@ -789,6 +815,7 @@ def get_pending_data(
     Returns:
         JSON with the procedure, the questions, ask_user_batch (for AskUserQuestion),
         answer_mapping for confirm_project_data, a progress indicator, and
+        skipped_questions: omitted keys, affected controls, and the reason;
         stored_unconfirmed: values stored in .project/ without a confirmation,
         with their locations, for review with confirm_stored / reject_stored.
     """
@@ -826,14 +853,40 @@ def get_pending_data(
             target=target,
         )
 
+        # Reuse only a fresh full audit with the same repository trust target.
+        # Failed and unresolved controls may still need answers for remediation.
+        from darnit_baseline.pending_data import question_audit
+
+        try:
+            cached = question_audit(str(repo_path), target)
+        except Exception:
+            cached = None
+        skipped_questions = []
+        if cached is not None:
+            statuses = {result["id"]: result.get("status") for result in cached["results"]}
+            remaining = []
+            for request in pending:
+                if request.control_ids and all(
+                    statuses.get(control_id) in ("PASS", "N/A") for control_id in request.control_ids
+                ):
+                    skipped_questions.append({
+                        "key": request.key,
+                        "affects_controls": request.control_ids,
+                        "reason": "All affected controls are PASS or N/A in the latest matching audit.",
+                    })
+                else:
+                    remaining.append(request)
+            pending = remaining
+
         stored = stored_unconfirmed(str(repo_path), target=target)
 
         if not pending:
             complete: dict = {
                 "status": "complete",
-                "message": "All context has been confirmed. No additional input needed.",
+                "message": "No additional context is needed for the selected controls.",
                 "procedure": procedure,
                 "questions": [],
+                "skipped_questions": skipped_questions,
             }
             if stored:
                 complete["stored_unconfirmed"] = stored
@@ -887,6 +940,7 @@ def get_pending_data(
                 "total": total,
             },
             "questions": questions,
+            "skipped_questions": skipped_questions,
             "stored_unconfirmed": stored,
         }
 
