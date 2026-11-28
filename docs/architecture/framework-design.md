@@ -1,6 +1,6 @@
 # Darnit Framework Design Specification
 
-> **Version**: 1.0.0-alpha.32
+> **Version**: 1.0.0-alpha.33
 > **Status**: Authoritative
 > **Last Updated**: 2026-11-26
 
@@ -1156,7 +1156,7 @@ The impact class is fixed by the target kind: repository visibility and any orga
 
 1. `GET /repos/{o}/{r}` for the default branch; `GET .../branches/{b}`: a missing branch is ERROR; `protected = false` is the unprotected state; `protected = true` is followed by `GET .../protection`. Active rules come from `GET /repos/{o}/{r}/rules/branches/{b}`.
 2. Unprotected: one `PUT .../protection` that sets only the required settings; every other field is sent at its platform default, which equals the current, unprotected state.
-3. Protected: review requirements through `PATCH .../required_pull_request_reviews` with only the fields that must tighten (the approval count is raised to the minimum, never lowered), when pull request reviews are already required; `enforce_admins` through `POST .../enforce_admins` only when it is off; missing status-check contexts through `POST .../required_status_checks/contexts`, keeping existing `contexts` and `checks`, when status checks are already required. The granular endpoints of a sub-protection answer 404 when that sub-protection is not enabled, so a requirement whose sub-protection is absent from the protection GET (no `required_pull_request_reviews`, or no `required_status_checks`), and `prevent_deletion` and `prevent_force_push`, which have no granular endpoint, are applied through one full `PUT` built by translating the current protection into the PUT shape with every existing value preserved and only the required settings added or tightened.
+3. Protected: review requirements through `PATCH .../required_pull_request_reviews` with only the fields that must tighten (the approval count is raised to the minimum, never lowered), including when reviews are not yet configured on the protected branch (`PATCH .../required_pull_request_reviews` enables review protection without re-sending the whole protection object; fixes #546); `enforce_admins` through `POST .../enforce_admins` only when it is off; missing status-check contexts through `POST .../required_status_checks/contexts`, keeping existing `contexts` and `checks`, when status checks are already required. The granular status-checks endpoints answer 404 when status checks are not enabled, so a requirement whose `required_status_checks` is absent from the protection GET, and `prevent_deletion` and `prevent_force_push`, which have no granular endpoint, are applied through one full `PUT` built by translating the current protection into the PUT shape with every existing value preserved and only the required settings added or tightened.
 4. The translator is total over a known field list. A protection response containing a field it does not know makes the step ERROR, "cannot preserve unknown protection setting <field>", and nothing is planned.
 
 **Platform calls.** Writes go through `darnit.core.utils.gh_api_write(method, endpoint, payload) -> (body, status, error)`, which sends the JSON body with `gh api -X METHOD --input -` and reads the status. It uses the same responder seam as `gh_api_with_status` (section 3.8).
@@ -1170,10 +1170,14 @@ The impact class is fixed by the target kind: repository visibility and any orga
 - **AND** any full `PUT` body MUST preserve every other existing value
 - **AND** the read-back MUST show every pre-existing setting unchanged
 
-#### Scenario: Sub-protection not enabled
-- **WHEN** the branch is protected but its protection has no `required_pull_request_reviews` (or no `required_status_checks`) and a requirement needs it
-- **THEN** the change set MUST NOT use `PATCH .../required_pull_request_reviews` (or `PATCH .../required_status_checks`)
+#### Scenario: Status-checks sub-protection not enabled
+- **WHEN** the branch is protected but its protection has no `required_status_checks` and a requirement needs it
+- **THEN** the change set MUST NOT use `POST .../required_status_checks/contexts` (which answers 404)
 - **AND** it MUST add the setting through the translated full `PUT`, which preserves every other existing value
+
+#### Scenario: Review sub-protection not enabled
+- **WHEN** the branch is protected but its protection has no `required_pull_request_reviews` and a requirement needs it
+- **THEN** the change set MUST use `PATCH .../required_pull_request_reviews` to enable reviews without re-sending the entire protection object
 
 #### Scenario: Requirement already satisfied
 - **WHEN** the current settings, or an active ruleset, satisfy every requirement on the target
@@ -2680,6 +2684,7 @@ The following requirements have been superseded: by the handler dispatch archite
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.0.0-alpha.33 | 2026-11-28 | Branch protection remediation: review requirements use `PATCH .../required_pull_request_reviews` directly on protected branches even when reviews were not previously configured, avoiding unnecessary full `PUT` fallbacks (Section 4.10; #546) |
 | 1.0.0-alpha.32 | 2026-11-26 | One creation per path in a remediation run: a later control planning a path another control creates reports `created_by_other_control`, in preview and apply alike (Section 15.2; `FileChange` reasons) |
 | 1.0.0-alpha.31 | 2026-11-24 | `gh_api` step setting `auth_fields`: when an HTTP 2xx response omits any declared field, reports ERROR with error class `auth` naming the elevated permission requirement (Section 3.8; #753) |
 | 1.0.0-alpha.30 | 2026-11-24 | An `exec` remediation step previewed in a scratch copy marks files that have uncommitted user changes in the checkout with `action = "none"` and `reason = "user_changes_present"`, reports that the command will not run, and omits files the command will not touch, matching what the apply does (Section 4.4; #543) |
