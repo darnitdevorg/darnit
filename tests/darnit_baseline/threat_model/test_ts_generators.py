@@ -323,6 +323,28 @@ class TestLimitationsSection:
         # unsupported_file_count=1
         assert "**2** in-scope files" in draft
         assert "**1** vendor/build" in draft or "**1** files" in draft
+        assert "larger than" not in draft
+
+    def test_limitations_reports_oversized_files(self) -> None:
+        """Files skipped for size are disclosed, so missing findings are not read as none (#168)."""
+        import dataclasses
+
+        result = _sample_result(findings=[])
+        stats = dataclasses.replace(
+            _empty_scan_stats(), total_files_seen=5, oversized_file_count=2, max_file_bytes=1_000_000
+        )
+        result = dataclasses.replace(result, file_scan_stats=stats)
+        emitted, overflow = apply_cap(rank_findings(result.findings), max_findings=50)
+        draft = generate_markdown_threat_model(
+            repo_path="/tmp/repo",
+            result=result,
+            capped_findings=emitted,
+            overflow=overflow,
+        )
+        assert "Did not parse **2** files larger than 1,000,000 bytes; findings in them are not reported." in draft
+        from darnit_baseline.threat_model.ts_generators import _stats_to_dict
+
+        assert _stats_to_dict(result)["oversized_file_count"] == 2
 
 
 class TestSkillReviewContractPreserved:

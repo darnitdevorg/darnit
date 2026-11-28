@@ -29,6 +29,13 @@ from .parsing import detect_language_from_path
 logger = logging.getLogger("darnit_baseline.threat_model.file_discovery")
 
 
+#: Files larger than this are not parsed (#168). Minified bundles and large
+#: generated files would otherwise be read whole into memory and parsed. The
+#: count of skipped files is reported in the scan stats and the draft's
+#: limitations, so a reader knows findings in them are missing.
+MAX_FILE_BYTES = 1_000_000
+
+
 #: Directories that are never scanned, regardless of ``.gitignore``. Users can
 #: append to this list via ``exclude_dirs`` in the handler config but cannot
 #: disable any of these (FR-024).
@@ -130,6 +137,7 @@ def walk_repo(
     root: Path,
     extra_excludes: Iterable[str] = (),
     shallow_threshold: int = 500,
+    max_file_bytes: int = MAX_FILE_BYTES,
 ) -> tuple[list[ScannedFile], FileScanStats]:
     """Walk ``root`` and return scannable files plus file-scan stats.
 
@@ -139,7 +147,8 @@ def walk_repo(
 
     Files with unknown extensions are counted in ``total_files_seen`` but not
     returned in the scanned-files list (they're neither excluded by rule nor
-    in-scope for parsing).
+    in-scope for parsing). Supported files larger than ``max_file_bytes`` are
+    counted in ``oversized_file_count``, logged, and not returned.
     """
 
     root = Path(root).resolve()
@@ -154,6 +163,7 @@ def walk_repo(
     total_files_seen = 0
     excluded_dir_count = 0
     in_scope: list[ScannedFile] = []
+    oversized_file_count = 0
     by_language: dict[str, int] = {}
 
     for dirpath, pruned_count, filenames in _walk_filtered(root, effective_excludes):
@@ -171,13 +181,23 @@ def walk_repo(
                 relpath = str(fpath.relative_to(root))
             except ValueError:
                 relpath = str(fpath)
+            try:
+                size = fpath.stat().st_size
+            except OSError:
+                size = 0  # unreadable here; parsing reports the read error
+            if size > max_file_bytes:
+                oversized_file_count += 1
+                logger.warning(
+                    "threat model: not parsing %s: %d bytes is over the %d-byte limit", relpath, size, max_file_bytes
+                )
+                continue
             in_scope.append(ScannedFile(path=fpath, relpath=relpath, language=lang))
             by_language[lang] = by_language.get(lang, 0) + 1
 
     # ``unsupported_file_count`` is the number of files we walked past that
     # had no tree-sitter grammar (README.md, .png, LICENSE, etc.). It is
     # distinct from ``excluded_dir_count``, which counts pruned directories.
-    unsupported_file_count = total_files_seen - len(in_scope)
+    unsupported_file_count = total_files_seen - len(in_scope) - oversized_file_count
 
     stats = FileScanStats(
         total_files_seen=total_files_seen,
@@ -187,6 +207,8 @@ def walk_repo(
         by_language=dict(by_language),
         shallow_mode=len(in_scope) > shallow_threshold,
         shallow_threshold=shallow_threshold,
+        oversized_file_count=oversized_file_count,
+        max_file_bytes=max_file_bytes,
     )
     logger.debug(
         "walk_repo: seen=%d, in_scope=%d, unsupported=%d, pruned_dirs=%d, shallow=%s",
@@ -220,6 +242,7 @@ def _walk_filtered(root: Path, excluded_names: frozenset[str] | set[str]):
 
 __all__ = [
     "BASELINE_EXCLUDED_DIRS",
+    "MAX_FILE_BYTES",
     "ScannedFile",
     "walk_repo",
 ]

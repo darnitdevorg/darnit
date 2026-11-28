@@ -283,7 +283,9 @@ class FileScanStats:
       language (``README.md``, ``.png``, etc.). Counts toward "seen but not
       parsed".
     - ``in_scope_files`` — files actually parsed by tree-sitter.
-    - ``total_files_seen == unsupported_file_count + in_scope_files``.
+    - ``oversized_file_count`` — supported files not parsed because they are
+      larger than ``max_file_bytes`` (#168).
+    - ``total_files_seen == unsupported_file_count + in_scope_files + oversized_file_count``.
     """
 
     total_files_seen: int
@@ -293,13 +295,15 @@ class FileScanStats:
     by_language: dict[str, int]
     shallow_mode: bool
     shallow_threshold: int
+    oversized_file_count: int = 0
+    max_file_bytes: int = 1_000_000  # file_discovery.MAX_FILE_BYTES
 
     def __post_init__(self) -> None:
-        expected = self.unsupported_file_count + self.in_scope_files
+        expected = self.unsupported_file_count + self.in_scope_files + self.oversized_file_count
         if self.total_files_seen != expected:
             raise ValueError(
                 f"FileScanStats.total_files_seen ({self.total_files_seen}) must "
-                f"equal unsupported_file_count + in_scope_files ({expected})"
+                f"equal unsupported_file_count + in_scope_files + oversized_file_count ({expected})"
             )
 
 

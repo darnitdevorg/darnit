@@ -125,6 +125,8 @@ def render_raw_json(
             "by_language": dict(stats.by_language),
             "shallow_mode": stats.shallow_mode,
             "shallow_threshold": stats.shallow_threshold,
+            "oversized_file_count": stats.oversized_file_count,
+            "max_file_bytes": stats.max_file_bytes,
         }
 
     # -- assemble payload ---------------------------------------------------

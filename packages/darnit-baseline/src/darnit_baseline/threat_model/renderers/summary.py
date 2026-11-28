@@ -261,6 +261,11 @@ def _render_limitations(
             f"- Skipped **{stats.excluded_dir_count}** vendor/build directories "
             f"and **{stats.unsupported_file_count}** files in unsupported languages."
         )
+        if stats.oversized_file_count:
+            md.append(
+                f"- Did not parse **{stats.oversized_file_count}** files larger than "
+                f"{stats.max_file_bytes:,} bytes; findings in them are not reported."
+            )
         if stats.shallow_mode:
             md.append(
                 f"- **Shallow analysis mode** was active (threshold: "

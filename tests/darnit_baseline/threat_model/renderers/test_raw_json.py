@@ -273,6 +273,8 @@ class TestRawJsonFileScanStats:
             "by_language": {"python": 50, "typescript": 20},
             "shallow_mode": True,
             "shallow_threshold": 250,
+            "oversized_file_count": 0,
+            "max_file_bytes": 1_000_000,
         }
 
 
